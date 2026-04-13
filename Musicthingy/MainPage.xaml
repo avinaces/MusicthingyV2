@@ -22,9 +22,10 @@
         <Style x:Key="IconImageButton" TargetType="ImageButton">
             <Setter Property="BackgroundColor" Value="{StaticResource CardColor}" />
             <Setter Property="CornerRadius" Value="8" />
-            <Setter Property="WidthRequest" Value="36" />
-            <Setter Property="HeightRequest" Value="36" />
-            <Setter Property="Padding" Value="8" />
+            <Setter Property="WidthRequest" Value="32" />
+            <!-- Slightly smaller to match HTML -->
+            <Setter Property="HeightRequest" Value="32" />
+            <Setter Property="Padding" Value="6" />
             <Setter Property="BorderColor" Value="{StaticResource BorderColor}" />
             <Setter Property="BorderWidth" Value="1" />
             <Style.Triggers>
@@ -35,19 +36,19 @@
         </Style>
     </ContentPage.Resources>
 
-    <Grid ColumnDefinitions="280, *" Padding="16" ColumnSpacing="16">
+    <!-- Shrunk Sidebar to 240px -->
+    <Grid ColumnDefinitions="240, *" Padding="12" ColumnSpacing="16">
 
         <!-- SIDEBAR -->
-        <Border Grid.Column="0" BackgroundColor="{StaticResource CardColor}" Stroke="{StaticResource BorderColor}" StrokeThickness="1" StrokeShape="RoundRectangle 12" Padding="16">
+        <Border Grid.Column="0" BackgroundColor="{StaticResource CardColor}" Stroke="{StaticResource BorderColor}" StrokeThickness="1" StrokeShape="RoundRectangle 12" Padding="12">
             <Grid RowDefinitions="Auto, *">
-                <Grid Grid.Row="0" RowDefinitions="Auto, Auto" RowSpacing="12" Margin="0,0,0,16">
-                    <Label Grid.Row="0" Text="Playlists" TextColor="{StaticResource TitleColor}" FontSize="20" FontAttributes="Bold" HorizontalOptions="Center" />
+                <Grid Grid.Row="0" RowDefinitions="Auto, Auto" RowSpacing="12" Margin="0,0,0,12">
+                    <Label Grid.Row="0" Text="Playlists" TextColor="{StaticResource TitleColor}" FontSize="18" FontAttributes="Bold" HorizontalOptions="Center" />
 
-                    <!-- Make sure these extensions match your files! (.svg or .png) -->
                     <HorizontalStackLayout Grid.Row="1" Spacing="8" HorizontalOptions="Center">
-                        <ImageButton Source="upload_icon.svg" Style="{StaticResource IconImageButton}" ToolTipProperties.Text="Export" />
-                        <ImageButton Source="download_icon.svg" Style="{StaticResource IconImageButton}" ToolTipProperties.Text="Import" />
-                        <ImageButton Source="plus_icon.svg" Command="{Binding AddNewPlaylistCommand}" Style="{StaticResource IconImageButton}" ToolTipProperties.Text="New List" />
+                        <ImageButton Source="upload_icon.png" Style="{StaticResource IconImageButton}" ToolTipProperties.Text="Export" />
+                        <ImageButton Source="download_icon.png" Style="{StaticResource IconImageButton}" ToolTipProperties.Text="Import" />
+                        <ImageButton Source="plus_icon.png" Command="{Binding AddNewPlaylistCommand}" Style="{StaticResource IconImageButton}" ToolTipProperties.Text="New List" />
                     </HorizontalStackLayout>
                     <BoxView Grid.Row="1" HeightRequest="1" Color="{StaticResource BorderColor}" VerticalOptions="End" Margin="0,0,0,-8" />
                 </Grid>
@@ -55,10 +56,11 @@
                 <CollectionView Grid.Row="1" ItemsSource="{Binding Playlists}" SelectedItem="{Binding SelectedPlaylist, Mode=TwoWay}" SelectionMode="Single">
                     <CollectionView.ItemTemplate>
                         <DataTemplate x:DataType="models:Playlist">
-                            <Border BackgroundColor="#1c2128" Stroke="Transparent" StrokeShape="RoundRectangle 12" Margin="0,0,0,12" Padding="8">
-                                <Grid RowDefinitions="112, Auto, Auto" RowSpacing="4">
-                                    <Image Grid.Row="0" Source="{Binding IconUrl}" Aspect="AspectFill" HeightRequest="112" WidthRequest="112" HorizontalOptions="Center" />
-                                    <Label Grid.Row="1" Text="{Binding Name}" HorizontalOptions="Center" FontSize="14" LineBreakMode="TailTruncation" />
+                            <Border BackgroundColor="#1c2128" Stroke="Transparent" StrokeShape="RoundRectangle 12" Margin="0,0,0,12" Padding="10">
+                                <Grid RowDefinitions="Auto, Auto, Auto" RowSpacing="6">
+                                    <!-- Made Image strictly square and slightly larger relative to the card -->
+                                    <Image Grid.Row="0" Source="{Binding IconUrl}" Aspect="AspectFill" HeightRequest="140" WidthRequest="140" HorizontalOptions="Center" />
+                                    <Label Grid.Row="1" Text="{Binding Name}" HorizontalOptions="Center" FontSize="13" FontAttributes="Bold" LineBreakMode="TailTruncation" />
                                     <Label Grid.Row="2" Text="{Binding ItemCount, StringFormat='{0} items'}" HorizontalOptions="Center" TextColor="{StaticResource MutedColor}" FontSize="10" />
                                 </Grid>
                             </Border>
@@ -72,51 +74,48 @@
         <Border Grid.Column="1" BackgroundColor="{StaticResource CardColor}" Stroke="{StaticResource BorderColor}" StrokeThickness="1" StrokeShape="RoundRectangle 12" Padding="16">
             <Grid RowDefinitions="Auto, Auto, *">
                 <Grid Grid.Row="0" ColumnDefinitions="*, Auto" Margin="0,0,0,12">
-                    <Label Grid.Column="0" Text="Multi-List Editor" TextColor="{StaticResource TitleColor}" FontSize="22" FontAttributes="Bold" />
+                    <Label Grid.Column="0" Text="Multi-List Editor" TextColor="{StaticResource TitleColor}" FontSize="20" FontAttributes="Bold" />
                     <HorizontalStackLayout Grid.Column="1" Spacing="12" VerticalOptions="Center">
                         <VerticalStackLayout VerticalOptions="Center">
-                            <Label Text="{Binding SelectedPlaylist.ItemCount, StringFormat='{0} items'}" TextColor="{StaticResource MutedColor}" FontSize="13" HorizontalOptions="End"/>
-                            <Label Text="00:00" TextColor="{StaticResource MutedColor}" FontSize="13" HorizontalOptions="End"/>
+                            <Label Text="{Binding SelectedPlaylist.ItemCount, StringFormat='{0} items'}" TextColor="{StaticResource MutedColor}" FontSize="12" HorizontalOptions="End"/>
+                            <Label Text="00:00" TextColor="{StaticResource MutedColor}" FontSize="12" HorizontalOptions="End"/>
                         </VerticalStackLayout>
-                        <ImageButton Source="settings.svg" Style="{StaticResource IconImageButton}" ToolTipProperties.Text="Settings" />
+                        <ImageButton Source="settings_icon.png" Style="{StaticResource IconImageButton}" ToolTipProperties.Text="Settings" />
                     </HorizontalStackLayout>
                 </Grid>
 
-                <Grid Grid.Row="1" ColumnDefinitions="Auto, *" Margin="0,0,0,16" HeightRequest="48">
+                <Grid Grid.Row="1" ColumnDefinitions="Auto, *" Margin="0,0,0,16" HeightRequest="44">
                     <HorizontalStackLayout Grid.Column="0" Spacing="8">
-                        <ImageButton Source="play_icon.svg" Style="{StaticResource IconImageButton}" ToolTipProperties.Text="Play" />
-                        <ImageButton Source="shuffle_icon.svg" Style="{StaticResource IconImageButton}" ToolTipProperties.Text="Shuffle" />
+                        <ImageButton Source="play_icon.png" Style="{StaticResource IconImageButton}" ToolTipProperties.Text="Play" />
+                        <ImageButton Source="shuffle_icon.png" Style="{StaticResource IconImageButton}" ToolTipProperties.Text="Shuffle" />
                     </HorizontalStackLayout>
 
                     <HorizontalStackLayout Grid.Column="1" Spacing="8" HorizontalOptions="End">
-                        <ImageButton Source="plus_icon.svg" Style="{StaticResource IconImageButton}" ToolTipProperties.Text="Add Item" />
-                        <ImageButton Source="clipboard_icon.svg" Style="{StaticResource IconImageButton}" ToolTipProperties.Text="Paste" />
-                        <ImageButton Source="list_icon.svg" Style="{StaticResource IconImageButton}" ToolTipProperties.Text="Import YT" />
+                        <ImageButton Source="plus_icon.png" Style="{StaticResource IconImageButton}" ToolTipProperties.Text="Add Item" />
+                        <ImageButton Source="clipboard_icon.png" Style="{StaticResource IconImageButton}" ToolTipProperties.Text="Paste" />
+                        <ImageButton Source="list_icon.png" Style="{StaticResource IconImageButton}" ToolTipProperties.Text="Import YT" />
                     </HorizontalStackLayout>
                 </Grid>
 
-                <!-- LIST ITEMS (With Hover logic) -->
+                <!-- LIST ITEMS (Increased Bottom Margin for Spacing) -->
                 <CollectionView Grid.Row="2" ItemsSource="{Binding SelectedPlaylist.Items}" SelectionMode="None">
                     <CollectionView.ItemTemplate>
                         <DataTemplate x:DataType="models:PlaylistItem">
 
-                            <!-- The row container. Detects mouse enter/exit -->
-                            <Border BackgroundColor="#1c2128" Stroke="{StaticResource BorderColor}" StrokeThickness="1" StrokeShape="RoundRectangle 8" Padding="10" Margin="0,0,0,8">
+                            <!-- Increased Margin from 8 to 12 -->
+                            <Border BackgroundColor="#1c2128" Stroke="{StaticResource BorderColor}" StrokeThickness="1" StrokeShape="RoundRectangle 8" Padding="12" Margin="0,0,0,12">
                                 <Border.GestureRecognizers>
                                     <PointerGestureRecognizer PointerEnteredCommand="{Binding PointerEnteredCommand}" PointerExitedCommand="{Binding PointerExitedCommand}" />
                                 </Border.GestureRecognizers>
 
-                                <Grid ColumnDefinitions="Auto, *, Auto" ColumnSpacing="12">
+                                <Grid ColumnDefinitions="Auto, *, Auto" ColumnSpacing="16">
+                                    <!-- Increased spacing between icon and text -->
 
-                                    <!-- Thumbnail and Overlapping Checkbox -->
                                     <Grid Grid.Column="0" WidthRequest="44" HeightRequest="44">
-                                        <!-- The Thumbnail Image -->
                                         <Image Source="dotnet_bot.png" Aspect="AspectFill" />
 
-                                        <!-- The Checkbox placed exactly over the image (Top Left). 
-                                             It only shows if hovered OR if it's already checked -->
                                         <CheckBox IsChecked="{Binding IsSelected}" Color="{StaticResource AccentColor}" 
-                                                  HorizontalOptions="Start" VerticalOptions="Start" Margin="-8,-8,0,0">
+                                                  HorizontalOptions="Start" VerticalOptions="Start" Margin="0,0,0,0">
                                             <CheckBox.Style>
                                                 <Style TargetType="CheckBox">
                                                     <Setter Property="Opacity" Value="0" />
@@ -133,13 +132,11 @@
                                         </CheckBox>
                                     </Grid>
 
-                                    <!-- Texts -->
-                                    <VerticalStackLayout Grid.Column="1" VerticalOptions="Center">
-                                        <Label Text="{Binding Title}" FontAttributes="Bold" />
+                                    <VerticalStackLayout Grid.Column="1" VerticalOptions="Center" Spacing="2">
+                                        <Label Text="{Binding Title}" FontSize="14" FontAttributes="Bold" />
                                         <Label Text="{Binding DisplayUrl}" TextColor="{StaticResource MutedColor}" FontSize="12" />
                                     </VerticalStackLayout>
 
-                                    <!-- Action Buttons (Only show on Hover) -->
                                     <HorizontalStackLayout Grid.Column="2" Spacing="6" VerticalOptions="Center">
                                         <HorizontalStackLayout.Style>
                                             <Style TargetType="HorizontalStackLayout">
@@ -152,8 +149,8 @@
                                             </Style>
                                         </HorizontalStackLayout.Style>
 
-                                        <ImageButton Source="edit_2_icon.svg" BackgroundColor="{StaticResource CardColor}" BorderColor="{StaticResource BorderColor}" BorderWidth="1" WidthRequest="32" HeightRequest="32" Padding="6" CornerRadius="6" />
-                                        <ImageButton Source="trash_2_icon.svg" BackgroundColor="{StaticResource CardColor}" BorderColor="{StaticResource BorderColor}" BorderWidth="1" WidthRequest="32" HeightRequest="32" Padding="6" CornerRadius="6" />
+                                        <ImageButton Source="edit_2_icon.png" BackgroundColor="{StaticResource CardColor}" BorderColor="{StaticResource BorderColor}" BorderWidth="1" WidthRequest="32" HeightRequest="32" Padding="6" CornerRadius="6" />
+                                        <ImageButton Source="trash_2_icon.png" BackgroundColor="{StaticResource CardColor}" BorderColor="{StaticResource BorderColor}" BorderWidth="1" WidthRequest="32" HeightRequest="32" Padding="6" CornerRadius="6" />
                                     </HorizontalStackLayout>
 
                                 </Grid>
