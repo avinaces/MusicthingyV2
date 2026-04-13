@@ -7,7 +7,6 @@
     Title="Musicthingy">
 
     <ShellContent
-        Title="Home"
         ContentTemplate="{DataTemplate local:MainPage}"
         Route="MainPage" />
 
