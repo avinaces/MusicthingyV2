@@ -13,12 +13,14 @@ namespace Musicthingy
                 {
                     fonts.AddFont("OpenSans-Regular.ttf", "OpenSansRegular");
                     fonts.AddFont("OpenSans-Semibold.ttf", "OpenSansSemibold");
-                    fonts.AddFont("Roboto-VariableFont_wdth,wght.ttf", "Roboto");
+                    fonts.AddFont("Roboto_VariableFont_wdth.ttf", "Roboto");
                 });
 
 #if DEBUG
     		builder.Logging.AddDebug();
 #endif
+
+
 
             return builder.Build();
         }
