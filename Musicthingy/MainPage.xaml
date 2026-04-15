@@ -63,15 +63,13 @@
                     <BoxView Grid.Row="1" HeightRequest="1" Color="{StaticResource BorderColor}" VerticalOptions="End" Margin="0,0,0,-8" />
                 </Grid>
 
-                <CollectionView Grid.Row="1" ItemsSource="{Binding Playlists}" SelectedItem="{Binding SelectedPlaylist, Mode=TwoWay}" SelectionMode="Single" ItemSizingStrategy="MeasureAllItems">
-                    <CollectionView.ItemsLayout>
-                        <LinearItemsLayout Orientation="Vertical" ItemSpacing="6" />
-                    </CollectionView.ItemsLayout>
+                <CollectionView Grid.Row="1" ItemsSource="{Binding Playlists}" SelectedItem="{Binding SelectedPlaylist, Mode=TwoWay}" SelectionMode="Single" ItemSizingStrategy="MeasureFirstItem">
+
 
                     <CollectionView.ItemTemplate>
                         <DataTemplate x:DataType="models:Playlist">
                             <!-- Removed Padding from Border, moved to inner Grid -->
-                            <Border StrokeShape="RoundRectangle 12" Padding="0">
+                            <Border StrokeShape="RoundRectangle 12" Padding="0" Margin="0,0,0,6">
 
                                 <!-- ONLY handles Selected/Normal -->
                                 <VisualStateManager.VisualStateGroups>
@@ -96,17 +94,10 @@
                                 </Border.GestureRecognizers>
 
                                 <Grid>
-                                    <!-- LAYER 1: The Universal Hover Overlay & Shadow -->
                                     <Border BackgroundColor="White" Opacity="0" Stroke="Transparent" StrokeShape="RoundRectangle 12" InputTransparent="True">
                                         <Border.Triggers>
                                             <DataTrigger TargetType="Border" Binding="{Binding IsHovered}" Value="True">
                                                 <Setter Property="Opacity" Value="0.06" />
-                                                <!-- Brightens any background naturally -->
-                                                <Setter Property="Shadow">
-                                                    <Setter.Value>
-                                                        <Shadow Brush="Black" Offset="0,4" Radius="8" Opacity="0.5" />
-                                                    </Setter.Value>
-                                                </Setter>
                                             </DataTrigger>
                                         </Border.Triggers>
                                     </Border>
@@ -177,15 +168,13 @@
                 </Grid>
 
                 <!-- LIST ITEMS -->
-                <CollectionView Grid.Row="2" ItemsSource="{Binding SelectedPlaylist.Items}" SelectionMode="Single">
-                    <CollectionView.ItemsLayout>
-                        <LinearItemsLayout Orientation="Vertical" ItemSpacing="4" />
-                    </CollectionView.ItemsLayout>
+                <CollectionView Grid.Row="2" ItemsSource="{Binding SelectedPlaylist.Items}" SelectionMode="Single" ItemSizingStrategy="MeasureFirstItem">
+
 
                     <CollectionView.ItemTemplate>
                         <DataTemplate x:DataType="models:PlaylistItem">
                             <!-- Removed Padding from Border, moved to inner Grid -->
-                            <Border StrokeShape="RoundRectangle 8" Padding="0">
+                            <Border StrokeShape="RoundRectangle 8" Padding="0" Margin="0,0,0,4">
 
                                 <!-- ONLY handles Selected/Normal -->
                                 <VisualStateManager.VisualStateGroups>
@@ -210,16 +199,11 @@
                                 </Border.GestureRecognizers>
 
                                 <Grid>
-                                    <!-- LAYER 1: The Universal Hover Overlay & Shadow -->
+                                    <!-- LAYER 1: The Universal Hover Overlay -->
                                     <Border BackgroundColor="White" Opacity="0" Stroke="Transparent" StrokeShape="RoundRectangle 8" InputTransparent="True">
                                         <Border.Triggers>
                                             <DataTrigger TargetType="Border" Binding="{Binding IsHovered}" Value="True">
                                                 <Setter Property="Opacity" Value="0.08" />
-                                                <Setter Property="Shadow">
-                                                    <Setter.Value>
-                                                        <Shadow Brush="#000000" Offset="0,4" Radius="8" Opacity="0.5" />
-                                                    </Setter.Value>
-                                                </Setter>
                                             </DataTrigger>
                                         </Border.Triggers>
                                     </Border>
