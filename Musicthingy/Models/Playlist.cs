@@ -1,6 +1,7 @@
-﻿using System.Collections.ObjectModel;
+﻿using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
+using System.Collections.ObjectModel;
 using System.Text.Json.Serialization;
-using CommunityToolkit.Mvvm.ComponentModel;
 
 namespace Musicthingy.Models;
 
@@ -34,31 +35,51 @@ public partial class Playlist : ObservableObject
     [JsonPropertyName("source")]
     public partial string Source { get; set; } = string.Empty;
 
+    // Add this to your Playlist.cs class
+    [ObservableProperty]
+    public partial bool IsHovered { get; set; }
+
+    [RelayCommand]
+    private void OnPointerEntered() => IsHovered = true;
+
+    [RelayCommand]
+    private void OnPointerExited() => IsHovered = false;
+
     [JsonIgnore]
     public int ItemCount => Items.Count;
+
+    private ImageSource? _iconImageSource;
 
     [JsonIgnore]
     public ImageSource? IconImageSource
     {
         get
         {
-            if (string.IsNullOrEmpty(IconUrl)) return ImageSource.FromFile("dotnet_bot.png");
+            if (_iconImageSource != null) return _iconImageSource;
 
-            if (IconUrl.StartsWith("data:image"))
+            if (string.IsNullOrEmpty(IconUrl))
+            {
+                // Passing 140 because XAML Playlist Image has WidthRequest="140"
+                _iconImageSource = IconGenerator.GenerateIcon(Name, 12, 140);  //TODO: Just guessing the uiSize is BAD
+            }
+            else if (IconUrl.StartsWith("data:image"))
             {
                 var base64Data = IconUrl.Substring(IconUrl.IndexOf(',') + 1);
                 var imageBytes = Convert.FromBase64String(base64Data);
-                return ImageSource.FromStream(() => new MemoryStream(imageBytes));
+                _iconImageSource = ImageSource.FromStream(() => new MemoryStream(imageBytes));
+            }
+            else
+            {
+                _iconImageSource = ImageSource.FromFile(IconUrl);
             }
 
-            return ImageSource.FromFile(IconUrl);
+            return _iconImageSource;
         }
     }
 
-    // Logic remains the same: notify the UI that the image source 
-    // needs to re-evaluate when the string URL changes.
     partial void OnIconUrlChanged(string value)
     {
+        _iconImageSource = null;
         OnPropertyChanged(nameof(IconImageSource));
     }
 }

@@ -18,24 +18,41 @@ public partial class PlaylistItem : ObservableObject
 
     public string DisplayUrl => string.IsNullOrEmpty(Url) ? "" : new Uri(Url).Host;
 
-
-    //TODO: This is very bad for peformance, fix it
+    // Cache the image so it only generates ONCE!
+    private ImageSource? _itemIconSource;
     public ImageSource ItemIconSource
     {
         get
         {
-            if (string.IsNullOrEmpty(IconUrl)) return IconGenerator.GenerateFallbackIcon(Title, 8);
-            if (IconUrl.StartsWith("data:image"))
+            if (_itemIconSource != null) return _itemIconSource;
+
+            if (string.IsNullOrEmpty(IconUrl))
+            {
+                // Passing 36 because XAML Image has WidthRequest="36"
+                _itemIconSource = IconGenerator.GenerateIcon(Title, 8, 36); //TODO: Just guessing the uiSize is BAD
+            }
+            else if (IconUrl.StartsWith("data:image"))
             {
                 var base64Data = IconUrl.Substring(IconUrl.IndexOf(',') + 1);
-                return ImageSource.FromStream(() => new MemoryStream(Convert.FromBase64String(base64Data)));
+                _itemIconSource = ImageSource.FromStream(() => new MemoryStream(Convert.FromBase64String(base64Data)));
             }
-            return ImageSource.FromFile(IconUrl);
+            else
+            {
+                _itemIconSource = ImageSource.FromFile(IconUrl);
+            }
+
+            return _itemIconSource;
         }
+    }
+
+    // Reset the cache if the IconUrl ever changes
+    partial void OnIconUrlChanged(string value)
+    {
+        _itemIconSource = null;
+        OnPropertyChanged(nameof(ItemIconSource));
     }
 
     public bool HasTags => Tags.Count > 0;
 
-    [RelayCommand] private void OnPointerEntered() => IsHovered = true;
-    [RelayCommand] private void OnPointerExited() => IsHovered = false;
+    [RelayCommand] private void OnPointerEntered() => IsHovered = true; [RelayCommand] private void OnPointerExited() => IsHovered = false;
 }

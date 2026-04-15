@@ -1,8 +1,11 @@
-﻿namespace Musicthingy.Models;
+﻿using Microsoft.Maui.Devices;
+
+namespace Musicthingy.Models;
 
 public static class IconGenerator
 {
-    public static ImageSource GenerateFallbackIcon(string seed, int logicalSize = 8, int scale = 8)
+    // Replaced 'scale' with 'uiSize'
+    public static ImageSource GenerateIcon(string seed, int logicalSize, double uiSize)
     {
         if (string.IsNullOrEmpty(seed)) seed = "default";
 
@@ -13,12 +16,22 @@ public static class IconGenerator
         int brightLight = 68 + (int)(hash % 18);
         int darkLight = 34 + (int)(hash % 16);
 
-        Color bgColor = Color.FromHsla(hue / 360.0, sat / 100.0, bgLight / 100.0);
         Color bright = Color.FromHsla(((hue + 180) % 360) / 360.0, sat / 100.0, brightLight / 100.0);
         Color dark = Color.FromHsla(((hue + 180) % 360) / 360.0, sat / 100.0, darkLight / 100.0);
 
-        // Calculate actual pixel size (e.g. 8 * 8 = 64px)
-        int actualSize = logicalSize * scale;
+        // Get the actual screen density (e.g., Retina displays are 2x or 3x)
+        double density = 1.0;
+        try
+        {
+            density = DeviceDisplay.Current.MainDisplayInfo.Density;
+            if (density <= 0) density = 1.0;
+        }
+        catch { }
+
+        // Calculate the exact physical pixels needed so the OS doesn't scale/blur it
+        int actualSize = (int)Math.Ceiling(uiSize * density);
+        if (actualSize < logicalSize) actualSize = logicalSize;
+
         int byteCount = actualSize * actualSize * 4;
         byte[] bmpBytes = new byte[54 + byteCount];
 
@@ -36,13 +49,16 @@ public static class IconGenerator
         int offset = 54;
         int half = logicalSize / 2;
 
-        // Draw scaled pixels!
+        // Draw physical pixels using nearest-neighbor calculation
         for (uint y = 0; y < actualSize; y++)
         {
-            uint logicalY = y / (uint)scale;
+            // Map the physical Y pixel back to the logical grid
+            uint logicalY = (uint)(y * logicalSize / actualSize);
             for (uint x = 0; x < actualSize; x++)
             {
-                uint logicalX = x / (uint)scale;
+                // Map the physical X pixel back to the logical grid
+                uint logicalX = (uint)(x * logicalSize / actualSize);
+
                 uint mirrorX = logicalX < half ? logicalX : (uint)(logicalSize - 1 - logicalX);
                 uint noise = HashNoise(hash, mirrorX, logicalY);
                 Color pixelColor = (noise % 100) < 50 ? bright : dark;

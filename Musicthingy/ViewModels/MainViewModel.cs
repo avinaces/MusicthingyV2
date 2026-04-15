@@ -24,7 +24,7 @@ public partial class MainViewModel : ObservableObject
     [RelayCommand]
     private void AddNewPlaylist()
     {
-        var newList = new Playlist { Name = $"New Playlist {Playlists.Count + 1}", IconUrl = "dotnet_bot.png" };
+        var newList = new Playlist { Name = $"New Playlist {Playlists.Count + 1}" };
         Playlists.Add(newList);
         SelectedPlaylist = newList;
     }
@@ -80,7 +80,6 @@ public partial class MainViewModel : ObservableObject
         var dummyList = new Playlist
         {
             Name = "Chill Vibes",
-            IconUrl = "dotnet_bot.png",
             CreatedAt = DateTime.Now
         };
 
@@ -88,7 +87,7 @@ public partial class MainViewModel : ObservableObject
         dummyList.Items.Add(new PlaylistItem { Title = "Synthwave Mix", Url = "https://youtube.com/watch?v=MVPTGNGiI" });
 
         Playlists.Add(dummyList);
-        Playlists.Add(new Playlist { Name = "Workout", IconUrl = "dotnet_bot.png", CreatedAt = DateTime.Now });
+        Playlists.Add(new Playlist { Name = "Workout", CreatedAt = DateTime.Now });
 
         SelectedPlaylist = dummyList;
     }
