@@ -2,6 +2,7 @@
 using CommunityToolkit.Mvvm.Input;
 using System.Collections.ObjectModel;
 using System.Text.Json.Serialization;
+using Musicthingy.Services; // Ensure namespace for ImageScalingService
 
 namespace Musicthingy.Models;
 
@@ -35,7 +36,6 @@ public partial class Playlist : ObservableObject
     [JsonPropertyName("source")]
     public partial string Source { get; set; } = string.Empty;
 
-    // Add this to your Playlist.cs class
     [ObservableProperty]
     public partial bool IsHovered { get; set; }
 
@@ -57,24 +57,42 @@ public partial class Playlist : ObservableObject
         {
             if (_iconImageSource != null) return _iconImageSource;
 
-            if (string.IsNullOrEmpty(IconUrl))
-            {
-                // Passing 140 because XAML Playlist Image has WidthRequest="140"
-                _iconImageSource = IconGenerator.GenerateIcon(Name, 12, 140);  //TODO: Just guessing the uiSize is BAD
-            }
-            else if (IconUrl.StartsWith("data:image"))
-            {
-                var base64Data = IconUrl.Substring(IconUrl.IndexOf(',') + 1);
-                var imageBytes = Convert.FromBase64String(base64Data);
-                _iconImageSource = ImageSource.FromStream(() => new MemoryStream(imageBytes));
-            }
-            else
-            {
-                _iconImageSource = ImageSource.FromFile(IconUrl);
-            }
+            GenerateIconAsync();
 
-            return _iconImageSource;
+            return null;
         }
+    }
+
+    private async void GenerateIconAsync()
+    {
+        ImageSource? source = null;
+
+        if (string.IsNullOrEmpty(IconUrl))
+        {
+            // Playlist visual size usually 140
+            source = await Task.Run(() => IconGenerator.GenerateIcon(Name, 12, 140));
+        }
+        else if (IconUrl.StartsWith("data:image"))
+        {
+            var base64Data = IconUrl.Substring(IconUrl.IndexOf(',') + 1);
+            var imageBytes = Convert.FromBase64String(base64Data);
+            source = await ImageScalingService.ScaleIfSmallAsync(imageBytes, 140)
+                     ?? ImageSource.FromStream(() => new MemoryStream(imageBytes));
+        }
+        else if (File.Exists(IconUrl))
+        {
+            var imageBytes = await File.ReadAllBytesAsync(IconUrl);
+            source = await ImageScalingService.ScaleIfSmallAsync(imageBytes, 140)
+                     ?? ImageSource.FromStream(() => new MemoryStream(imageBytes));
+        }
+        else
+        {
+            // Fallback for MauiAssets or paths that aren't raw files
+            source = ImageSource.FromFile(IconUrl);
+        }
+
+        _iconImageSource = source;
+        MainThread.BeginInvokeOnMainThread(() => OnPropertyChanged(nameof(IconImageSource)));
     }
 
     partial void OnIconUrlChanged(string value)
