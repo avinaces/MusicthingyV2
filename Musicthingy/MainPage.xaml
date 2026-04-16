@@ -3,7 +3,8 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
              xmlns:models="clr-namespace:Musicthingy.Models"
              x:Class="Musicthingy.MainPage"
-             BackgroundColor="{StaticResource BgColor}">
+             BackgroundColor="{StaticResource BgColor}"
+             xmlns:views="clr-namespace:Musicthingy.Views">
 
     <ContentPage.Resources>
         <Color x:Key="BgColor">#0d1117</Color>
@@ -44,7 +45,7 @@
         </Style>
     </ContentPage.Resources>
 
-    <Grid ColumnDefinitions="250, *" Padding="16" ColumnSpacing="16">
+    <Grid ColumnDefinitions="250, *, 350" Padding="16" ColumnSpacing="16">
 
         <!-- SIDEBAR -->
         <Border Grid.Column="0" Background="{StaticResource CardColor}" Stroke="{StaticResource BorderColor}" StrokeThickness="1" StrokeShape="RoundRectangle 12" Padding="12">
@@ -160,7 +161,7 @@
                 </Grid>
 
                 <!-- LIST ITEMS -->
-                <CollectionView Grid.Row="2" ItemsSource="{Binding SelectedPlaylist.Items}" SelectionMode="Single" ItemSizingStrategy="MeasureFirstItem">
+                <CollectionView Grid.Row="2" ItemsSource="{Binding SelectedPlaylist.Items}" SelectedItem="{Binding CurrentTrack, Mode=TwoWay}" SelectionMode="Single" ItemSizingStrategy="MeasureFirstItem">
                     <CollectionView.ItemTemplate>
                         <DataTemplate x:DataType="models:PlaylistItem">
                             <Grid Margin="0,0,0,4">
@@ -294,5 +295,6 @@
 
             </Grid>
         </Border>
+        <views:PlayerPaneView Grid.Column="2" />
     </Grid>
 </ContentPage>

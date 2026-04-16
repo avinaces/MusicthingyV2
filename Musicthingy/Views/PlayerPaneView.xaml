@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentView xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             xmlns:toolkit="http://schemas.microsoft.com/dotnet/2022/maui/toolkit"
+             x:Class="Musicthingy.Views.PlayerPaneView">
+
+    <Border Background="#161b22" Stroke="#30363d" StrokeThickness="1" StrokeShape="RoundRectangle 12" Padding="16">
+        <Grid RowDefinitions="Auto, Auto, *">
+
+            <Label Grid.Row="1" Text="{Binding CurrentTrack.Title}" TextColor="#adcff0" FontSize="20" FontAttributes="Bold" HorizontalOptions="Center" Margin="0,0,0,16" IsVisible="{Binding IsMediaSelected}" />
+
+            <Border Grid.Row="2" BackgroundColor="#0d1117" StrokeThickness="0" HeightRequest="220" VerticalOptions="Start">
+                <Border.StrokeShape>
+                    <RoundRectangle CornerRadius="8" />
+                </Border.StrokeShape>
+
+                <Grid>
+                    <!-- ONE NATIVE PLAYER FOR EVERYTHING (YouTube & Direct Files) -->
+                    <toolkit:MediaElement
+                        x:Name="MainPlayer"
+                        Source="{Binding CurrentMediaSource}"
+                        ShouldAutoPlay="True"
+                        ShouldShowPlaybackControls="True"
+                        IsVisible="{Binding IsMediaSelected}"
+                        HeightRequest="220"
+                        HorizontalOptions="Fill"
+                        MediaEnded="MainPlayer_MediaEnded"
+                        MediaOpened="MainPlayer_MediaOpened"
+                        MetadataTitle="{Binding CurrentTrack.Title}" /> <!-- For some reason "MetadataTitle" is actually the artist on Windows -->
+                </Grid>
+            </Border>
+
+        </Grid>
+    </Border>
+</ContentView>
