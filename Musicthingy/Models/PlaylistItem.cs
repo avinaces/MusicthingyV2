@@ -16,9 +16,23 @@ public partial class PlaylistItem : ObservableObject
     [ObservableProperty] public partial bool IsHovered { get; set; }
     [ObservableProperty] public partial bool IsSelected { get; set; }
 
+    public bool HasTags => Tags.Count > 0;
+
+    // Maximum of 4 visual tags for the list view
+    public string Tag1 => Tags.Count > 0 ? Tags[0] : "";
+    public bool HasTag1 => Tags.Count > 0;
+
+    public string Tag2 => Tags.Count > 1 ? Tags[1] : "";
+    public bool HasTag2 => Tags.Count > 1;
+
+    public string Tag3 => Tags.Count > 2 ? Tags[2] : "";
+    public bool HasTag3 => Tags.Count > 2;
+
+    public string Tag4 => Tags.Count > 3 ? Tags[3] : "";
+    public bool HasTag4 => Tags.Count > 3;
+
     public string DisplayUrl => string.IsNullOrEmpty(Url) ? "" : new Uri(Url).Host;
 
-    // Cache the image so it only generates ONCE!
     private ImageSource? _itemIconSource;
     public ImageSource ItemIconSource
     {
@@ -26,33 +40,35 @@ public partial class PlaylistItem : ObservableObject
         {
             if (_itemIconSource != null) return _itemIconSource;
 
-            if (string.IsNullOrEmpty(IconUrl))
-            {
-                // Passing 36 because XAML Image has WidthRequest="36"
-                _itemIconSource = IconGenerator.GenerateIcon(Title, 8, 36); //TODO: Just guessing the uiSize is BAD
-            }
-            else if (IconUrl.StartsWith("data:image"))
-            {
-                var base64Data = IconUrl.Substring(IconUrl.IndexOf(',') + 1);
-                _itemIconSource = ImageSource.FromStream(() => new MemoryStream(Convert.FromBase64String(base64Data)));
-            }
-            else
-            {
-                _itemIconSource = ImageSource.FromFile(IconUrl);
-            }
+            // Kick off the generation in the background so the UI thread doesn't wait
+            GenerateIconAsync();
 
-            return _itemIconSource;
+            return null;
         }
     }
 
-    // Reset the cache if the IconUrl ever changes
-    partial void OnIconUrlChanged(string value)
+    private async void GenerateIconAsync()
     {
-        _itemIconSource = null;
-        OnPropertyChanged(nameof(ItemIconSource));
-    }
+        ImageSource source;
 
-    public bool HasTags => Tags.Count > 0;
+        if (string.IsNullOrEmpty(IconUrl))
+        {
+            // Run the heavy lifting on a background thread!
+            source = await Task.Run(() => IconGenerator.GenerateIcon(Title, 8, 36));
+        }
+        else if (IconUrl.StartsWith("data:image"))
+        {
+            var base64Data = IconUrl.Substring(IconUrl.IndexOf(',') + 1);
+            source = await Task.Run(() => ImageSource.FromStream(() => new MemoryStream(Convert.FromBase64String(base64Data))));
+        }
+        else
+        {
+            source = ImageSource.FromFile(IconUrl);
+        }
+
+        _itemIconSource = source;
+        MainThread.BeginInvokeOnMainThread(() => OnPropertyChanged(nameof(ItemIconSource)));
+    }
 
     [RelayCommand] private void OnPointerEntered() => IsHovered = true; [RelayCommand] private void OnPointerExited() => IsHovered = false;
 }

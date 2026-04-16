@@ -8,7 +8,6 @@
     <ContentPage.Resources>
         <Color x:Key="BgColor">#0d1117</Color>
         <Color x:Key="CardColor">#161b22</Color>
-        <!-- We only need this one hover color for standard buttons -->
         <Color x:Key="CardHoverColor">#1c2128</Color>
         <Color x:Key="AccentColor">#58a6ff</Color>
         <Color x:Key="SelectedBgColor">#374C69</Color>
@@ -22,7 +21,6 @@
             <Setter Property="TextColor" Value="{StaticResource TextColor}" />
         </Style>
 
-        <!-- Applying hover to standard buttons in a global style is best practice so you only write it once -->
         <Style x:Key="IconImageButton" TargetType="ImageButton">
             <Setter Property="BackgroundColor" Value="{StaticResource CardColor}" />
             <Setter Property="CornerRadius" Value="8" />
@@ -53,7 +51,6 @@
             <Grid RowDefinitions="Auto, *">
                 <Grid Grid.Row="0" RowDefinitions="Auto, Auto" RowSpacing="12" Margin="0,0,0,16">
                     <Label Grid.Row="0" Text="Playlists" TextColor="{StaticResource TitleColor}" FontSize="20" FontAttributes="Bold" HorizontalOptions="Center" />
-
                     <HorizontalStackLayout Grid.Row="1" Spacing="8" HorizontalOptions="Center">
                         <ImageButton Source="upload_icon.png" Style="{StaticResource IconImageButton}" />
                         <ImageButton Source="download_icon.png" Command="{Binding ImportPlaylistCommand}" Style="{StaticResource IconImageButton}" />
@@ -64,77 +61,72 @@
                 </Grid>
 
                 <CollectionView Grid.Row="1" ItemsSource="{Binding Playlists}" SelectedItem="{Binding SelectedPlaylist, Mode=TwoWay}" SelectionMode="Single" ItemSizingStrategy="MeasureFirstItem">
-
-
                     <CollectionView.ItemTemplate>
                         <DataTemplate x:DataType="models:Playlist">
-                            <!-- Removed Padding from Border, moved to inner Grid -->
-                            <Border StrokeShape="RoundRectangle 12" Padding="0" Margin="0,0,0,6">
+                            <Grid Margin="0,0,0,6">
 
-                                <!-- ONLY handles Selected/Normal -->
                                 <VisualStateManager.VisualStateGroups>
                                     <VisualStateGroup x:Name="CommonStates">
                                         <VisualState x:Name="Normal">
                                             <VisualState.Setters>
-                                                <Setter Property="Background" Value="#1c2128" />
-                                                <Setter Property="Stroke" Value="Transparent" />
+                                                <Setter TargetName="RootBorder" Property="VisualElement.Background" Value="#1c2128" />
+                                                <Setter TargetName="RootBorder" Property="Border.Stroke" Value="Transparent" />
                                             </VisualState.Setters>
                                         </VisualState>
                                         <VisualState x:Name="Selected">
                                             <VisualState.Setters>
-                                                <Setter Property="Background" Value="{StaticResource SelectedBgColor}" />
-                                                <Setter Property="Stroke" Value="{StaticResource AccentColor}" />
+                                                <Setter TargetName="RootBorder" Property="VisualElement.Background" Value="{StaticResource SelectedBgColor}" />
+                                                <Setter TargetName="RootBorder" Property="Border.Stroke" Value="{StaticResource AccentColor}" />
                                             </VisualState.Setters>
                                         </VisualState>
                                     </VisualStateGroup>
                                 </VisualStateManager.VisualStateGroups>
 
-                                <Border.GestureRecognizers>
-                                    <PointerGestureRecognizer PointerEnteredCommand="{Binding PointerEnteredCommand}" PointerExitedCommand="{Binding PointerExitedCommand}" />
-                                </Border.GestureRecognizers>
+                                <!-- Layer 1: Background -->
+                                <Border x:Name="RootBorder" StrokeShape="RoundRectangle 12" Padding="0" Background="#1c2128" Stroke="Transparent" />
 
-                                <Grid>
-                                    <Border BackgroundColor="White" Opacity="0" Stroke="Transparent" StrokeShape="RoundRectangle 12" InputTransparent="True">
+                                <!-- Layer 2: Content (No input blockers) -->
+                                <Grid RowDefinitions="Auto, Auto, Auto, Auto" RowSpacing="0" Padding="10">
+                                    <Image Grid.Row="0" Source="{Binding IconImageSource}" Aspect="AspectFill" HeightRequest="140" WidthRequest="140" HorizontalOptions="Center" Margin="0,0,0,4">
+                                        <Image.Clip>
+                                            <RoundRectangleGeometry CornerRadius="12" Rect="0,0,140,140" />
+                                        </Image.Clip>
+                                    </Image>
+                                    <Label Grid.Row="1" Text="{Binding Name}" HorizontalTextAlignment="Center" FontSize="14" FontAttributes="Bold" />
+
+                                    <HorizontalStackLayout Grid.Row="2" HorizontalOptions="Center" Spacing="6">
+                                        <Border Background="#0d1117" Stroke="{StaticResource BorderColor}" StrokeThickness="1" Padding="8,2">
+                                            <Border.StrokeShape>
+                                                <RoundRectangle CornerRadius="6" />
+                                            </Border.StrokeShape>
+                                            <Label Text="{Binding ItemCount, StringFormat='{0} tracks'}" TextColor="{StaticResource MutedColor}" FontSize="10" />
+                                        </Border>
+                                        <Border Background="#0d1117" Stroke="{StaticResource BorderColor}" StrokeThickness="1" Padding="8,2">
+                                            <Border.StrokeShape>
+                                                <RoundRectangle CornerRadius="6" />
+                                            </Border.StrokeShape>
+                                            <Label Text="2:10:01" TextColor="{StaticResource MutedColor}" FontSize="10" HorizontalOptions="Center" VerticalOptions="Center" LineBreakMode="NoWrap"/>
+                                        </Border>
+                                    </HorizontalStackLayout>
+                                    <Label Grid.Row="3" Text="{Binding CreatedAt, StringFormat='CREATED {0:MMM dd, yyyy, hh:mm tt}'}" HorizontalTextAlignment="Center" TextColor="{StaticResource MutedColor}" FontSize="9" CharacterSpacing="0.5" TextTransform="Uppercase" Margin="0,4,0,0" />
+                                </Grid>
+
+                                <!-- Layer 3: Desktop Hover Catcher -->
+                                <!-- ✅ On Mobile this completely vanishes along with its gesture recognizer, fixing selection entirely! -->
+                                <Grid BackgroundColor="Transparent" IsVisible="{OnPlatform Default=False, WinUI=True, MacCatalyst=True}">
+                                    <Grid.GestureRecognizers>
+                                        <PointerGestureRecognizer PointerEnteredCommand="{Binding PointerEnteredCommand}" PointerExitedCommand="{Binding PointerExitedCommand}" />
+                                    </Grid.GestureRecognizers>
+
+                                    <Border BackgroundColor="White" Opacity="0" InputTransparent="True" StrokeShape="RoundRectangle 12" Stroke="Transparent">
                                         <Border.Triggers>
                                             <DataTrigger TargetType="Border" Binding="{Binding IsHovered}" Value="True">
                                                 <Setter Property="Opacity" Value="0.06" />
                                             </DataTrigger>
                                         </Border.Triggers>
                                     </Border>
-
-                                    <!-- LAYER 2: Actual Content -->
-                                    <Grid RowDefinitions="Auto, Auto, Auto, Auto" RowSpacing="0" Padding="10">
-                                        <Image Grid.Row="0" Source="{Binding IconImageSource}" Aspect="AspectFill" HeightRequest="140" WidthRequest="140" HorizontalOptions="Center" Margin="0,0,0,4">
-                                            <Image.Clip>
-                                                <RoundRectangleGeometry CornerRadius="12" Rect="0,0,140,140" />
-                                            </Image.Clip>
-                                        </Image>
-
-                                        <Label Grid.Row="1" Text="{Binding Name}" HorizontalTextAlignment="Center" FontSize="14" FontAttributes="Bold" />
-
-                                        <HorizontalStackLayout Grid.Row="2" HorizontalOptions="Center" Spacing="6">
-                                            <Border Background="#0d1117" Stroke="{StaticResource BorderColor}" StrokeThickness="1" Padding="8,2">
-                                                <Border.StrokeShape>
-                                                    <RoundRectangle CornerRadius="6" />
-                                                </Border.StrokeShape>
-                                                <Label Text="{Binding ItemCount, StringFormat='{0} tracks'}" TextColor="{StaticResource MutedColor}" FontSize="10" />
-                                            </Border>
-
-                                            <Border Background="#0d1117" Stroke="{StaticResource BorderColor}" StrokeThickness="1" Padding="8,2">
-                                                <Border.StrokeShape>
-                                                    <RoundRectangle CornerRadius="6" />
-                                                </Border.StrokeShape>
-
-                                                <Label Text="2:10:01" TextColor="{StaticResource MutedColor}" FontSize="10" HorizontalOptions="Center" VerticalOptions="Center" LineBreakMode="NoWrap"/>
-
-                                            </Border>
-                                        </HorizontalStackLayout>
-
-                                        <Label Grid.Row="3" Text="{Binding CreatedAt, StringFormat='CREATED {0:MMM dd, yyyy, hh:mm tt}'}" 
-                                               HorizontalTextAlignment="Center" TextColor="{StaticResource MutedColor}" FontSize="9" CharacterSpacing="0.5" TextTransform="Uppercase" Margin="0,4,0,0" />
-                                    </Grid>
                                 </Grid>
-                            </Border>
+                            </Grid>
                         </DataTemplate>
                     </CollectionView.ItemTemplate>
                 </CollectionView>
@@ -169,38 +161,100 @@
 
                 <!-- LIST ITEMS -->
                 <CollectionView Grid.Row="2" ItemsSource="{Binding SelectedPlaylist.Items}" SelectionMode="Single" ItemSizingStrategy="MeasureFirstItem">
-
-
                     <CollectionView.ItemTemplate>
                         <DataTemplate x:DataType="models:PlaylistItem">
-                            <!-- Removed Padding from Border, moved to inner Grid -->
-                            <Border StrokeShape="RoundRectangle 8" Padding="0" Margin="0,0,0,4">
+                            <Grid Margin="0,0,0,4">
 
-                                <!-- ONLY handles Selected/Normal -->
                                 <VisualStateManager.VisualStateGroups>
                                     <VisualStateGroup x:Name="CommonStates">
                                         <VisualState x:Name="Normal">
                                             <VisualState.Setters>
-                                                <Setter Property="Background" Value="#1c2128" />
-                                                <Setter Property="Stroke" Value="{StaticResource BorderColor}" />
+                                                <Setter TargetName="RootBorder" Property="VisualElement.Background" Value="#1c2128" />
+                                                <Setter TargetName="RootBorder" Property="Border.Stroke" Value="{StaticResource BorderColor}" />
+                                                <Setter TargetName="MobileActionButtons" Property="VisualElement.Opacity" Value="0" />
                                             </VisualState.Setters>
                                         </VisualState>
                                         <VisualState x:Name="Selected">
                                             <VisualState.Setters>
-                                                <Setter Property="Background" Value="#253549" />
-                                                <Setter Property="Stroke" Value="{StaticResource AccentColor}" />
+                                                <Setter TargetName="RootBorder" Property="VisualElement.Background" Value="#253549" />
+                                                <Setter TargetName="RootBorder" Property="Border.Stroke" Value="{StaticResource AccentColor}" />
+                                                <Setter TargetName="MobileActionButtons" Property="VisualElement.Opacity" Value="1" />
                                             </VisualState.Setters>
                                         </VisualState>
                                     </VisualStateGroup>
                                 </VisualStateManager.VisualStateGroups>
 
-                                <Border.GestureRecognizers>
-                                    <PointerGestureRecognizer PointerEnteredCommand="{Binding PointerEnteredCommand}" PointerExitedCommand="{Binding PointerExitedCommand}" />
-                                </Border.GestureRecognizers>
+                                <!-- Layer 1: Background -->
+                                <Border x:Name="RootBorder" StrokeShape="RoundRectangle 8" Padding="0" Background="#1c2128" Stroke="{StaticResource BorderColor}" />
 
-                                <Grid>
-                                    <!-- LAYER 1: The Universal Hover Overlay -->
-                                    <Border BackgroundColor="White" Opacity="0" Stroke="Transparent" StrokeShape="RoundRectangle 8" InputTransparent="True">
+                                <!-- Layer 2: Content Grid -->
+                                <Grid ColumnDefinitions="Auto, *, Auto" ColumnSpacing="10" Padding="10">
+                                    <Grid Grid.Column="0" WidthRequest="36" HeightRequest="36" VerticalOptions="Center">
+                                        <Image Source="{Binding ItemIconSource}" Aspect="AspectFill">
+                                            <Image.Clip>
+                                                <RoundRectangleGeometry CornerRadius="6" Rect="0,0,36,36" />
+                                            </Image.Clip>
+                                        </Image>
+                                    </Grid>
+
+                                    <Grid Grid.Column="1" VerticalOptions="Center" RowDefinitions="Auto, Auto" RowSpacing="2">
+                                        <Label Grid.Row="0" Text="{Binding Title}" FontSize="15" FontAttributes="Bold" LineBreakMode="TailTruncation" />
+                                        <FlexLayout Grid.Row="1" Direction="Row" Wrap="Wrap" IsVisible="{Binding HasTags}">
+                                            <!-- Tags -->
+                                            <Border Background="#1c304a" Stroke="{StaticResource AccentColor}" StrokeThickness="1" Padding="8,2" Margin="0,0,2,2" IsVisible="{Binding HasTag1}">
+                                                <Border.StrokeShape>
+                                                    <RoundRectangle CornerRadius="6" />
+                                                </Border.StrokeShape>
+                                                <Label Text="{Binding Tag1}" TextColor="#d9edff" FontSize="11" VerticalOptions="Center" />
+                                            </Border>
+                                            <Border Background="#1c304a" Stroke="{StaticResource AccentColor}" StrokeThickness="1" Padding="8,2" Margin="0,0,2,2" IsVisible="{Binding HasTag2}">
+                                                <Border.StrokeShape>
+                                                    <RoundRectangle CornerRadius="6" />
+                                                </Border.StrokeShape>
+                                                <Label Text="{Binding Tag2}" TextColor="#d9edff" FontSize="11" VerticalOptions="Center" />
+                                            </Border>
+                                            <Border Background="#1c304a" Stroke="{StaticResource AccentColor}" StrokeThickness="1" Padding="8,2" Margin="0,0,2,2" IsVisible="{Binding HasTag3}">
+                                                <Border.StrokeShape>
+                                                    <RoundRectangle CornerRadius="6" />
+                                                </Border.StrokeShape>
+                                                <Label Text="{Binding Tag3}" TextColor="#d9edff" FontSize="11" VerticalOptions="Center" />
+                                            </Border>
+                                            <Border Background="#1c304a" Stroke="{StaticResource AccentColor}" StrokeThickness="1" Padding="8,2" Margin="0,0,2,2" IsVisible="{Binding HasTag4}">
+                                                <Border.StrokeShape>
+                                                    <RoundRectangle CornerRadius="6" />
+                                                </Border.StrokeShape>
+                                                <Label Text="{Binding Tag4}" TextColor="#d9edff" FontSize="11" VerticalOptions="Center" />
+                                            </Border>
+                                        </FlexLayout>
+                                    </Grid>
+
+                                    <!-- ✅ MOBILE ACTION BUTTONS (Only exists on Android/iOS, driven purely by VisualState Selected) -->
+                                    <HorizontalStackLayout x:Name="MobileActionButtons" Grid.Column="2" Spacing="6" VerticalOptions="Center" Opacity="0" IsVisible="{OnPlatform Default=True, WinUI=False, MacCatalyst=False}">
+                                        <ImageButton Source="edit_2_icon.png" Style="{StaticResource IconImageButton}" />
+                                        <ImageButton Source="trash_2_icon.png" BackgroundColor="{StaticResource DangerColor}" BorderColor="Transparent" CornerRadius="8" WidthRequest="36" HeightRequest="36" Padding="8">
+                                            <VisualStateManager.VisualStateGroups>
+                                                <VisualStateGroup x:Name="CommonStates">
+                                                    <VisualState x:Name="Normal"/>
+                                                    <VisualState x:Name="PointerOver">
+                                                        <VisualState.Setters>
+                                                            <Setter Property="BackgroundColor" Value="#e05462" />
+                                                        </VisualState.Setters>
+                                                    </VisualState>
+                                                </VisualStateGroup>
+                                            </VisualStateManager.VisualStateGroups>
+                                        </ImageButton>
+                                    </HorizontalStackLayout>
+                                </Grid>
+
+                                <!-- Layer 3: Desktop Hover & Interaction Overlay -->
+                                <!-- ✅ On Mobile this completely vanishes. No gestures block the CollectionView! -->
+                                <Grid BackgroundColor="Transparent" IsVisible="{OnPlatform Default=False, WinUI=True, MacCatalyst=True}">
+                                    <Grid.GestureRecognizers>
+                                        <PointerGestureRecognizer PointerEnteredCommand="{Binding PointerEnteredCommand}" PointerExitedCommand="{Binding PointerExitedCommand}" />
+                                    </Grid.GestureRecognizers>
+
+                                    <!-- Hover Tint -->
+                                    <Border BackgroundColor="White" Opacity="0" InputTransparent="True" StrokeShape="RoundRectangle 8" Stroke="Transparent">
                                         <Border.Triggers>
                                             <DataTrigger TargetType="Border" Binding="{Binding IsHovered}" Value="True">
                                                 <Setter Property="Opacity" Value="0.08" />
@@ -208,64 +262,32 @@
                                         </Border.Triggers>
                                     </Border>
 
-                                    <!-- LAYER 2: Actual Content -->
-                                    <Grid ColumnDefinitions="Auto, *, Auto" ColumnSpacing="10" Padding="10">
-                                        <Grid Grid.Column="0" WidthRequest="36" HeightRequest="36" VerticalOptions="Center">
-                                            <Image Source="{Binding ItemIconSource}" Aspect="AspectFill">
-                                                <Image.Clip>
-                                                    <RoundRectangleGeometry CornerRadius="6" Rect="0,0,36,36" />
-                                                </Image.Clip>
-                                            </Image>
-                                        </Grid>
+                                    <!-- DESKTOP ACTION BUTTONS -->
+                                    <!-- Rendered directly inside the Desktop overlay so they don't break the hover events when clicked -->
+                                    <HorizontalStackLayout HorizontalOptions="End" VerticalOptions="Center" Spacing="6" Margin="10" Opacity="0">
+                                        <HorizontalStackLayout.Triggers>
+                                            <DataTrigger TargetType="HorizontalStackLayout" Binding="{Binding IsHovered}" Value="True">
+                                                <Setter Property="Opacity" Value="1" />
+                                            </DataTrigger>
+                                        </HorizontalStackLayout.Triggers>
 
-                                        <Grid Grid.Column="1" VerticalOptions="Center" RowDefinitions="Auto, Auto" RowSpacing="2">
-                                            <Label Grid.Row="0" Text="{Binding Title}" FontSize="15" FontAttributes="Bold" LineBreakMode="TailTruncation" />
-
-                                            <FlexLayout Grid.Row="1" BindableLayout.ItemsSource="{Binding Tags}" Direction="Row" Wrap="Wrap" IsVisible="{Binding HasTags}">
-                                                <BindableLayout.ItemTemplate>
-                                                    <DataTemplate x:DataType="x:String">
-                                                        <Border Background="#1c304a" Stroke="{StaticResource AccentColor}" StrokeThickness="1" Padding="8,2" Margin="0,0,1.5,0">
-                                                            <Border.StrokeShape>
-                                                                <RoundRectangle CornerRadius="6" />
-                                                            </Border.StrokeShape>
-                                                            <Label Text="{Binding .}" TextColor="#d9edff" FontSize="11" VerticalOptions="Center" VerticalTextAlignment="Center" LineBreakMode="TailTruncation" />
-                                                        </Border>
-                                                    </DataTemplate>
-                                                </BindableLayout.ItemTemplate>
-                                            </FlexLayout>
-                                        </Grid>
-
-                                        <HorizontalStackLayout Grid.Column="2" Spacing="6" VerticalOptions="Center" >
-                                            <HorizontalStackLayout.Style>
-                                                <Style TargetType="HorizontalStackLayout">
-                                                    <Setter Property="Opacity" Value="0" />
-                                                    <Style.Triggers>
-                                                        <DataTrigger TargetType="HorizontalStackLayout" Binding="{Binding IsHovered}" Value="True">
-                                                            <Setter Property="Opacity" Value="1" />
-                                                        </DataTrigger>
-                                                    </Style.Triggers>
-                                                </Style>
-                                            </HorizontalStackLayout.Style>
-
-                                            <ImageButton Source="edit_2_icon.png" Style="{StaticResource IconImageButton}" />
-
-                                            <!-- Inline definition for the unique Danger button -->
-                                            <ImageButton Source="trash_2_icon.png" BackgroundColor="{StaticResource DangerColor}" BorderColor="Transparent" CornerRadius="8" WidthRequest="36" HeightRequest="36" Padding="8">
-                                                <VisualStateManager.VisualStateGroups>
-                                                    <VisualStateGroup x:Name="CommonStates">
-                                                        <VisualState x:Name="Normal"/>
-                                                        <VisualState x:Name="PointerOver">
-                                                            <VisualState.Setters>
-                                                                <Setter Property="BackgroundColor" Value="#e05462" />
-                                                            </VisualState.Setters>
-                                                        </VisualState>
-                                                    </VisualStateGroup>
-                                                </VisualStateManager.VisualStateGroups>
-                                            </ImageButton>
-                                        </HorizontalStackLayout>
-                                    </Grid>
+                                        <ImageButton Source="edit_2_icon.png" Style="{StaticResource IconImageButton}" />
+                                        <ImageButton Source="trash_2_icon.png" BackgroundColor="{StaticResource DangerColor}" BorderColor="Transparent" CornerRadius="8" WidthRequest="36" HeightRequest="36" Padding="8">
+                                            <VisualStateManager.VisualStateGroups>
+                                                <VisualStateGroup x:Name="CommonStates">
+                                                    <VisualState x:Name="Normal"/>
+                                                    <VisualState x:Name="PointerOver">
+                                                        <VisualState.Setters>
+                                                            <Setter Property="BackgroundColor" Value="#e05462" />
+                                                        </VisualState.Setters>
+                                                    </VisualState>
+                                                </VisualStateGroup>
+                                            </VisualStateManager.VisualStateGroups>
+                                        </ImageButton>
+                                    </HorizontalStackLayout>
                                 </Grid>
-                            </Border>
+
+                            </Grid>
                         </DataTemplate>
                     </CollectionView.ItemTemplate>
                 </CollectionView>
