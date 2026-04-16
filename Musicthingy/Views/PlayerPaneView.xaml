@@ -14,7 +14,7 @@
                     <RoundRectangle CornerRadius="8" />
                 </Border.StrokeShape>
 
-                <Grid>
+                <Grid Margin="10,0,10,0">
                     <!-- ONE NATIVE PLAYER FOR EVERYTHING (YouTube & Direct Files) -->
                     <toolkit:MediaElement
                         x:Name="MainPlayer"

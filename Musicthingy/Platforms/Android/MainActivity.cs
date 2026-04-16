@@ -1,8 +1,8 @@
 ﻿using Android.App;
 using Android.Content.PM;
 using Android.OS;
-using Android.Views; // Add this
-using CommunityToolkit.Mvvm.Messaging; // Add this
+using Android.Views;
+using CommunityToolkit.Mvvm.Messaging;
 
 namespace Musicthingy;
 

@@ -1,20 +1,19 @@
-﻿using System.Collections.ObjectModel;
+﻿using CommunityToolkit.Maui.Views;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using CommunityToolkit.Mvvm.Messaging;
 using Musicthingy.Models;
 using Musicthingy.Services;
-using Microsoft.Maui.Controls;
+using System.Collections.Concurrent;
+using System.Collections.ObjectModel;
+using System.Web;
 using YoutubeExplode;
 using YoutubeExplode.Videos.Streams;
-using CommunityToolkit.Maui.Views;
-using CommunityToolkit.Mvvm.Messaging;
 
 namespace Musicthingy.ViewModels;
 
 public partial class MainViewModel : ObservableObject
 {
-
-
     public MainViewModel()
     {
         _dataService = new PlaylistDataService();
@@ -47,8 +46,14 @@ public partial class MainViewModel : ObservableObject
 
     private readonly YoutubeClient _youtubeClient = new();
 
+    // Cache resolved URLs to make repeat clicks instant.
+    // Use ConcurrentDictionary to prevent thread-safety crashes when background fetching.
+    private readonly ConcurrentDictionary<string, (string Url, DateTime Expiry)> _resolvedCache = new();
+
     [ObservableProperty]
-    public partial ObservableCollection<Playlist> Playlists { get; set; } = new(); [ObservableProperty]
+    public partial ObservableCollection<Playlist> Playlists { get; set; } = new();
+
+    [ObservableProperty]
     public partial Playlist? SelectedPlaylist { get; set; }
 
     private readonly PlaylistDataService _dataService;
@@ -88,6 +93,18 @@ public partial class MainViewModel : ObservableObject
         CurrentTrack = PlaybackQueue[nextIndex];
     }
 
+    private async Task WarmPlaylistCacheAsync()
+    {
+        // Use Parallel with a concurrency limit. This keeps the loading incredibly fast 
+        // (1-3 seconds) but prevents YouTube from rate-limiting you on massive playlists.
+        var options = new ParallelOptions { MaxDegreeOfParallelism = 4 };
+
+        await Parallel.ForEachAsync(PlaybackQueue, options, async (item, token) =>
+        {
+            await ResolveMediaUrlAsync(item.Url);
+        });
+    }
+
     partial void OnCurrentTrackChanged(PlaylistItem? value)
     {
         if (value == null)
@@ -96,15 +113,18 @@ public partial class MainViewModel : ObservableObject
             return;
         }
 
+        
+
         // If the user clicks a track directly from the UI that isn't in our background queue,
         // we assume they are starting a new playlist, so we copy the UI list to the background queue.
         if (SelectedPlaylist != null && !PlaybackQueue.Contains(value))
         {
             PlaybackQueue.Clear();
+
             foreach (var item in SelectedPlaylist.Items)
-            {
                 PlaybackQueue.Add(item);
-            }
+
+            _ = WarmPlaylistCacheAsync();
         }
 
         // 3. APPLY PRE-FETCHED VIDEO (Skips the 10-second wait!)
@@ -121,6 +141,9 @@ public partial class MainViewModel : ObservableObject
         // Immediately start quietly downloading the next track's URL in the background
         _ = PrefetchNextTrackAsync();
     }
+
+    private static readonly string[] valueArray = new[] { "application/json" };
+    private static readonly string[] value = new[] { ".json" };
 
     private async Task LoadMediaUrlAsync(PlaylistItem track)
     {
@@ -161,18 +184,32 @@ public partial class MainViewModel : ObservableObject
     {
         if (string.IsNullOrEmpty(url)) return null;
 
+        // 1. Check Cache first
+        if (_resolvedCache.TryGetValue(url, out var cached) && DateTime.Now < cached.Expiry)
+        {
+            return cached.Url;
+        }
+
         bool isYouTube = url.Contains("youtube.com") || url.Contains("youtu.be");
 
         if (isYouTube)
         {
             try
             {
-                return await Task.Run(async () =>
+                var manifest = await _youtubeClient.Videos.Streams.GetManifestAsync(url);
+                var audioStreams = manifest.GetAudioOnlyStreams();
+
+                // Prioritize Mp4 containers natively supported by Android/Windows
+                var streamInfo = audioStreams.Where(s => s.Container == Container.Mp4).GetWithHighestBitrate()
+                              ?? audioStreams.GetWithHighestBitrate();
+
+                if (streamInfo != null)
                 {
-                    var manifest = await _youtubeClient.Videos.Streams.GetManifestAsync(url);
-                    var streamInfo = manifest.GetAudioOnlyStreams().GetWithHighestBitrate();
-                    return streamInfo?.Url;
-                });
+                    _resolvedCache[url] = (streamInfo.Url, DateTime.Now.AddHours(5));
+                    return streamInfo.Url;
+                }
+
+                return null;
             }
             catch (Exception ex)
             {
@@ -181,54 +218,7 @@ public partial class MainViewModel : ObservableObject
             }
         }
 
-        // If it's a direct mp3/mp4, just return the URL immediately
         return url;
-    }
-
-    private async Task LoadMediaUrlAsync(string url)
-    {
-        if (string.IsNullOrEmpty(url))
-        {
-            MainThread.BeginInvokeOnMainThread(() => CurrentMediaSource = null);
-            return;
-        }
-
-        bool isYouTube = url.Contains("youtube.com") || url.Contains("youtu.be");
-
-        if (isYouTube)
-        {
-            try
-            {
-                // Force the network request onto a background thread using Task.Run
-                // This prevents Android.OS.NetworkOnMainThreadException
-                await Task.Run(async () =>
-                {
-                    var youtube = new YoutubeClient();
-
-                    // Fetch manifest in the background
-                    var manifest = await youtube.Videos.Streams.GetManifestAsync(url);
-                    var streamInfo = manifest.GetMuxedStreams().GetWithHighestVideoQuality();
-
-                    if (streamInfo != null)
-                    {
-                        // Safely push the result back to the UI thread
-                        MainThread.BeginInvokeOnMainThread(() =>
-                            CurrentMediaSource = MediaSource.FromUri(streamInfo.Url));
-                    }
-                });
-            }
-            catch (Exception ex)
-            {
-                System.Diagnostics.Debug.WriteLine($"Failed to parse YouTube stream: {ex.Message}");
-                MainThread.BeginInvokeOnMainThread(() => CurrentMediaSource = null);
-            }
-        }
-        else
-        {
-            // Direct file
-            MainThread.BeginInvokeOnMainThread(() =>
-                CurrentMediaSource = MediaSource.FromUri(url));
-        }
     }
 
 
@@ -249,10 +239,8 @@ public partial class MainViewModel : ObservableObject
             var customFileType = new FilePickerFileType(
                 new Dictionary<DevicePlatform, IEnumerable<string>>
                 {
-                    { DevicePlatform.WinUI, new[] { ".json" } },
-                    { DevicePlatform.Android, new[] { "application/json" } },
-                    { DevicePlatform.iOS, new[] { "public.json" } },
-                    { DevicePlatform.MacCatalyst, new[] { "public.json" } },
+                    { DevicePlatform.WinUI, value },
+                    { DevicePlatform.Android, valueArray },
                 });
 
             var result = await FilePicker.Default.PickAsync(new PickOptions
@@ -301,5 +289,23 @@ public partial class MainViewModel : ObservableObject
         Playlists.Add(new Playlist { Name = "Workout", CreatedAt = DateTime.Now });
 
         SelectedPlaylist = dummyList;
+    }
+
+    public static string GetVideoId(string url)
+    {
+        // Safe parsing: Prevents crashes on Mobile links (youtu.be), Shorts, and timestamps
+        var videoId = YoutubeExplode.Videos.VideoId.TryParse(url);
+        if (videoId != null)
+        {
+            return videoId.Value.Value;
+        }
+
+        // Fallback
+        if (url.Contains("youtu.be"))
+            return url.Split('/').Last();
+
+        var uri = new Uri(url);
+        var query = HttpUtility.ParseQueryString(uri.Query);
+        return query["v"]!;
     }
 }

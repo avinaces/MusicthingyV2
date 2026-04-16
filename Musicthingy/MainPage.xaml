@@ -198,38 +198,58 @@
                                         </Image>
                                     </Grid>
 
-                                    <Grid Grid.Column="1" VerticalOptions="Center" RowDefinitions="Auto, Auto" RowSpacing="2">
-                                        <Label Grid.Row="0" Text="{Binding Title}" FontSize="15" FontAttributes="Bold" LineBreakMode="TailTruncation" />
-                                        <FlexLayout Grid.Row="1" Direction="Row" Wrap="Wrap" IsVisible="{Binding HasTags}">
-                                            <!-- Tags -->
-                                            <Border Background="#1c304a" Stroke="{StaticResource AccentColor}" StrokeThickness="1" Padding="8,2" Margin="0,0,2,2" IsVisible="{Binding HasTag1}">
-                                                <Border.StrokeShape>
-                                                    <RoundRectangle CornerRadius="6" />
-                                                </Border.StrokeShape>
-                                                <Label Text="{Binding Tag1}" TextColor="#d9edff" FontSize="11" VerticalOptions="Center" />
-                                            </Border>
-                                            <Border Background="#1c304a" Stroke="{StaticResource AccentColor}" StrokeThickness="1" Padding="8,2" Margin="0,0,2,2" IsVisible="{Binding HasTag2}">
-                                                <Border.StrokeShape>
-                                                    <RoundRectangle CornerRadius="6" />
-                                                </Border.StrokeShape>
-                                                <Label Text="{Binding Tag2}" TextColor="#d9edff" FontSize="11" VerticalOptions="Center" />
-                                            </Border>
-                                            <Border Background="#1c304a" Stroke="{StaticResource AccentColor}" StrokeThickness="1" Padding="8,2" Margin="0,0,2,2" IsVisible="{Binding HasTag3}">
-                                                <Border.StrokeShape>
-                                                    <RoundRectangle CornerRadius="6" />
-                                                </Border.StrokeShape>
-                                                <Label Text="{Binding Tag3}" TextColor="#d9edff" FontSize="11" VerticalOptions="Center" />
-                                            </Border>
-                                            <Border Background="#1c304a" Stroke="{StaticResource AccentColor}" StrokeThickness="1" Padding="8,2" Margin="0,0,2,2" IsVisible="{Binding HasTag4}">
-                                                <Border.StrokeShape>
-                                                    <RoundRectangle CornerRadius="6" />
-                                                </Border.StrokeShape>
-                                                <Label Text="{Binding Tag4}" TextColor="#d9edff" FontSize="11" VerticalOptions="Center" />
-                                            </Border>
-                                        </FlexLayout>
-                                    </Grid>
+                                    <VerticalStackLayout Grid.Column="1" VerticalOptions="Center">
 
-                                    <!-- ✅ MOBILE ACTION BUTTONS (Only exists on Android/iOS, driven purely by VisualState Selected) -->
+                                        <Label Grid.Row="0"
+                                            Text="{Binding Title}"
+                                            FontSize="15"
+                                            FontAttributes="Bold"
+                                            LineBreakMode="TailTruncation" />
+
+                                        <!-- Clipping container -->
+                                        <Grid HeightRequest="24" IsClippedToBounds="True">
+
+                                            <FlexLayout Grid.Row="1"
+                                                Direction="Row"
+                                                Wrap="NoWrap"
+                                                AlignItems="Center"
+                                                IsVisible="{Binding HasTags}">
+
+                                                <!-- Tags -->
+                                                <Border Background="#1c304a" Stroke="{StaticResource AccentColor}" StrokeThickness="1" Padding="8,2" Margin="0,0,2,2" IsVisible="{Binding HasTag1}">
+                                                    <Border.StrokeShape>
+                                                        <RoundRectangle CornerRadius="6"/>
+                                                    </Border.StrokeShape>
+                                                    <Label Text="{Binding Tag1}" TextColor="#d9edff" FontSize="11"/>
+                                                </Border>
+
+                                                <Border Background="#1c304a" Stroke="{StaticResource AccentColor}" StrokeThickness="1" Padding="8,2" Margin="0,0,2,2" IsVisible="{Binding HasTag2}">
+                                                    <Border.StrokeShape>
+                                                        <RoundRectangle CornerRadius="6"/>
+                                                    </Border.StrokeShape>
+                                                    <Label Text="{Binding Tag2}" TextColor="#d9edff" FontSize="11"/>
+                                                </Border>
+
+                                                <Border Background="#1c304a" Stroke="{StaticResource AccentColor}" StrokeThickness="1" Padding="8,2" Margin="0,0,2,2" IsVisible="{Binding HasTag3}">
+                                                    <Border.StrokeShape>
+                                                        <RoundRectangle CornerRadius="6"/>
+                                                    </Border.StrokeShape>
+                                                    <Label Text="{Binding Tag3}" TextColor="#d9edff" FontSize="11"/>
+                                                </Border>
+
+                                                <Border Background="#1c304a" Stroke="{StaticResource AccentColor}" StrokeThickness="1" Padding="8,2" Margin="0,0,2,2" IsVisible="{Binding HasTag4}">
+                                                    <Border.StrokeShape>
+                                                        <RoundRectangle CornerRadius="6"/>
+                                                    </Border.StrokeShape>
+                                                    <Label Text="{Binding Tag4}" TextColor="#d9edff" FontSize="11"/>
+                                                </Border>
+
+                                            </FlexLayout>
+
+                                        </Grid>
+                                    </VerticalStackLayout>
+
+                                    <!-- MOBILE ACTION BUTTONS (Only exists on Android, driven purely by VisualState Selected) -->
                                     <HorizontalStackLayout x:Name="MobileActionButtons" Grid.Column="2" Spacing="6" VerticalOptions="Center" Opacity="0" IsVisible="{OnPlatform Default=True, WinUI=False, MacCatalyst=False}">
                                         <ImageButton Source="edit_2_icon.png" Style="{StaticResource IconImageButton}" />
                                         <ImageButton Source="trash_2_icon.png" BackgroundColor="{StaticResource DangerColor}" BorderColor="Transparent" CornerRadius="8" WidthRequest="36" HeightRequest="36" Padding="8">
