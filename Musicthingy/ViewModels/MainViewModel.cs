@@ -6,7 +6,7 @@ using Musicthingy.Models;
 using Musicthingy.Services;
 using System.Collections.Concurrent;
 using System.Collections.ObjectModel;
-using System.Web;
+using System.IO;
 using YoutubeExplode;
 using YoutubeExplode.Videos.Streams;
 
@@ -20,6 +20,10 @@ public partial class MainViewModel : ObservableObject
 #if DEBUG
         LoadDummyData();
 #endif
+#if WINDOWS
+        // Clean up old cached video files in the background on startup
+        Task.Run(CleanupCache);
+#endif
         // Listen for OS Media Key presses (Next/Previous) from Windows and Android
         WeakReferenceMessenger.Default.Register<Models.MediaControlMessage>(this, (r, m) =>
         {
@@ -30,34 +34,45 @@ public partial class MainViewModel : ObservableObject
         });
     }
 
+    private void CleanupCache()
+    {
+        try
+        {
+            var cacheDir = FileSystem.CacheDirectory;
+            var files = Directory.GetFiles(cacheDir, "*.mp4");
+            foreach (var file in files)
+            {
+                // Delete cache files older than 3 days to save disk space
+                if (File.GetCreationTime(file) < DateTime.Now.AddDays(-3))
+                {
+                    File.Delete(file);
+                }
+            }
+        }
+        catch { }
+    }
+
     [RelayCommand]
     public void PlayPrevious()
     {
         if (PlaybackQueue == null || PlaybackQueue.Count == 0 || CurrentTrack == null) return;
-
         int currentIndex = PlaybackQueue.IndexOf(CurrentTrack);
         if (currentIndex == -1) return;
 
-        // Subtract 1 from index. If it drops below 0, wrap around to the end of the list.
         int prevIndex = currentIndex - 1;
         if (prevIndex < 0) prevIndex = PlaybackQueue.Count - 1;
-
         CurrentTrack = PlaybackQueue[prevIndex];
     }
 
     private readonly YoutubeClient _youtubeClient = new();
-
-    // Cache resolved URLs to make repeat clicks instant.
-    // Use ConcurrentDictionary to prevent thread-safety crashes when background fetching.
     private readonly ConcurrentDictionary<string, (string Url, DateTime Expiry)> _resolvedCache = new();
+    private readonly PlaylistDataService _dataService;
 
     [ObservableProperty]
     public partial ObservableCollection<Playlist> Playlists { get; set; } = new();
 
     [ObservableProperty]
     public partial Playlist? SelectedPlaylist { get; set; }
-
-    private readonly PlaylistDataService _dataService;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsMediaSelected))]
@@ -70,133 +85,167 @@ public partial class MainViewModel : ObservableObject
     [ObservableProperty]
     public partial MediaSource? CurrentMediaSource { get; set; }
 
-    // 1. THE BACKGROUND PLAYBACK QUEUE
+    // --- TIME TRACKING & ENFORCING END TIME ---
+    [ObservableProperty]
+    public partial TimeSpan CurrentPosition { get; set; }
+
+    [ObservableProperty]
+    public partial TimeSpan Duration { get; set; }
+
+    private PlaylistItem? _lastTrackSkipped;
+    private bool _hasPerformedInitialSeek;
+
+    partial void OnDurationChanged(TimeSpan value)
+    {
+        // Now that the media file is cached locally (or loaded fast on Android), Duration loads instantly.
+        // Once the metadata is loaded, we can safely Seek and then Play.
+        if (!_hasPerformedInitialSeek && CurrentTrack != null && value.TotalSeconds > 0)
+        {
+            _hasPerformedInitialSeek = true;
+
+            double startPos = CurrentTrack.StartTime ?? 0;
+
+            WeakReferenceMessenger.Default.Send(new MediaControlMessage
+            {
+                Action = "StartPlayback",
+                Position = TimeSpan.FromSeconds(startPos)
+            });
+        }
+    }
+
+    partial void OnCurrentPositionChanged(TimeSpan value)
+    {
+        if (CurrentTrack?.EndTime.HasValue == true && _lastTrackSkipped != CurrentTrack)
+        {
+            if (value.TotalSeconds >= CurrentTrack.EndTime.Value)
+            {
+                _lastTrackSkipped = CurrentTrack;
+                MainThread.BeginInvokeOnMainThread(() => PlayNextCommand.Execute(null));
+            }
+        }
+    }
+
+    // --- THE BACKGROUND PLAYBACK QUEUE ---
     [ObservableProperty]
     public partial ObservableCollection<PlaylistItem> PlaybackQueue { get; set; } = new();
 
-    // Variables for pre-fetching the next song
     private PlaylistItem? _prefetchedTrack;
-    private string? _prefetchedMediaUrl;
+    private MediaSource? _prefetchedMediaSource;
 
-    // 2. AUTO-PLAY & LOOP COMMAND
     [RelayCommand]
     public void PlayNext()
     {
         if (PlaybackQueue == null || PlaybackQueue.Count == 0 || CurrentTrack == null) return;
-
         int currentIndex = PlaybackQueue.IndexOf(CurrentTrack);
         if (currentIndex == -1) return;
 
-        // Add 1 to index. If it goes past the end of the list, % loops it back to 0.
         int nextIndex = (currentIndex + 1) % PlaybackQueue.Count;
-
-        // This triggers OnCurrentTrackChanged automatically
         CurrentTrack = PlaybackQueue[nextIndex];
     }
 
     private async Task WarmPlaylistCacheAsync()
     {
-        // Use Parallel with a concurrency limit. This keeps the loading incredibly fast 
-        // (1-3 seconds) but prevents YouTube from rate-limiting you on massive playlists.
+#if ANDROID
         var options = new ParallelOptions { MaxDegreeOfParallelism = 4 };
-
         await Parallel.ForEachAsync(PlaybackQueue, options, async (item, token) =>
         {
-            await ResolveMediaUrlAsync(item.Url);
+            await ResolveMediaSourceAsync(item.Url);
         });
+#else
+        // Do not pre-download the entire playlist to disk on Windows.
+        // Background prefetching of the *next* track handles this perfectly.
+        await Task.CompletedTask;
+#endif
     }
 
-    partial void OnCurrentTrackChanged(PlaylistItem? value)
+    partial void OnCurrentTrackChanged(PlaylistItem? oldValue, PlaylistItem? newValue)
     {
+        _lastTrackSkipped = null;
+        _hasPerformedInitialSeek = false;
 
-        WeakReferenceMessenger.Default.Send(new MediaControlMessage { Action = "Stop" });
-
-
-        CurrentMediaSource = null;
-
-        if (value == null)
+        if (newValue == null)
         {
+            CurrentMediaSource = null;
+            WeakReferenceMessenger.Default.Send(new MediaControlMessage { Action = "Stop" });
             return;
         }
 
-        // If the user clicks a track directly from the UI that isn't in our background queue,
-        // we assume they are starting a new playlist, so we copy the UI list to the background queue.
-        if (SelectedPlaylist != null && !PlaybackQueue.Contains(value))
+        if (SelectedPlaylist != null && !PlaybackQueue.Contains(newValue))
         {
             PlaybackQueue.Clear();
-
             foreach (var item in SelectedPlaylist.Items)
                 PlaybackQueue.Add(item);
 
             _ = WarmPlaylistCacheAsync();
         }
 
-        // 3. APPLY PRE-FETCHED VIDEO (Skips the 10-second wait!)
-        if (_prefetchedTrack == value && !string.IsNullOrEmpty(_prefetchedMediaUrl))
+        // OPTIMIZATION: Same-URL Seamless Transition
+        if (oldValue != null && oldValue.Url == newValue.Url && CurrentMediaSource != null)
         {
-            CurrentMediaSource = MediaSource.FromUri(_prefetchedMediaUrl);
-        }
-        else
-        {
-            // Fallback: If not prefetched (e.g., user clicked a random track), load it normally
-            _ = LoadMediaUrlAsync(value);
-        }
+            double newStart = newValue.StartTime ?? 0;
+            bool isContinuous = Math.Abs(CurrentPosition.TotalSeconds - newStart) <= 10;
 
-        // Immediately start quietly downloading the next track's URL in the background
-        _ = PrefetchNextTrackAsync();
-    }
-
-
-
-    private async Task LoadMediaUrlAsync(PlaylistItem track)
-    {
-        var rawUrl = await ResolveMediaUrlAsync(track.Url);
-
-        // only update the UI if the user hasn't switched to a different track 
-        // while we were waiting for YouTube to respond.
-        if (CurrentTrack == track)
-        {
-            if (!string.IsNullOrEmpty(rawUrl))
+            if (isContinuous)
             {
-                MainThread.BeginInvokeOnMainThread(() => CurrentMediaSource = MediaSource.FromUri(rawUrl));
+                _hasPerformedInitialSeek = true; // Natural boundary cross, keep playing seamlessly
             }
             else
             {
-                MainThread.BeginInvokeOnMainThread(() => CurrentMediaSource = null);
+                _hasPerformedInitialSeek = true;
+                // Because we cache files locally on Windows, we NO LONGER have to reload the media source
+                // to avoid the network throttle. We can just send a fast Seek command directly!
+                WeakReferenceMessenger.Default.Send(new MediaControlMessage
+                {
+                    Action = "StartPlayback",
+                    Position = TimeSpan.FromSeconds(newStart)
+                });
             }
+
+            _ = PrefetchNextTrackAsync();
+            return;
+        }
+
+        WeakReferenceMessenger.Default.Send(new MediaControlMessage { Action = "Stop" });
+        CurrentMediaSource = null;
+
+        _ = ReloadMediaAsync(newValue);
+        _ = PrefetchNextTrackAsync();
+    }
+
+    private async Task ReloadMediaAsync(PlaylistItem newValue)
+    {
+        await Task.Delay(50);
+        if (CurrentTrack != newValue) return;
+
+        if (_prefetchedTrack == newValue && _prefetchedMediaSource != null)
+        {
+            CurrentMediaSource = _prefetchedMediaSource;
+        }
+        else
+        {
+            CurrentMediaSource = await ResolveMediaSourceAsync(newValue.Url);
         }
     }
 
     private async Task PrefetchNextTrackAsync()
     {
         if (PlaybackQueue == null || PlaybackQueue.Count == 0 || CurrentTrack == null) return;
-
         int currentIndex = PlaybackQueue.IndexOf(CurrentTrack);
         if (currentIndex == -1) return;
 
-        // Find what the next track will be
         int nextIndex = (currentIndex + 1) % PlaybackQueue.Count;
         var nextTrack = PlaybackQueue[nextIndex];
 
-        // Skip if we already prefetched it
         if (_prefetchedTrack == nextTrack) return;
 
         _prefetchedTrack = nextTrack;
-
-        // Resolve the YouTube URL in the background while the current song is still playing
-        _prefetchedMediaUrl = await ResolveMediaUrlAsync(nextTrack.Url);
+        _prefetchedMediaSource = await ResolveMediaSourceAsync(nextTrack.Url);
     }
 
-    // Helper function that does the slow YoutubeExplode fetching off the main thread
-    private async Task<string?> ResolveMediaUrlAsync(string url)
+    // Returns a highly-optimized MediaSource
+    private async Task<MediaSource?> ResolveMediaSourceAsync(string url)
     {
         if (string.IsNullOrEmpty(url)) return null;
-
-        // 1. Check Cache first
-        if (_resolvedCache.TryGetValue(url, out var cached) && DateTime.Now < cached.Expiry)
-        {
-            return cached.Url;
-        }
 
         bool isYouTube = url.Contains("youtube.com") || url.Contains("youtu.be");
 
@@ -204,43 +253,57 @@ public partial class MainViewModel : ObservableObject
         {
             try
             {
-                var manifest = await _youtubeClient.Videos.Streams.GetManifestAsync(url);
-                var audioStreams = manifest.GetAudioOnlyStreams();
-
+                var videoId = YoutubeExplode.Videos.VideoId.Parse(url);
 
 #if ANDROID
+                if (_resolvedCache.TryGetValue(url, out var cached) && DateTime.Now < cached.Expiry)
+                    return MediaSource.FromUri(cached.Url);
 
-                var streamInfo = audioStreams.GetWithHighestBitrate(); // Android is objectively better, because it supports WebM
-
-#else
-                //Filter for 'Mp4' container specifically.
-                // Topic videos usually have WebM (Opus) and Mp4 (AAC). 
-                // Windows WILL crash/skip on WebM. We must force Mp4.
-                var streamInfo = manifest.GetAudioOnlyStreams()
-                    .Where(s => s.Container == Container.Mp4) 
-                    .GetWithHighestBitrate();
-#endif
-
+                var manifest = await _youtubeClient.Videos.Streams.GetManifestAsync(videoId);
+                var streamInfo = manifest.GetAudioOnlyStreams().GetWithHighestBitrate();
 
                 if (streamInfo != null)
                 {
                     _resolvedCache[url] = (streamInfo.Url, DateTime.Now.AddHours(5));
-                    return streamInfo.Url;
+                    return MediaSource.FromUri(streamInfo.Url);
+                }
+#else
+                // WINDOWS OPTIMIZATION: Bypasses the 50kbps YouTube throttle natively
+                string cacheDir = FileSystem.CacheDirectory;
+                string tempFilePath = Path.Combine(cacheDir, $"{videoId.Value}.mp4");
+
+                // Check if we already downloaded this video (e.g. earlier in the Hollow Knight playlist)
+                if (!File.Exists(tempFilePath))
+                {
+                    var manifest = await _youtubeClient.Videos.Streams.GetManifestAsync(videoId);
+                    var streamInfo = manifest.GetAudioOnlyStreams()
+                        .Where(s => s.Container == Container.Mp4)
+                        .GetWithHighestBitrate();
+
+                    if (streamInfo != null)
+                    {
+                        // YoutubeExplode's internal HttpClient bypasses YouTube's throttle, downloading 
+                        // a full 1-hour audio file in roughly 1-3 seconds.
+                        await _youtubeClient.Videos.Streams.DownloadAsync(streamInfo, tempFilePath);
+                    }
                 }
 
-                return null;
+                if (File.Exists(tempFilePath))
+                {
+                    // Playing from a local file makes WMF seeking genuinely 0ms latency.
+                    return MediaSource.FromFile(tempFilePath);
+                }
+#endif
             }
             catch (Exception ex)
             {
                 System.Diagnostics.Debug.WriteLine($"Failed to parse YouTube stream: {ex.Message}");
-                await Shell.Current.DisplayAlertAsync("Failed to parse YouTube stream: ", ex.Message, "OK");
                 return null;
             }
         }
 
-        return url;
+        return MediaSource.FromUri(url);
     }
-
 
     [RelayCommand]
     private void AddNewPlaylist()
@@ -250,15 +313,14 @@ public partial class MainViewModel : ObservableObject
         SelectedPlaylist = newList;
     }
 
-
     private static readonly string[] androidFileTypeJSON = ["application/json"];
     private static readonly string[] windowsFileTypeJSON = [".json"];
+
     [RelayCommand]
     private async Task ImportPlaylistAsync()
     {
         try
         {
-            // Define platform-specific types for JSON
             var customFileType = new FilePickerFileType(
                 new Dictionary<DevicePlatform, IEnumerable<string>>
                 {
@@ -282,7 +344,6 @@ public partial class MainViewModel : ObservableObject
 
                 if (importedPlaylist != null)
                 {
-                    // Update UI on the main thread
                     MainThread.BeginInvokeOnMainThread(() =>
                     {
                         Playlists.Add(importedPlaylist);

@@ -1,4 +1,5 @@
 using CommunityToolkit.Mvvm.Messaging;
+using System.Diagnostics;
 
 namespace Musicthingy.Views;
 
@@ -11,14 +12,40 @@ public partial class PlayerPaneView : ContentView
         // Listen for the Stop message from the ViewModel
         WeakReferenceMessenger.Default.Register<Models.MediaControlMessage>(this, (r, m) =>
         {
-            if (m.Action == "Stop")
+
+            if (m.Action == "StartPlayback")
+            {
+                MainThread.BeginInvokeOnMainThread(() =>
+                {
+                    // Seek first while the media is paused
+                    if (m.Position.HasValue && m.Position.Value.TotalSeconds > 0)
+                    {
+                        MainPlayer.SeekTo(m.Position.Value);
+                    }
+                    // THEN play, forcing a fresh, high-speed HTTP Range Request
+                    MainPlayer.Play();
+                });
+            }
+            else if (m.Action == "Seek" && m.Position.HasValue)
+            {
+                Debug.WriteLine("Seeking to: " + m.Position.Value);
+                MainThread.BeginInvokeOnMainThread(() =>
+                {
+                    MainPlayer.SeekTo(m.Position.Value);
+                    MainPlayer.Play();
+                });
+            }
+            else if (m.Action == "Stop")
             {
                 MainThread.BeginInvokeOnMainThread(() =>
                 {
                     MainPlayer.Stop();
                 });
             }
+
         });
+
+
     }
 
     private void MainPlayer_MediaEnded(object? sender, EventArgs e)

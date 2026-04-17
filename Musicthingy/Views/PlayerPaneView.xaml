@@ -19,7 +19,9 @@
                     <toolkit:MediaElement
                         x:Name="MainPlayer"
                         Source="{Binding CurrentMediaSource}"
-                        ShouldAutoPlay="True"
+                        Position="{Binding CurrentPosition, Mode=OneWayToSource}"
+                        Duration="{Binding Duration, Mode=OneWayToSource}"
+                        ShouldAutoPlay="False"
                         ShouldShowPlaybackControls="True"
                         IsVisible="{Binding IsMediaSelected}"
                         HeightRequest="220"
