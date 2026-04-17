@@ -27,7 +27,7 @@
             <Setter Property="CornerRadius" Value="8" />
             <Setter Property="WidthRequest" Value="36" />
             <Setter Property="HeightRequest" Value="36" />
-            <Setter Property="Padding" Value="8" />
+            <Setter Property="Padding" Value="4" />
             <Setter Property="BorderColor" Value="{StaticResource BorderColor}" />
             <Setter Property="BorderWidth" Value="1" />
             <Setter Property="VisualStateManager.VisualStateGroups">
@@ -164,7 +164,7 @@
                 <CollectionView Grid.Row="2" ItemsSource="{Binding SelectedPlaylist.Items}" SelectedItem="{Binding CurrentTrack, Mode=TwoWay}" SelectionMode="Single" ItemSizingStrategy="MeasureFirstItem">
                     <CollectionView.ItemTemplate>
                         <DataTemplate x:DataType="models:PlaylistItem">
-                            <Grid Margin="0,0,0,4">
+                            <Grid Margin="0,0,0,4" HeightRequest="58">
 
                                 <VisualStateManager.VisualStateGroups>
                                     <VisualStateGroup x:Name="CommonStates">
@@ -189,7 +189,7 @@
                                 <Border x:Name="RootBorder" StrokeShape="RoundRectangle 8" Padding="0" Background="#1c2128" Stroke="{StaticResource BorderColor}" />
 
                                 <!-- Layer 2: Content Grid -->
-                                <Grid ColumnDefinitions="Auto, *, Auto" ColumnSpacing="10" Padding="10">
+                                <Grid ColumnDefinitions="Auto, *" ColumnSpacing="10" Padding="10">
                                     <Grid Grid.Column="0" WidthRequest="36" HeightRequest="36" VerticalOptions="Center">
                                         <Image Source="{Binding ItemIconSource}" Aspect="AspectFill">
                                             <Image.Clip>
@@ -216,28 +216,28 @@
                                                 IsVisible="{Binding HasTags}">
 
                                                 <!-- Tags -->
-                                                <Border Background="#1c304a" Stroke="{StaticResource AccentColor}" StrokeThickness="1" Padding="8,2" Margin="0,0,2,2" IsVisible="{Binding HasTag1}">
+                                                <Border Background="#1c304a" Stroke="{StaticResource AccentColor}" StrokeThickness="1" Padding="5,1" Margin="0,0,1,1" IsVisible="{Binding HasTag1}">
                                                     <Border.StrokeShape>
                                                         <RoundRectangle CornerRadius="6"/>
                                                     </Border.StrokeShape>
                                                     <Label Text="{Binding Tag1}" TextColor="#d9edff" FontSize="11"/>
                                                 </Border>
 
-                                                <Border Background="#1c304a" Stroke="{StaticResource AccentColor}" StrokeThickness="1" Padding="8,2" Margin="0,0,2,2" IsVisible="{Binding HasTag2}">
+                                                <Border Background="#1c304a" Stroke="{StaticResource AccentColor}" StrokeThickness="1" Padding="5,1" Margin="0,0,1,1" IsVisible="{Binding HasTag2}">
                                                     <Border.StrokeShape>
                                                         <RoundRectangle CornerRadius="6"/>
                                                     </Border.StrokeShape>
                                                     <Label Text="{Binding Tag2}" TextColor="#d9edff" FontSize="11"/>
                                                 </Border>
 
-                                                <Border Background="#1c304a" Stroke="{StaticResource AccentColor}" StrokeThickness="1" Padding="8,2" Margin="0,0,2,2" IsVisible="{Binding HasTag3}">
+                                                <Border Background="#1c304a" Stroke="{StaticResource AccentColor}" StrokeThickness="1" Padding="5,1" Margin="0,0,1,1" IsVisible="{Binding HasTag3}">
                                                     <Border.StrokeShape>
                                                         <RoundRectangle CornerRadius="6"/>
                                                     </Border.StrokeShape>
                                                     <Label Text="{Binding Tag3}" TextColor="#d9edff" FontSize="11"/>
                                                 </Border>
 
-                                                <Border Background="#1c304a" Stroke="{StaticResource AccentColor}" StrokeThickness="1" Padding="8,2" Margin="0,0,2,2" IsVisible="{Binding HasTag4}">
+                                                <Border Background="#1c304a" Stroke="{StaticResource AccentColor}" StrokeThickness="1" Padding="5,1" Margin="0,0,1,1" IsVisible="{Binding HasTag4}">
                                                     <Border.StrokeShape>
                                                         <RoundRectangle CornerRadius="6"/>
                                                     </Border.StrokeShape>
@@ -250,25 +250,14 @@
                                     </VerticalStackLayout>
 
                                     <!-- MOBILE ACTION BUTTONS (Only exists on Android, driven purely by VisualState Selected) -->
-                                    <HorizontalStackLayout x:Name="MobileActionButtons" Grid.Column="2" Spacing="6" VerticalOptions="Center" Opacity="0" IsVisible="{OnPlatform Default=True, WinUI=False, MacCatalyst=False}">
+                                    <HorizontalStackLayout x:Name="MobileActionButtons" Grid.Column="2" Spacing="6" VerticalOptions="Center" HorizontalOptions="End" Opacity="0" IsVisible="{OnPlatform Default=True, WinUI=False, MacCatalyst=False}">
                                         <ImageButton Source="edit_2_icon.png" Style="{StaticResource IconImageButton}" />
-                                        <ImageButton Source="trash_2_icon.png" BackgroundColor="{StaticResource DangerColor}" BorderColor="Transparent" CornerRadius="8" WidthRequest="36" HeightRequest="36" Padding="8">
-                                            <VisualStateManager.VisualStateGroups>
-                                                <VisualStateGroup x:Name="CommonStates">
-                                                    <VisualState x:Name="Normal"/>
-                                                    <VisualState x:Name="PointerOver">
-                                                        <VisualState.Setters>
-                                                            <Setter Property="BackgroundColor" Value="#e05462" />
-                                                        </VisualState.Setters>
-                                                    </VisualState>
-                                                </VisualStateGroup>
-                                            </VisualStateManager.VisualStateGroups>
-                                        </ImageButton>
+                                        <ImageButton Source="trash_2_icon.png" Style="{StaticResource IconImageButton}" BackgroundColor="{StaticResource DangerColor}" />
                                     </HorizontalStackLayout>
                                 </Grid>
 
                                 <!-- Layer 3: Desktop Hover & Interaction Overlay -->
-                                <!-- ✅ On Mobile this completely vanishes. No gestures block the CollectionView! -->
+                                <!-- On Mobile this completely vanishes. No gestures block the CollectionView! -->
                                 <Grid BackgroundColor="Transparent" IsVisible="{OnPlatform Default=False, WinUI=True, MacCatalyst=True}">
                                     <Grid.GestureRecognizers>
                                         <PointerGestureRecognizer PointerEnteredCommand="{Binding PointerEnteredCommand}" PointerExitedCommand="{Binding PointerExitedCommand}" />

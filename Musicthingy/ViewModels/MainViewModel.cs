@@ -17,8 +17,9 @@ public partial class MainViewModel : ObservableObject
     public MainViewModel()
     {
         _dataService = new PlaylistDataService();
+#if DEBUG
         LoadDummyData();
-
+#endif
         // Listen for OS Media Key presses (Next/Previous) from Windows and Android
         WeakReferenceMessenger.Default.Register<Models.MediaControlMessage>(this, (r, m) =>
         {
@@ -107,13 +108,16 @@ public partial class MainViewModel : ObservableObject
 
     partial void OnCurrentTrackChanged(PlaylistItem? value)
     {
+
+        WeakReferenceMessenger.Default.Send(new MediaControlMessage { Action = "Stop" });
+
+
+        CurrentMediaSource = null;
+
         if (value == null)
         {
-            CurrentMediaSource = null;
             return;
         }
-
-        
 
         // If the user clicks a track directly from the UI that isn't in our background queue,
         // we assume they are starting a new playlist, so we copy the UI list to the background queue.
@@ -142,20 +146,24 @@ public partial class MainViewModel : ObservableObject
         _ = PrefetchNextTrackAsync();
     }
 
-    private static readonly string[] valueArray = new[] { "application/json" };
-    private static readonly string[] value = new[] { ".json" };
+
 
     private async Task LoadMediaUrlAsync(PlaylistItem track)
     {
         var rawUrl = await ResolveMediaUrlAsync(track.Url);
 
-        if (!string.IsNullOrEmpty(rawUrl))
+        // only update the UI if the user hasn't switched to a different track 
+        // while we were waiting for YouTube to respond.
+        if (CurrentTrack == track)
         {
-            MainThread.BeginInvokeOnMainThread(() => CurrentMediaSource = MediaSource.FromUri(rawUrl));
-        }
-        else
-        {
-            MainThread.BeginInvokeOnMainThread(() => CurrentMediaSource = null);
+            if (!string.IsNullOrEmpty(rawUrl))
+            {
+                MainThread.BeginInvokeOnMainThread(() => CurrentMediaSource = MediaSource.FromUri(rawUrl));
+            }
+            else
+            {
+                MainThread.BeginInvokeOnMainThread(() => CurrentMediaSource = null);
+            }
         }
     }
 
@@ -199,9 +207,20 @@ public partial class MainViewModel : ObservableObject
                 var manifest = await _youtubeClient.Videos.Streams.GetManifestAsync(url);
                 var audioStreams = manifest.GetAudioOnlyStreams();
 
-                // Prioritize Mp4 containers natively supported by Android/Windows
-                var streamInfo = audioStreams.Where(s => s.Container == Container.Mp4).GetWithHighestBitrate()
-                              ?? audioStreams.GetWithHighestBitrate();
+
+#if ANDROID
+
+                var streamInfo = audioStreams.GetWithHighestBitrate(); // Android is objectively better, because it supports WebM
+
+#else
+                //Filter for 'Mp4' container specifically.
+                // Topic videos usually have WebM (Opus) and Mp4 (AAC). 
+                // Windows WILL crash/skip on WebM. We must force Mp4.
+                var streamInfo = manifest.GetAudioOnlyStreams()
+                    .Where(s => s.Container == Container.Mp4) 
+                    .GetWithHighestBitrate();
+#endif
+
 
                 if (streamInfo != null)
                 {
@@ -214,6 +233,7 @@ public partial class MainViewModel : ObservableObject
             catch (Exception ex)
             {
                 System.Diagnostics.Debug.WriteLine($"Failed to parse YouTube stream: {ex.Message}");
+                await Shell.Current.DisplayAlertAsync("Failed to parse YouTube stream: ", ex.Message, "OK");
                 return null;
             }
         }
@@ -225,11 +245,14 @@ public partial class MainViewModel : ObservableObject
     [RelayCommand]
     private void AddNewPlaylist()
     {
-        var newList = new Playlist { Name = $"New Playlist {Playlists.Count + 1}" };
+        var newList = new Playlist { Name = $"New Playlist {Playlists.Count + 1}", CreatedAt = DateTime.Now };
         Playlists.Add(newList);
         SelectedPlaylist = newList;
     }
 
+
+    private static readonly string[] androidFileTypeJSON = ["application/json"];
+    private static readonly string[] windowsFileTypeJSON = [".json"];
     [RelayCommand]
     private async Task ImportPlaylistAsync()
     {
@@ -239,8 +262,8 @@ public partial class MainViewModel : ObservableObject
             var customFileType = new FilePickerFileType(
                 new Dictionary<DevicePlatform, IEnumerable<string>>
                 {
-                    { DevicePlatform.WinUI, value },
-                    { DevicePlatform.Android, valueArray },
+                    { DevicePlatform.WinUI, windowsFileTypeJSON },
+                    { DevicePlatform.Android, androidFileTypeJSON },
                 });
 
             var result = await FilePicker.Default.PickAsync(new PickOptions
@@ -276,36 +299,18 @@ public partial class MainViewModel : ObservableObject
 
     private void LoadDummyData()
     {
-        var dummyList = new Playlist
+        Playlist dummyList = new()
         {
-            Name = "Chill Vibes",
+            Name = "Test",
             CreatedAt = DateTime.Now
         };
 
-        dummyList.Items.Add(new PlaylistItem { Title = "Lofi Hip Hop", Url = "https://youtube.com/watch?v=jfKfPfyJRdk" });
-        dummyList.Items.Add(new PlaylistItem { Title = "Synthwave Mix", Url = "https://youtube.com/watch?v=MVPTGNGiI" });
+        dummyList.Items.Add(new PlaylistItem { Title = "Skarrsinger Karmelita", Url = "https://www.youtube.com/watch?v=dhc4WFEeZfw&list=RDdhc4WFEeZfw&start_radio=1", StartTime = 5466, EndTime = 5573 });
+        dummyList.Items.Add(new PlaylistItem { Title = "76", Url = "https://static.bandlab.com/revisions-formatted/7277ea00-254d-9b8c-0eab-c6b7bf94e414/7277ea00-254d-9b8c-0eab-c6b7bf94e414.m4a" });
 
         Playlists.Add(dummyList);
-        Playlists.Add(new Playlist { Name = "Workout", CreatedAt = DateTime.Now });
+        Playlists.Add(new Playlist { Name = "Empty", CreatedAt = DateTime.Now });
 
         SelectedPlaylist = dummyList;
-    }
-
-    public static string GetVideoId(string url)
-    {
-        // Safe parsing: Prevents crashes on Mobile links (youtu.be), Shorts, and timestamps
-        var videoId = YoutubeExplode.Videos.VideoId.TryParse(url);
-        if (videoId != null)
-        {
-            return videoId.Value.Value;
-        }
-
-        // Fallback
-        if (url.Contains("youtu.be"))
-            return url.Split('/').Last();
-
-        var uri = new Uri(url);
-        var query = HttpUtility.ParseQueryString(uri.Query);
-        return query["v"]!;
     }
 }

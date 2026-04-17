@@ -7,6 +7,18 @@ public partial class PlayerPaneView : ContentView
     public PlayerPaneView()
     {
         InitializeComponent();
+
+        // Listen for the Stop message from the ViewModel
+        WeakReferenceMessenger.Default.Register<Models.MediaControlMessage>(this, (r, m) =>
+        {
+            if (m.Action == "Stop")
+            {
+                MainThread.BeginInvokeOnMainThread(() =>
+                {
+                    MainPlayer.Stop();
+                });
+            }
+        });
     }
 
     private void MainPlayer_MediaEnded(object? sender, EventArgs e)
