@@ -9,28 +9,47 @@
 
             <Label Grid.Row="1" Text="{Binding CurrentTrack.Title}" TextColor="#adcff0" FontSize="20" FontAttributes="Bold" HorizontalOptions="Center" Margin="0,0,0,16" IsVisible="{Binding IsMediaSelected}" />
 
-            <Border Grid.Row="2" BackgroundColor="#0d1117" StrokeThickness="0" HeightRequest="220" VerticalOptions="Start">
-                <Border.StrokeShape>
-                    <RoundRectangle CornerRadius="8" />
-                </Border.StrokeShape>
+            <!-- CHANGED: Replaced Row 2 Border with a layered Grid -->
+            <Grid Grid.Row="2" HeightRequest="220" VerticalOptions="Start">
 
-                <Grid Margin="10,0,10,0">
-                    <!-- ONE NATIVE PLAYER FOR EVERYTHING (YouTube & Direct Files) -->
-                    <toolkit:MediaElement
-                        x:Name="MainPlayer"
-                        Source="{Binding CurrentMediaSource}"
-                        Position="{Binding CurrentPosition, Mode=OneWayToSource}"
-                        Duration="{Binding Duration, Mode=OneWayToSource}"
-                        ShouldAutoPlay="False"
-                        ShouldShowPlaybackControls="True"
-                        IsVisible="{Binding IsMediaSelected}"
-                        HeightRequest="220"
-                        HorizontalOptions="Fill"
-                        MediaEnded="MainPlayer_MediaEnded"
-                        MediaOpened="MainPlayer_MediaOpened"
-                        MetadataTitle="{Binding CurrentTrack.Title}" /> <!-- For some reason "MetadataTitle" is actually the artist on Windows -->
-                </Grid>
-            </Border>
+                <!-- Player Background Border -->
+                <Border BackgroundColor="#0d1117" StrokeThickness="0">
+                    <Border.StrokeShape>
+                        <RoundRectangle CornerRadius="8" />
+                    </Border.StrokeShape>
+
+                    <Grid Margin="10,0,10,0">
+                        <!-- ONE NATIVE PLAYER FOR EVERYTHING (YouTube & Direct Files) -->
+                        <toolkit:MediaElement
+                            x:Name="MainPlayer"
+                            Source="{Binding CurrentMediaSource}"
+                            Position="{Binding CurrentPosition, Mode=OneWayToSource}"
+                            Duration="{Binding Duration, Mode=OneWayToSource}"
+                            ShouldAutoPlay="False"
+                            ShouldShowPlaybackControls="True"
+                            IsVisible="{Binding IsMediaSelected}"
+                            HeightRequest="220"
+                            HorizontalOptions="Fill"
+                            MediaEnded="MainPlayer_MediaEnded"
+                            MediaOpened="MainPlayer_MediaOpened"
+                            MetadataTitle="{Binding CurrentTrack.Title}" />
+                    </Grid>
+                </Border>
+
+                <!-- NEW: Loading Overlay -->
+                <Border BackgroundColor="#D9000000" StrokeThickness="0" IsVisible="{Binding IsLoadingMedia}" ZIndex="10">
+                    <Border.StrokeShape>
+                        <RoundRectangle CornerRadius="8" />
+                    </Border.StrokeShape>
+
+                    <VerticalStackLayout HorizontalOptions="Center" VerticalOptions="Center" Spacing="10">
+                        <ActivityIndicator IsRunning="{Binding IsLoadingMedia}" Color="#adcff0" WidthRequest="35" HeightRequest="35"/>
+                        <ProgressBar Progress="{Binding MediaDownloadProgress}" WidthRequest="200" HeightRequest="6" ProgressColor="#adcff0" />
+                        <Label Text="Downloading Stream..." TextColor="#adcff0" FontSize="12" HorizontalOptions="Center"/>
+                    </VerticalStackLayout>
+                </Border>
+
+            </Grid>
 
         </Grid>
     </Border>

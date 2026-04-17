@@ -69,6 +69,12 @@ public partial class MainViewModel : ObservableObject
     private readonly PlaylistDataService _dataService;
 
     [ObservableProperty]
+    public partial bool IsLoadingMedia { get; set; }
+
+    [ObservableProperty]
+    public partial double MediaDownloadProgress { get; set; }
+
+    [ObservableProperty]
     public partial ObservableCollection<Playlist> Playlists { get; set; } = new();
 
     [ObservableProperty]
@@ -223,7 +229,25 @@ public partial class MainViewModel : ObservableObject
         }
         else
         {
-            CurrentMediaSource = await ResolveMediaSourceAsync(newValue.Url);
+            // Show Loading UI
+            IsLoadingMedia = true;
+            MediaDownloadProgress = 0;
+
+            // Pass progress tracker into YoutubeExplode
+            var progress = new Progress<double>(p =>
+            {
+                MainThread.BeginInvokeOnMainThread(() => MediaDownloadProgress = p);
+            });
+
+            var resolvedSource = await ResolveMediaSourceAsync(newValue.Url, progress);
+
+            // CRITICAL FIX: If the user clicked "Next" multiple times while downloading,
+            // we only apply the source if they are STILL on this track.
+            if (CurrentTrack == newValue)
+            {
+                CurrentMediaSource = resolvedSource;
+                IsLoadingMedia = false; // Hide Loading UI
+            }
         }
     }
 
@@ -243,7 +267,7 @@ public partial class MainViewModel : ObservableObject
     }
 
     // Returns a highly-optimized MediaSource
-    private async Task<MediaSource?> ResolveMediaSourceAsync(string url)
+    private async Task<MediaSource?> ResolveMediaSourceAsync(string url, IProgress<double>? progress = null)
     {
         if (string.IsNullOrEmpty(url)) return null;
 
@@ -268,11 +292,9 @@ public partial class MainViewModel : ObservableObject
                     return MediaSource.FromUri(streamInfo.Url);
                 }
 #else
-                // WINDOWS OPTIMIZATION: Bypasses the 50kbps YouTube throttle natively
                 string cacheDir = FileSystem.CacheDirectory;
                 string tempFilePath = Path.Combine(cacheDir, $"{videoId.Value}.mp4");
 
-                // Check if we already downloaded this video (e.g. earlier in the Hollow Knight playlist)
                 if (!File.Exists(tempFilePath))
                 {
                     var manifest = await _youtubeClient.Videos.Streams.GetManifestAsync(videoId);
@@ -282,15 +304,20 @@ public partial class MainViewModel : ObservableObject
 
                     if (streamInfo != null)
                     {
-                        // YoutubeExplode's internal HttpClient bypasses YouTube's throttle, downloading 
-                        // a full 1-hour audio file in roughly 1-3 seconds.
-                        await _youtubeClient.Videos.Streams.DownloadAsync(streamInfo, tempFilePath);
+                        // Thread-safe: Download to a unique GUID temporary file to prevent IOExceptions
+                        // if Prefetch and Foreground Reload try to download the same URL simultaneously.
+                        string downloadingFilePath = Path.Combine(cacheDir, $"{videoId.Value}_{Guid.NewGuid()}.downloading");
+                        
+                        await _youtubeClient.Videos.Streams.DownloadAsync(streamInfo, downloadingFilePath, progress);
+                        
+                        // Safely move and overwrite once completely finished
+                        File.Move(downloadingFilePath, tempFilePath, true);
                     }
                 }
 
                 if (File.Exists(tempFilePath))
                 {
-                    // Playing from a local file makes WMF seeking genuinely 0ms latency.
+                    if (progress != null) progress.Report(1.0); // Snap bar to 100% just in case
                     return MediaSource.FromFile(tempFilePath);
                 }
 #endif
