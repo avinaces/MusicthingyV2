@@ -12,6 +12,7 @@ public class PlaylistDto
     public DateTime? createdAt { get; set; }
     public DateTime? updatedAt { get; set; }
     public List<PlaylistItemDto> items { get; set; } = new();
+    public List<string> tags { get; set; } = new();
 }
 
 public class PlaylistItemDto

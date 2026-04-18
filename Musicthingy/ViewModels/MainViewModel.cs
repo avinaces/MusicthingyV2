@@ -9,6 +9,7 @@ using System.Collections.ObjectModel;
 using System.IO;
 using YoutubeExplode;
 using YoutubeExplode.Videos.Streams;
+using YoutubeExplode.Converter;
 
 namespace Musicthingy.ViewModels;
 
@@ -103,13 +104,17 @@ public partial class MainViewModel : ObservableObject
 
     partial void OnDurationChanged(TimeSpan value)
     {
-        // Now that the media file is cached locally (or loaded fast on Android), Duration loads instantly.
-        // Once the metadata is loaded, we can safely Seek and then Play.
         if (!_hasPerformedInitialSeek && CurrentTrack != null && value.TotalSeconds > 0)
         {
             _hasPerformedInitialSeek = true;
 
             double startPos = CurrentTrack.StartTime ?? 0;
+
+#if WINDOWS
+            // Since Windows physically sliced the local file to exactly fit the track,
+            // the file's internal timeline naturally starts at 0.
+            startPos = 0;
+#endif
 
             WeakReferenceMessenger.Default.Send(new MediaControlMessage
             {
@@ -123,7 +128,14 @@ public partial class MainViewModel : ObservableObject
     {
         if (CurrentTrack?.EndTime.HasValue == true && _lastTrackSkipped != CurrentTrack)
         {
-            if (value.TotalSeconds >= CurrentTrack.EndTime.Value)
+            double endTimeCheck = CurrentTrack.EndTime.Value;
+
+#if WINDOWS
+            // On Windows, the file is sliced so its total duration is exactly the length of the track
+            endTimeCheck = CurrentTrack.EndTime.Value - (CurrentTrack.StartTime ?? 0);
+#endif
+
+            if (value.TotalSeconds >= endTimeCheck)
             {
                 _lastTrackSkipped = CurrentTrack;
                 MainThread.BeginInvokeOnMainThread(() => PlayNextCommand.Execute(null));
@@ -155,11 +167,11 @@ public partial class MainViewModel : ObservableObject
         var options = new ParallelOptions { MaxDegreeOfParallelism = 4 };
         await Parallel.ForEachAsync(PlaybackQueue, options, async (item, token) =>
         {
-            await ResolveMediaSourceAsync(item.Url);
+            await ResolveMediaSourceAsync(item);
         });
 #else
-        // Do not pre-download the entire playlist to disk on Windows.
-        // Background prefetching of the *next* track handles this perfectly.
+        // Let Windows handle downloading on-the-fly via PrefetchNextTrackAsync 
+        // to avoid mass-spawning FFmpeg processes.
         await Task.CompletedTask;
 #endif
     }
@@ -185,7 +197,9 @@ public partial class MainViewModel : ObservableObject
             _ = WarmPlaylistCacheAsync();
         }
 
-        // OPTIMIZATION: Same-URL Seamless Transition
+#if ANDROID
+        // OPTIMIZATION: Same-URL Seamless Transition 
+        // (Android uses single streaming URL, Windows uses individual sliced files now)
         if (oldValue != null && oldValue.Url == newValue.Url && CurrentMediaSource != null)
         {
             double newStart = newValue.StartTime ?? 0;
@@ -193,13 +207,11 @@ public partial class MainViewModel : ObservableObject
 
             if (isContinuous)
             {
-                _hasPerformedInitialSeek = true; // Natural boundary cross, keep playing seamlessly
+                _hasPerformedInitialSeek = true;
             }
             else
             {
                 _hasPerformedInitialSeek = true;
-                // Because we cache files locally on Windows, we NO LONGER have to reload the media source
-                // to avoid the network throttle. We can just send a fast Seek command directly!
                 WeakReferenceMessenger.Default.Send(new MediaControlMessage
                 {
                     Action = "StartPlayback",
@@ -210,6 +222,7 @@ public partial class MainViewModel : ObservableObject
             _ = PrefetchNextTrackAsync();
             return;
         }
+#endif
 
         WeakReferenceMessenger.Default.Send(new MediaControlMessage { Action = "Stop" });
         CurrentMediaSource = null;
@@ -229,24 +242,20 @@ public partial class MainViewModel : ObservableObject
         }
         else
         {
-            // Show Loading UI
             IsLoadingMedia = true;
             MediaDownloadProgress = 0;
 
-            // Pass progress tracker into YoutubeExplode
             var progress = new Progress<double>(p =>
             {
                 MainThread.BeginInvokeOnMainThread(() => MediaDownloadProgress = p);
             });
 
-            var resolvedSource = await ResolveMediaSourceAsync(newValue.Url, progress);
+            var resolvedSource = await ResolveMediaSourceAsync(newValue, progress);
 
-            // CRITICAL FIX: If the user clicked "Next" multiple times while downloading,
-            // we only apply the source if they are STILL on this track.
             if (CurrentTrack == newValue)
             {
                 CurrentMediaSource = resolvedSource;
-                IsLoadingMedia = false; // Hide Loading UI
+                IsLoadingMedia = false;
             }
         }
     }
@@ -263,13 +272,39 @@ public partial class MainViewModel : ObservableObject
         if (_prefetchedTrack == nextTrack) return;
 
         _prefetchedTrack = nextTrack;
-        _prefetchedMediaSource = await ResolveMediaSourceAsync(nextTrack.Url);
+        _prefetchedMediaSource = await ResolveMediaSourceAsync(nextTrack);
     }
 
-    // Returns a highly-optimized MediaSource
-    private async Task<MediaSource?> ResolveMediaSourceAsync(string url, IProgress<double>? progress = null)
+#if WINDOWS
+    private async Task<string> GetFFmpegExecutableAsync()
     {
-        if (string.IsNullOrEmpty(url)) return null;
+        string cacheFfmpegPath = Path.Combine(FileSystem.CacheDirectory, "ffmpeg.exe");
+
+        // If it's already in the cache directory from a previous run, just return the path
+        if (!File.Exists(cacheFfmpegPath))
+        {
+            // AppContext.BaseDirectory is the safest way to find the app's install folder in .NET
+            string installDirFfmpeg = Path.Combine(AppContext.BaseDirectory, "ffmpeg.exe");
+
+            if (File.Exists(installDirFfmpeg))
+            {
+                // Copy it to the Cache folder where we have full execution permissions
+                await Task.Run(() => File.Copy(installDirFfmpeg, cacheFfmpegPath, true));
+            }
+            else
+            {
+                throw new FileNotFoundException($"ffmpeg.exe was not found in the build directory: {installDirFfmpeg}");
+            }
+        }
+
+        return cacheFfmpegPath;
+    }
+#endif
+
+    private async Task<MediaSource?> ResolveMediaSourceAsync(PlaylistItem track, IProgress<double>? progress = null)
+    {
+        if (track == null || string.IsNullOrEmpty(track.Url)) return null;
+        string url = track.Url;
 
         bool isYouTube = url.Contains("youtube.com") || url.Contains("youtu.be");
 
@@ -291,34 +326,102 @@ public partial class MainViewModel : ObservableObject
                     _resolvedCache[url] = (streamInfo.Url, DateTime.Now.AddHours(5));
                     return MediaSource.FromUri(streamInfo.Url);
                 }
-#else
+
+#elif WINDOWS
                 string cacheDir = FileSystem.CacheDirectory;
-                string tempFilePath = Path.Combine(cacheDir, $"{videoId.Value}.mp4");
+                string tempFilePath = Path.Combine(cacheDir, $"{videoId.Value}_{track.StartTime ?? 0}_{track.EndTime ?? 0}.m4a");
 
-                if (!File.Exists(tempFilePath))
-                {
-                    var manifest = await _youtubeClient.Videos.Streams.GetManifestAsync(videoId);
-                    var streamInfo = manifest.GetAudioOnlyStreams()
-                        .Where(s => s.Container == Container.Mp4)
-                        .GetWithHighestBitrate();
-
-                    if (streamInfo != null)
-                    {
-                        // Thread-safe: Download to a unique GUID temporary file to prevent IOExceptions
-                        // if Prefetch and Foreground Reload try to download the same URL simultaneously.
-                        string downloadingFilePath = Path.Combine(cacheDir, $"{videoId.Value}_{Guid.NewGuid()}.downloading");
-                        
-                        await _youtubeClient.Videos.Streams.DownloadAsync(streamInfo, downloadingFilePath, progress);
-                        
-                        // Safely move and overwrite once completely finished
-                        File.Move(downloadingFilePath, tempFilePath, true);
-                    }
-                }
-
+                // If we've already clipped this track, play it instantly
                 if (File.Exists(tempFilePath))
                 {
-                    if (progress != null) progress.Report(1.0); // Snap bar to 100% just in case
+                    if (progress != null) progress.Report(1.0);
                     return MediaSource.FromFile(tempFilePath);
+                }
+
+                var manifest = await _youtubeClient.Videos.Streams.GetManifestAsync(videoId);
+                
+                // THE SECRET FIX TO THE 5 MINUTE HANG:
+                // We ask for a Progressive (Muxed) stream instead of a Fragmented Audio stream.
+                // FFmpeg can instantly HTTP-seek Progressive streams without downloading the start of the video.
+                var progressiveStream = manifest.GetMuxedStreams()
+                    .Where(s => s.Container == Container.Mp4)
+                    .OrderByDescending(s => s.VideoQuality) // Pick 360p or 720p to keep the download size small
+                    .FirstOrDefault();
+
+                string? targetUrl = progressiveStream?.Url;
+                
+                // Safe fallback to audio-only if for some reason a normal stream isn't available
+                if (targetUrl == null) 
+                {
+                    targetUrl = manifest.GetAudioOnlyStreams().GetWithHighestBitrate()?.Url;
+                }
+
+                if (!string.IsNullOrEmpty(targetUrl))
+                {
+                    string ffmpegPath = await GetFFmpegExecutableAsync();
+                    string downloadingFilePath = Path.Combine(cacheDir, $"{videoId.Value}_{Guid.NewGuid()}.temp.m4a");
+                    
+                    double startPos = track.StartTime ?? 0;
+                    
+                    // Passing a generic User Agent prevents YouTube from blocking FFmpeg's HTTP requests
+                    string args = $"-y -user_agent \"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36\" ";
+                    args += $"-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5 ";
+                    
+                    // -ss BEFORE -i makes FFmpeg jump instantly to the timestamp using HTTP Range requests
+                    args += $"-ss {startPos} -i \"{targetUrl}\" ";
+                    
+                    if (track.EndTime.HasValue)
+                    {
+                        double durationToDownload = track.EndTime.Value - startPos;
+                        args += $"-t {durationToDownload} ";
+                    }
+                    
+                    // -vn drops the video part. -c:a copy extracts the pure audio without high CPU usage
+                    args += $"-vn -c:a copy -f ipod \"{downloadingFilePath}\"";
+
+                    var processInfo = new System.Diagnostics.ProcessStartInfo
+                    {
+                        FileName = ffmpegPath,
+                        Arguments = args,
+                        UseShellExecute = false,
+                        CreateNoWindow = true
+                    };
+
+                    // Because this method is now lightning fast (3-8 seconds), we just jump the bar to 50%
+                    if (progress != null) progress.Report(0.5);
+
+                    using (var process = System.Diagnostics.Process.Start(processInfo))
+                    {
+                        if (process != null)
+                        {
+                            await process.WaitForExitAsync();
+                        }
+                    }
+
+                    if (File.Exists(downloadingFilePath))
+                    {
+                        var fileInfo = new FileInfo(downloadingFilePath);
+                        // If file is > 0 bytes, the clip was successful
+                        if (fileInfo.Length > 0)
+                        {
+                            if (File.Exists(tempFilePath)) File.Delete(tempFilePath);
+                            File.Move(downloadingFilePath, tempFilePath);
+                        }
+                        else
+                        {
+                            File.Delete(downloadingFilePath);
+                        }
+                    }
+
+                    // Success: Play the local clipped file
+                    if (File.Exists(tempFilePath))
+                    {
+                        if (progress != null) progress.Report(1.0);
+                        return MediaSource.FromFile(tempFilePath);
+                    }
+
+                    // Ultimate fallback to live stream url if FFmpeg completely fails
+                    return MediaSource.FromUri(targetUrl);
                 }
 #endif
             }
@@ -327,10 +430,13 @@ public partial class MainViewModel : ObservableObject
                 System.Diagnostics.Debug.WriteLine($"Failed to parse YouTube stream: {ex.Message}");
                 return null;
             }
+            return null;
         }
 
+        // Standard non-YouTube links
         return MediaSource.FromUri(url);
     }
+
 
     [RelayCommand]
     private void AddNewPlaylist()

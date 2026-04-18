@@ -1,5 +1,6 @@
-﻿using System.Text.Json;
-using Musicthingy.Models;
+﻿using Musicthingy.Models;
+using System.Diagnostics;
+using System.Text.Json;
 
 namespace Musicthingy.Services;
 
@@ -10,10 +11,12 @@ public class PlaylistDataService
         try
         {
             // 1. Read into the safe DTO
-            var dto = JsonSerializer.Deserialize<PlaylistDto>(jsonContent, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+
+            PlaylistDto? dto = JsonSerializer.Deserialize<PlaylistDto>(jsonContent, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
             if (dto == null) return null;
 
             // 2. Map to UI Model
+
             var playlist = new Playlist
             {
                 Name = dto.name,
@@ -24,6 +27,11 @@ public class PlaylistDataService
                 UpdatedAt = dto.updatedAt ?? DateTime.Now
             };
 
+            foreach (var playlistTag in dto.tags){
+                playlist.Tags.Add(playlistTag);
+            }
+
+
             foreach (var itemDto in dto.items)
             {
                 var item = new PlaylistItem
@@ -33,6 +41,7 @@ public class PlaylistDataService
                     StartTime = itemDto.startTime,
                     EndTime = itemDto.endTime,
                     IconUrl = itemDto.icon
+
                 };
 
                 if (itemDto.tags != null)

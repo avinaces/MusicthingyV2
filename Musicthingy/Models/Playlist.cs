@@ -37,6 +37,10 @@ public partial class Playlist : ObservableObject
     public partial string Source { get; set; } = string.Empty;
 
     [ObservableProperty]
+    [JsonPropertyName("tags")]
+    public partial ObservableCollection<string> Tags { get; set; } = new();
+
+    [ObservableProperty]
     public partial bool IsHovered { get; set; }
 
     [RelayCommand]

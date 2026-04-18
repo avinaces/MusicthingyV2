@@ -8,7 +8,8 @@ namespace Musicthingy.Models;
 public partial class PlaylistItem : ObservableObject
 {
     [ObservableProperty] public partial string Title { get; set; } = string.Empty;
-    [ObservableProperty] public partial string Url { get; set; } = string.Empty; [ObservableProperty] public partial int? StartTime { get; set; }
+    [ObservableProperty] public partial string Url { get; set; } = string.Empty; 
+    [ObservableProperty] public partial int? StartTime { get; set; }
     [ObservableProperty] public partial int? EndTime { get; set; }
     [ObservableProperty] public partial string IconUrl { get; set; } = string.Empty;
     [ObservableProperty] public partial ObservableCollection<string> Tags { get; set; } = new();
