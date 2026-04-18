@@ -1,8 +1,8 @@
 ﻿using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using Musicthingy.Services; // Ensure namespace for ImageScalingService
 using System.Collections.ObjectModel;
 using System.Text.Json.Serialization;
-using Musicthingy.Services; // Ensure namespace for ImageScalingService
 
 namespace Musicthingy.Models;
 
@@ -69,34 +69,41 @@ public partial class Playlist : ObservableObject
 
     private async void GenerateIconAsync()
     {
-        ImageSource? source = null;
 
-        if (string.IsNullOrEmpty(IconUrl))
+        try
         {
-            // Playlist visual size usually 140
-            source = await Task.Run(() => IconGenerator.GenerateIcon(Name, 12, 140));
-        }
-        else if (IconUrl.StartsWith("data:image"))
-        {
-            var base64Data = IconUrl.Substring(IconUrl.IndexOf(',') + 1);
-            var imageBytes = Convert.FromBase64String(base64Data);
-            source = await ImageScalingService.ScaleIfSmallAsync(imageBytes, 140)
-                     ?? ImageSource.FromStream(() => new MemoryStream(imageBytes));
-        }
-        else if (File.Exists(IconUrl))
-        {
-            var imageBytes = await File.ReadAllBytesAsync(IconUrl);
-            source = await ImageScalingService.ScaleIfSmallAsync(imageBytes, 140)
-                     ?? ImageSource.FromStream(() => new MemoryStream(imageBytes));
-        }
-        else
-        {
-            // Fallback for MauiAssets or paths that aren't raw files
-            source = ImageSource.FromFile(IconUrl);
-        }
+            ImageSource? source = null;
 
-        _iconImageSource = source;
-        MainThread.BeginInvokeOnMainThread(() => OnPropertyChanged(nameof(IconImageSource)));
+            if (string.IsNullOrEmpty(IconUrl))
+            {
+                // Playlist visual size usually 140
+                source = await Task.Run(() => IconGenerator.GenerateIcon(Name, 12, 140));
+            }
+            else if (IconUrl.StartsWith("data:image"))
+            {
+                var base64Data = IconUrl.Substring(IconUrl.IndexOf(',') + 1);
+                var imageBytes = Convert.FromBase64String(base64Data);
+                source = await ImageScalingService.ScaleIfSmallAsync(imageBytes, 140)
+                         ?? ImageSource.FromStream(() => new MemoryStream(imageBytes));
+            }
+            else if (File.Exists(IconUrl))
+            {
+                var imageBytes = await File.ReadAllBytesAsync(IconUrl);
+                source = await ImageScalingService.ScaleIfSmallAsync(imageBytes, 140)
+                         ?? ImageSource.FromStream(() => new MemoryStream(imageBytes));
+            }
+            else
+            {
+                // Fallback for MauiAssets or paths that aren't raw files
+                source = ImageSource.FromFile(IconUrl);
+            }
+
+            _iconImageSource = source;
+            MainThread.BeginInvokeOnMainThread(() => OnPropertyChanged(nameof(IconImageSource)));
+        }
+        catch(Exception ex) {
+            await Shell.Current.DisplayAlertAsync("Error", $"Failed to generate icon: {ex.Message}", "OK");
+        }
     }
 
     partial void OnIconUrlChanged(string value)

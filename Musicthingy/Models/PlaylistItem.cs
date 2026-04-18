@@ -16,6 +16,7 @@ public partial class PlaylistItem : ObservableObject
 
     [ObservableProperty] public partial bool IsHovered { get; set; }
     [ObservableProperty] public partial bool IsSelected { get; set; }
+    [ObservableProperty] public partial string Lyrics { get; set; } = string.Empty;
 
     public bool HasTags => Tags.Count > 0;
     public string Tag1 => Tags.Count > 0 ? Tags[0] : "";

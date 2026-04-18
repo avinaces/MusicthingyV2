@@ -10,11 +10,51 @@ using System.IO;
 using YoutubeExplode;
 using YoutubeExplode.Videos.Streams;
 using YoutubeExplode.Converter;
+using System.Diagnostics;
 
 namespace Musicthingy.ViewModels;
 
 public partial class MainViewModel : ObservableObject
 {
+
+
+    private readonly YoutubeClient _youtubeClient = new();
+    private readonly ConcurrentDictionary<string, (string Url, DateTime Expiry)> _resolvedCache = new();
+    private readonly PlaylistDataService _dataService;
+
+    [ObservableProperty]
+    public partial bool IsLoadingMedia { get; set; }
+
+    [ObservableProperty]
+    public partial double MediaDownloadProgress { get; set; }
+
+    [ObservableProperty]
+    public partial ObservableCollection<Playlist> Playlists { get; set; } = new();
+
+    [ObservableProperty]
+    public partial Playlist? SelectedPlaylist { get; set; }
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsMediaSelected))]
+    [NotifyPropertyChangedFor(nameof(IsNotMediaSelected))]
+    public partial PlaylistItem? CurrentTrack { get; set; }
+
+    public bool IsMediaSelected => CurrentTrack != null;
+    public bool IsNotMediaSelected => CurrentTrack == null;
+
+    [ObservableProperty]
+    public partial MediaSource? CurrentMediaSource { get; set; }
+
+    // --- TIME TRACKING & ENFORCING END TIME ---
+    [ObservableProperty]
+    public partial TimeSpan CurrentPosition { get; set; }
+
+    [ObservableProperty]
+    public partial TimeSpan Duration { get; set; }
+
+    private PlaylistItem? _lastTrackSkipped;
+    private bool _hasPerformedInitialSeek;
+
     public MainViewModel()
     {
         _dataService = new PlaylistDataService();
@@ -64,43 +104,6 @@ public partial class MainViewModel : ObservableObject
         if (prevIndex < 0) prevIndex = PlaybackQueue.Count - 1;
         CurrentTrack = PlaybackQueue[prevIndex];
     }
-
-    private readonly YoutubeClient _youtubeClient = new();
-    private readonly ConcurrentDictionary<string, (string Url, DateTime Expiry)> _resolvedCache = new();
-    private readonly PlaylistDataService _dataService;
-
-    [ObservableProperty]
-    public partial bool IsLoadingMedia { get; set; }
-
-    [ObservableProperty]
-    public partial double MediaDownloadProgress { get; set; }
-
-    [ObservableProperty]
-    public partial ObservableCollection<Playlist> Playlists { get; set; } = new();
-
-    [ObservableProperty]
-    public partial Playlist? SelectedPlaylist { get; set; }
-
-    [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(IsMediaSelected))]
-    [NotifyPropertyChangedFor(nameof(IsNotMediaSelected))]
-    public partial PlaylistItem? CurrentTrack { get; set; }
-
-    public bool IsMediaSelected => CurrentTrack != null;
-    public bool IsNotMediaSelected => CurrentTrack == null;
-
-    [ObservableProperty]
-    public partial MediaSource? CurrentMediaSource { get; set; }
-
-    // --- TIME TRACKING & ENFORCING END TIME ---
-    [ObservableProperty]
-    public partial TimeSpan CurrentPosition { get; set; }
-
-    [ObservableProperty]
-    public partial TimeSpan Duration { get; set; }
-
-    private PlaylistItem? _lastTrackSkipped;
-    private bool _hasPerformedInitialSeek;
 
     partial void OnDurationChanged(TimeSpan value)
     {
@@ -199,7 +202,7 @@ public partial class MainViewModel : ObservableObject
 
 #if ANDROID
         // OPTIMIZATION: Same-URL Seamless Transition 
-        // (Android uses single streaming URL, Windows uses individual sliced files now)
+        // (Android uses single streaming URL, Windows uses individual sliced files)
         if (oldValue != null && oldValue.Url == newValue.Url && CurrentMediaSource != null)
         {
             double newStart = newValue.StartTime ?? 0;
@@ -312,125 +315,117 @@ public partial class MainViewModel : ObservableObject
         {
             try
             {
-                var videoId = YoutubeExplode.Videos.VideoId.Parse(url);
+                // Run the entire resolution process onto a background ThreadPool thread.
+                return await Task.Run(async () =>
+                {
+                    var videoId = YoutubeExplode.Videos.VideoId.Parse(url);
 
 #if ANDROID
-                if (_resolvedCache.TryGetValue(url, out var cached) && DateTime.Now < cached.Expiry)
-                    return MediaSource.FromUri(cached.Url);
+                    if (_resolvedCache.TryGetValue(url, out var cached) && DateTime.Now < cached.Expiry)
+                        return MediaSource.FromUri(cached.Url);
 
-                var manifest = await _youtubeClient.Videos.Streams.GetManifestAsync(videoId);
-                var streamInfo = manifest.GetAudioOnlyStreams().GetWithHighestBitrate();
+                    var manifest = await _youtubeClient.Videos.Streams.GetManifestAsync(videoId);
+                    var streamInfo = manifest.GetAudioOnlyStreams().GetWithHighestBitrate();
 
-                if (streamInfo != null)
-                {
-                    _resolvedCache[url] = (streamInfo.Url, DateTime.Now.AddHours(5));
-                    return MediaSource.FromUri(streamInfo.Url);
-                }
+                    if (streamInfo != null)
+                    {
+                        _resolvedCache[url] = (streamInfo.Url, DateTime.Now.AddHours(5));
+                        return MediaSource.FromUri(streamInfo.Url);
+                    }
 
 #elif WINDOWS
-                string cacheDir = FileSystem.CacheDirectory;
-                string tempFilePath = Path.Combine(cacheDir, $"{videoId.Value}_{track.StartTime ?? 0}_{track.EndTime ?? 0}.m4a");
+                    string cacheDir = FileSystem.CacheDirectory;
+                    string tempFilePath = Path.Combine(cacheDir, $"{videoId.Value}_{track.StartTime ?? 0}_{track.EndTime ?? 0}.m4a");
 
-                // If we've already clipped this track, play it instantly
-                if (File.Exists(tempFilePath))
-                {
-                    if (progress != null) progress.Report(1.0);
-                    return MediaSource.FromFile(tempFilePath);
-                }
-
-                var manifest = await _youtubeClient.Videos.Streams.GetManifestAsync(videoId);
-                
-                // THE SECRET FIX TO THE 5 MINUTE HANG:
-                // We ask for a Progressive (Muxed) stream instead of a Fragmented Audio stream.
-                // FFmpeg can instantly HTTP-seek Progressive streams without downloading the start of the video.
-                var progressiveStream = manifest.GetMuxedStreams()
-                    .Where(s => s.Container == Container.Mp4)
-                    .OrderByDescending(s => s.VideoQuality) // Pick 360p or 720p to keep the download size small
-                    .FirstOrDefault();
-
-                string? targetUrl = progressiveStream?.Url;
-                
-                // Safe fallback to audio-only if for some reason a normal stream isn't available
-                if (targetUrl == null) 
-                {
-                    targetUrl = manifest.GetAudioOnlyStreams().GetWithHighestBitrate()?.Url;
-                }
-
-                if (!string.IsNullOrEmpty(targetUrl))
-                {
-                    string ffmpegPath = await GetFFmpegExecutableAsync();
-                    string downloadingFilePath = Path.Combine(cacheDir, $"{videoId.Value}_{Guid.NewGuid()}.temp.m4a");
-                    
-                    double startPos = track.StartTime ?? 0;
-                    
-                    // Passing a generic User Agent prevents YouTube from blocking FFmpeg's HTTP requests
-                    string args = $"-y -user_agent \"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36\" ";
-                    args += $"-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5 ";
-                    
-                    // -ss BEFORE -i makes FFmpeg jump instantly to the timestamp using HTTP Range requests
-                    args += $"-ss {startPos} -i \"{targetUrl}\" ";
-                    
-                    if (track.EndTime.HasValue)
-                    {
-                        double durationToDownload = track.EndTime.Value - startPos;
-                        args += $"-t {durationToDownload} ";
-                    }
-                    
-                    // -vn drops the video part. -c:a copy extracts the pure audio without high CPU usage
-                    args += $"-vn -c:a copy -f ipod \"{downloadingFilePath}\"";
-
-                    var processInfo = new System.Diagnostics.ProcessStartInfo
-                    {
-                        FileName = ffmpegPath,
-                        Arguments = args,
-                        UseShellExecute = false,
-                        CreateNoWindow = true
-                    };
-
-                    // Because this method is now lightning fast (3-8 seconds), we just jump the bar to 50%
-                    if (progress != null) progress.Report(0.5);
-
-                    using (var process = System.Diagnostics.Process.Start(processInfo))
-                    {
-                        if (process != null)
-                        {
-                            await process.WaitForExitAsync();
-                        }
-                    }
-
-                    if (File.Exists(downloadingFilePath))
-                    {
-                        var fileInfo = new FileInfo(downloadingFilePath);
-                        // If file is > 0 bytes, the clip was successful
-                        if (fileInfo.Length > 0)
-                        {
-                            if (File.Exists(tempFilePath)) File.Delete(tempFilePath);
-                            File.Move(downloadingFilePath, tempFilePath);
-                        }
-                        else
-                        {
-                            File.Delete(downloadingFilePath);
-                        }
-                    }
-
-                    // Success: Play the local clipped file
+                    // If we've already clipped this track, play it instantly
                     if (File.Exists(tempFilePath))
                     {
                         if (progress != null) progress.Report(1.0);
                         return MediaSource.FromFile(tempFilePath);
                     }
 
-                    // Ultimate fallback to live stream url if FFmpeg completely fails
-                    return MediaSource.FromUri(targetUrl);
-                }
+                    var manifest = await _youtubeClient.Videos.Streams.GetManifestAsync(videoId);
+                    
+                    var progressiveStream = manifest.GetMuxedStreams()
+                        .Where(s => s.Container == Container.Mp4)
+                        .OrderByDescending(s => s.VideoQuality) 
+                        .FirstOrDefault();
+
+                    string? targetUrl = progressiveStream?.Url;
+                    
+                    if (targetUrl == null) 
+                    {
+                        targetUrl = manifest.GetAudioOnlyStreams().GetWithHighestBitrate()?.Url;
+                    }
+
+                    if (!string.IsNullOrEmpty(targetUrl))
+                    {
+                        string ffmpegPath = await GetFFmpegExecutableAsync();
+                        string downloadingFilePath = Path.Combine(cacheDir, $"{videoId.Value}_{Guid.NewGuid()}.temp.m4a");
+                        
+                        double startPos = track.StartTime ?? 0;
+                        
+                        string args = $"-y -user_agent \"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36\" ";
+                        args += $"-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5 ";
+                        args += $"-ss {startPos} -i \"{targetUrl}\" ";
+                        
+                        if (track.EndTime.HasValue)
+                        {
+                            double durationToDownload = track.EndTime.Value - startPos;
+                            args += $"-t {durationToDownload} ";
+                        }
+                        
+                        args += $"-vn -c:a copy -f ipod \"{downloadingFilePath}\"";
+
+                        var processInfo = new System.Diagnostics.ProcessStartInfo
+                        {
+                            FileName = ffmpegPath,
+                            Arguments = args,
+                            UseShellExecute = false,
+                            CreateNoWindow = true
+                        };
+
+                        if (progress != null) progress.Report(0.5);
+
+                        using (var process = System.Diagnostics.Process.Start(processInfo))
+                        {
+                            if (process != null)
+                            {
+                                await process.WaitForExitAsync();
+                            }
+                        }
+
+                        if (File.Exists(downloadingFilePath))
+                        {
+                            var fileInfo = new FileInfo(downloadingFilePath);
+                            if (fileInfo.Length > 0)
+                            {
+                                if (File.Exists(tempFilePath)) File.Delete(tempFilePath);
+                                File.Move(downloadingFilePath, tempFilePath);
+                            }
+                            else
+                            {
+                                File.Delete(downloadingFilePath);
+                            }
+                        }
+
+                        if (File.Exists(tempFilePath))
+                        {
+                            if (progress != null) progress.Report(1.0);
+                            return MediaSource.FromFile(tempFilePath);
+                        }
+
+                        return MediaSource.FromUri(targetUrl);
+                    }
 #endif
+                    return null;
+                });
             }
             catch (Exception ex)
             {
                 System.Diagnostics.Debug.WriteLine($"Failed to parse YouTube stream: {ex.Message}");
                 return null;
             }
-            return null;
         }
 
         // Standard non-YouTube links

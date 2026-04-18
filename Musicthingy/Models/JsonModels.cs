@@ -23,4 +23,5 @@ public class PlaylistItemDto
     public int? endTime { get; set; }
     public string icon { get; set; } = string.Empty;
     public List<string> tags { get; set; } = new();
+    public string lyrics { get; set; } = string.Empty;
 }

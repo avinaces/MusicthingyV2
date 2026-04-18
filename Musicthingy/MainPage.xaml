@@ -45,7 +45,8 @@
         </Style>
     </ContentPage.Resources>
 
-    <Grid ColumnDefinitions="250, *, 350" Padding="16" ColumnSpacing="16">
+    <!-- CHANGED: Reduced column 0 from 250 to 220 -->
+    <Grid ColumnDefinitions="220, *, 350" Padding="16" ColumnSpacing="16">
 
         <!-- SIDEBAR -->
         <Border Grid.Column="0" Background="{StaticResource CardColor}" Stroke="{StaticResource BorderColor}" StrokeThickness="1" StrokeShape="RoundRectangle 12" Padding="12">
@@ -87,12 +88,16 @@
                                 <Border x:Name="RootBorder" StrokeShape="RoundRectangle 12" Padding="0" Background="#1c2128" Stroke="Transparent" />
 
                                 <!-- Layer 2: Content (No input blockers) -->
-                                <Grid RowDefinitions="Auto, Auto, Auto, Auto" RowSpacing="0" Padding="10">
-                                    <Image Grid.Row="0" Source="{Binding IconImageSource}" Aspect="AspectFill" HeightRequest="140" WidthRequest="140" HorizontalOptions="Center" Margin="0,0,0,4">
+                                <!-- CHANGED: Reduced padding from 10 to 8 -->
+                                <Grid RowDefinitions="Auto, Auto, Auto, Auto" RowSpacing="0" Padding="8">
+
+                                    <!-- CHANGED: Reduced Height/Width from 140 to 110, and updated the Rect to match -->
+                                    <Image Grid.Row="0" Source="{Binding IconImageSource}" Aspect="AspectFill" HeightRequest="110" WidthRequest="110" HorizontalOptions="Center" Margin="0,0,0,4">
                                         <Image.Clip>
-                                            <RoundRectangleGeometry CornerRadius="12" Rect="0,0,140,140" />
+                                            <RoundRectangleGeometry CornerRadius="12" Rect="0,0,110,110" />
                                         </Image.Clip>
                                     </Image>
+
                                     <Label Grid.Row="1" Text="{Binding Name}" HorizontalTextAlignment="Center" FontSize="14" FontAttributes="Bold" />
 
                                     <HorizontalStackLayout Grid.Row="2" HorizontalOptions="Center" Spacing="6">

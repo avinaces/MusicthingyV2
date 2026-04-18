@@ -1,5 +1,4 @@
 ﻿using Musicthingy.Models;
-using System.Diagnostics;
 using System.Text.Json;
 
 namespace Musicthingy.Services;
@@ -27,7 +26,8 @@ public class PlaylistDataService
                 UpdatedAt = dto.updatedAt ?? DateTime.Now
             };
 
-            foreach (var playlistTag in dto.tags){
+            foreach (var playlistTag in dto.tags)
+            {
                 playlist.Tags.Add(playlistTag);
             }
 
@@ -40,7 +40,8 @@ public class PlaylistDataService
                     Url = itemDto.url,
                     StartTime = itemDto.startTime,
                     EndTime = itemDto.endTime,
-                    IconUrl = itemDto.icon
+                    IconUrl = itemDto.icon,
+                    Lyrics = itemDto.lyrics
 
                 };
 
@@ -49,6 +50,7 @@ public class PlaylistDataService
                     foreach (var tag in itemDto.tags)
                         item.Tags.Add(tag);
                 }
+
 
                 playlist.Items.Add(item);
             }
