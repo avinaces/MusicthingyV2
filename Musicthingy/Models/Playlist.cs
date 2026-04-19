@@ -42,6 +42,8 @@ public partial class Playlist : ObservableObject
 
     [ObservableProperty]
     public partial bool IsHovered { get; set; }
+    [ObservableProperty]
+    public partial bool IsSelected { get; set; }
 
     [RelayCommand]
     private void OnPointerEntered() => IsHovered = true;

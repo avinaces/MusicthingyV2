@@ -41,8 +41,8 @@ public class PlaylistDataService
                     StartTime = itemDto.startTime,
                     EndTime = itemDto.endTime,
                     IconUrl = itemDto.icon,
-                    Lyrics = itemDto.lyrics
-
+                    Lyrics = itemDto.lyrics,
+                    LastPlayedAt = itemDto.lastPlayedAt
                 };
 
                 if (itemDto.tags != null)

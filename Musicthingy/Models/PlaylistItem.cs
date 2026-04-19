@@ -1,7 +1,8 @@
-﻿using System.Collections.ObjectModel;
-using CommunityToolkit.Mvvm.ComponentModel;
+﻿using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Musicthingy.Services; // Ensure namespace for ImageScalingService
+using System.Collections.ObjectModel;
+using System.Text.Json.Serialization;
 
 namespace Musicthingy.Models;
 
@@ -13,10 +14,10 @@ public partial class PlaylistItem : ObservableObject
     [ObservableProperty] public partial int? EndTime { get; set; }
     [ObservableProperty] public partial string IconUrl { get; set; } = string.Empty;
     [ObservableProperty] public partial ObservableCollection<string> Tags { get; set; } = new();
-
     [ObservableProperty] public partial bool IsHovered { get; set; }
     [ObservableProperty] public partial bool IsSelected { get; set; }
     [ObservableProperty] public partial string Lyrics { get; set; } = string.Empty;
+    [ObservableProperty] public partial DateTime? LastPlayedAt { get; set; }
 
     public bool HasTags => Tags.Count > 0;
     public string Tag1 => Tags.Count > 0 ? Tags[0] : "";

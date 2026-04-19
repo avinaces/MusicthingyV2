@@ -1,68 +1,68 @@
 <?xml version="1.0" encoding="utf-8" ?>
 <ContentView xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
-             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
-             xmlns:toolkit="http://schemas.microsoft.com/dotnet/2022/maui/toolkit"
-             x:Class="Musicthingy.Views.PlayerPaneView">
+			 xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+			 xmlns:toolkit="http://schemas.microsoft.com/dotnet/2022/maui/toolkit"
+			 x:Class="Musicthingy.Views.PlayerPaneView">
 
-    <Border Background="#161b22" Stroke="#30363d" StrokeThickness="1" StrokeShape="RoundRectangle 12" Padding="16">
-        <Grid RowDefinitions="Auto, Auto, *">
+	<Border Background="#161b22" Stroke="#30363d" StrokeThickness="1" StrokeShape="RoundRectangle 12" Padding="16">
+		<Grid RowDefinitions="Auto, Auto, *">
 
-            <!-- Title -->
-            <Label Grid.Row="0" Text="{Binding CurrentTrack.Title}" TextColor="#adcff0" FontSize="20" FontAttributes="Bold" HorizontalOptions="Center" Margin="0,0,0,16" IsVisible="{Binding IsMediaSelected}" />
+			<!-- Title -->
+			<Label Grid.Row="0" Text="{Binding CurrentTrack.Title}" TextColor="#adcff0" FontSize="20" FontAttributes="Bold" HorizontalOptions="Center" Margin="0,0,0,16" IsVisible="{Binding IsMediaSelected}" />
 
-            <!-- Player -->
-            <Grid Grid.Row="1" HeightRequest="220" VerticalOptions="Start" Margin="0,0,0,16">
+			<!-- Player -->
+			<Grid Grid.Row="1" HeightRequest="220" VerticalOptions="Start" Margin="0,0,0,16">
 
-                <!-- Player Background Border -->
-                <Border BackgroundColor="#0d1117" StrokeThickness="0">
-                    <Border.StrokeShape>
-                        <RoundRectangle CornerRadius="8" />
-                    </Border.StrokeShape>
+				<!-- Player Background Border -->
+				<Border BackgroundColor="#0d1117" StrokeThickness="0">
+					<Border.StrokeShape>
+						<RoundRectangle CornerRadius="8" />
+					</Border.StrokeShape>
 
-                    <Grid Margin="10,0,10,0">
-                        <!-- ONE NATIVE PLAYER FOR EVERYTHING (YouTube & Direct Files) -->
-                        <toolkit:MediaElement
-                            x:Name="MainPlayer"
-                            Source="{Binding CurrentMediaSource}"
-                            Position="{Binding CurrentPosition, Mode=OneWayToSource}"
-                            Duration="{Binding Duration, Mode=OneWayToSource}"
-                            ShouldAutoPlay="False"
-                            ShouldShowPlaybackControls="True"
-                            IsVisible="{Binding IsMediaSelected}"
-                            HeightRequest="220"
-                            HorizontalOptions="Fill"
-                            MediaEnded="MainPlayer_MediaEnded"
-                            MediaOpened="MainPlayer_MediaOpened"
-                            MetadataTitle="{Binding CurrentTrack.Title}" />
-                    </Grid>
-                </Border>
+					<Grid Margin="10,0,10,0">
+						<!-- ONE NATIVE PLAYER FOR EVERYTHING (YouTube & Direct Files) -->
+						<toolkit:MediaElement
+							x:Name="MainPlayer"
+							Source="{Binding CurrentMediaSource}"
+							Position="{Binding CurrentPosition, Mode=OneWayToSource}"
+							Duration="{Binding Duration, Mode=OneWayToSource}"
+							ShouldAutoPlay="False"
+							ShouldShowPlaybackControls="True"
+							IsVisible="{Binding IsMediaSelected}"
+							HeightRequest="220"
+							HorizontalOptions="Fill"
+							MediaEnded="MainPlayer_MediaEnded"
+							MediaOpened="MainPlayer_MediaOpened"
+							MetadataTitle="{Binding CurrentTrack.Title}" />
+					</Grid>
+				</Border>
 
-                <!-- Loading Overlay -->
-                <Border BackgroundColor="#D9000000" StrokeThickness="0" IsVisible="{Binding IsLoadingMedia}" ZIndex="10">
-                    <Border.StrokeShape>
-                        <RoundRectangle CornerRadius="8" />
-                    </Border.StrokeShape>
+				<!-- Loading Overlay -->
+				<Border BackgroundColor="#D9000000" StrokeThickness="0" IsVisible="{Binding IsLoadingMedia}" ZIndex="10">
+					<Border.StrokeShape>
+						<RoundRectangle CornerRadius="8" />
+					</Border.StrokeShape>
 
-                    <VerticalStackLayout HorizontalOptions="Center" VerticalOptions="Center" Spacing="10">
-                        <ActivityIndicator IsRunning="{Binding IsLoadingMedia}" Color="#adcff0" WidthRequest="35" HeightRequest="35"/>
-                        <ProgressBar Progress="{Binding MediaDownloadProgress}" WidthRequest="200" HeightRequest="6" ProgressColor="#adcff0" />
-                        <Label Text="Downloading Stream..." TextColor="#adcff0" FontSize="12" HorizontalOptions="Center"/>
-                    </VerticalStackLayout>
-                </Border>
+					<VerticalStackLayout HorizontalOptions="Center" VerticalOptions="Center" Spacing="10">
+						<ActivityIndicator IsRunning="{Binding IsLoadingMedia}" Color="#adcff0" WidthRequest="35" HeightRequest="35"/>
+						<ProgressBar Progress="{Binding MediaDownloadProgress}" WidthRequest="200" HeightRequest="6" ProgressColor="#adcff0" />
+						<Label Text="Downloading Stream..." TextColor="#adcff0" FontSize="12" HorizontalOptions="Center"/>
+					</VerticalStackLayout>
+				</Border>
 
-            </Grid>
+			</Grid>
+			
+			<!-- Lyrics -->
+			<ScrollView Grid.Row="2" VerticalOptions="Fill">
+				<Label Text="{Binding CurrentTrack.Lyrics}"
+					   TextColor="#c9d1d9"
+					   HorizontalOptions="Center" 
+					   HorizontalTextAlignment="Center" 
+					   VerticalOptions="Start"
+					   Margin="10" 
+					   FontSize="20"/>
+			</ScrollView>
 
-            <!-- Lyrics -->
-            <ScrollView Grid.Row="2" VerticalOptions="Fill">
-                <Label Text="{Binding CurrentTrack.Lyrics}"
-                       TextColor="#c9d1d9"
-                       HorizontalOptions="Center" 
-                       HorizontalTextAlignment="Center" 
-                       VerticalOptions="Start"
-                       Margin="10" 
-                       FontSize="20"/>
-            </ScrollView>
-
-        </Grid>
-    </Border>
+		</Grid>
+	</Border>
 </ContentView>

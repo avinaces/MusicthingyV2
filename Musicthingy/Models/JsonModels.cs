@@ -2,7 +2,7 @@
 
 namespace Musicthingy.Models;
 
-// These classes exactly match your JSON file structure
+// These classes exactly match the JSON file structure
 public class PlaylistDto
 {
     public string name { get; set; } = string.Empty;
@@ -24,4 +24,5 @@ public class PlaylistItemDto
     public string icon { get; set; } = string.Empty;
     public List<string> tags { get; set; } = new();
     public string lyrics { get; set; } = string.Empty;
+    public DateTime? lastPlayedAt { get; set; }
 }
