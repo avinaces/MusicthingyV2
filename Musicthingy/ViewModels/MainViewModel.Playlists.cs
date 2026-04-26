@@ -1,5 +1,8 @@
-﻿using CommunityToolkit.Mvvm.Input;
+﻿using CommunityToolkit.Maui;
+using CommunityToolkit.Maui.Extensions;
+using CommunityToolkit.Mvvm.Input;
 using Musicthingy.Models;
+using System.Diagnostics;
 
 namespace Musicthingy.ViewModels;
 
@@ -56,6 +59,47 @@ public partial class MainViewModel
         {
             await Shell.Current.DisplayAlertAsync("Error", $"Failed to import: {ex.Message}", "OK");
         }
+    }
+
+    [RelayCommand]
+    private async Task DeletePlaylistAsync(Playlist playlist)
+    {
+        // Uses the overlay system we built earlier
+        bool confirm = await ShowConfirmAsync(
+            title: "Delete Playlist",
+            message: $"Are you sure you want to delete '{playlist.Name}'? This cannot be undone.",
+            confirmText: "Delete",
+            bgBehavior: ModalBackgroundTapBehavior.Cancel,
+            isDanger: true);
+
+        if (confirm)
+        {
+            Playlists.Remove(playlist);
+            if (SelectedPlaylist == playlist) SelectedPlaylist = null;
+        }
+    }
+
+    [RelayCommand]
+    private void DeleteTrack(PlaylistItem track)
+    {
+        // Immediate deletion, no modal required
+        if (SelectedPlaylist != null && SelectedPlaylist.Items.Contains(track))
+        {
+            SelectedPlaylist.Items.Remove(track);
+        }
+    }
+
+    [RelayCommand]
+    private async Task EditTrackAsync(PlaylistItem track)
+    {
+        // Opens the separate XAML popup file we will create below
+        var popup = new Views.EditTrackPopup(track);
+
+        // Show the popup. The result returns 'true' if they clicked Save, 'false/null' if Cancelled
+        var result = await Shell.Current.ShowPopupAsync(popup);
+
+        Debug.WriteLine(result);
+
     }
 
     private void LoadDummyData()

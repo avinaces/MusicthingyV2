@@ -6,320 +6,334 @@
 			 BackgroundColor="{StaticResource BgColor}"
 			 xmlns:views="clr-namespace:Musicthingy.Views">
 
-	<ContentPage.Resources>
-		<Color x:Key="BgColor">#0d1117</Color>
-		<Color x:Key="CardColor">#161b22</Color>
-		<Color x:Key="CardHoverColor">#1c2128</Color>
-		<Color x:Key="AccentColor">#58a6ff</Color>
-		<Color x:Key="SelectedBgColor">#374C69</Color>
-		<Color x:Key="DangerColor">#d73a49</Color>
-		<Color x:Key="TitleColor">#adcff0</Color>
-		<Color x:Key="MutedColor">#8b949e</Color>
-		<Color x:Key="TextColor">#c9d1d9</Color>
-		<Color x:Key="BorderColor">#30363d</Color>
+    <ContentPage.Resources>
+        <Color x:Key="BgColor">#0d1117</Color>
+        <Color x:Key="CardColor">#161b22</Color>
+        <Color x:Key="CardHoverColor">#1c2128</Color>
+        <Color x:Key="AccentColor">#58a6ff</Color>
+        <Color x:Key="SelectedBgColor">#374C69</Color>
+        <Color x:Key="DangerColor">#d73a49</Color>
+        <Color x:Key="TitleColor">#adcff0</Color>
+        <Color x:Key="MutedColor">#8b949e</Color>
+        <Color x:Key="TextColor">#c9d1d9</Color>
+        <Color x:Key="BorderColor">#30363d</Color>
 
-		<Style TargetType="Label">
-			<Setter Property="TextColor" Value="{StaticResource TextColor}" />
-		</Style>
+        <Style TargetType="Label">
+            <Setter Property="TextColor" Value="{StaticResource TextColor}" />
+        </Style>
 
-		<Style x:Key="IconImageButton" TargetType="ImageButton">
-			<Setter Property="BackgroundColor" Value="{StaticResource CardColor}" />
-			<Setter Property="CornerRadius" Value="8" />
-			<Setter Property="WidthRequest" Value="38" />
-			<Setter Property="HeightRequest" Value="38" />
-			<Setter Property="Padding" Value="6" />
-			<Setter Property="BorderColor" Value="{StaticResource BorderColor}" />
-			<Setter Property="BorderWidth" Value="1" />
-			<Setter Property="VisualStateManager.VisualStateGroups">
-				<VisualStateGroupList>
-					<VisualStateGroup x:Name="CommonStates">
-						<VisualState x:Name="Normal" />
-						<VisualState x:Name="PointerOver">
-							<VisualState.Setters>
-								<Setter Property="BackgroundColor" Value="{StaticResource CardHoverColor}" />
-							</VisualState.Setters>
-						</VisualState>
-					</VisualStateGroup>
-				</VisualStateGroupList>
-			</Setter>
-		</Style>
-	</ContentPage.Resources>
+        <Style x:Key="IconImageButton" TargetType="ImageButton">
+            <Setter Property="BackgroundColor" Value="{StaticResource CardColor}" />
+            <Setter Property="CornerRadius" Value="8" />
+            <Setter Property="WidthRequest" Value="38" />
+            <Setter Property="HeightRequest" Value="38" />
+            <Setter Property="Padding" Value="6" />
+            <Setter Property="BorderColor" Value="{StaticResource BorderColor}" />
+            <Setter Property="BorderWidth" Value="1" />
+            <Setter Property="VisualStateManager.VisualStateGroups">
+                <VisualStateGroupList>
+                    <VisualStateGroup x:Name="CommonStates">
+                        <VisualState x:Name="Normal" />
+                        <VisualState x:Name="PointerOver">
+                            <VisualState.Setters>
+                                <Setter Property="BackgroundColor" Value="{StaticResource CardHoverColor}" />
+                            </VisualState.Setters>
+                        </VisualState>
+                    </VisualStateGroup>
+                </VisualStateGroupList>
+            </Setter>
+        </Style>
+    </ContentPage.Resources>
 
-	<Grid ColumnDefinitions="220, *, 350" Padding="16" ColumnSpacing="16">
+    <Grid ColumnDefinitions="220, *, 350" Padding="16" ColumnSpacing="16">
 
-		<!-- SIDEBAR -->
-		<Border Grid.Column="0" Background="{StaticResource CardColor}" Stroke="{StaticResource BorderColor}" StrokeThickness="1" StrokeShape="RoundRectangle 12" Padding="12">
-			<Grid RowDefinitions="Auto, *">
-				<Grid Grid.Row="0" RowDefinitions="Auto, Auto" RowSpacing="12" Margin="0,0,0,16">
-					<Label Grid.Row="0" Text="Playlists" TextColor="{StaticResource TitleColor}" FontSize="20" FontAttributes="Bold" HorizontalOptions="Center" />
-					<HorizontalStackLayout Grid.Row="1" Spacing="8" HorizontalOptions="Center">
-						<ImageButton Source="upload_icon.png" Style="{StaticResource IconImageButton}" />
-						<ImageButton Source="download_icon.png" Command="{Binding ImportPlaylistCommand}" Style="{StaticResource IconImageButton}" />
-						<ImageButton Source="plus_icon.png" Command="{Binding AddNewPlaylistCommand}" Style="{StaticResource IconImageButton}" />
-						<ImageButton Source="maximize_2_icon.png" Style="{StaticResource IconImageButton}" />
-					</HorizontalStackLayout>
-					<BoxView Grid.Row="1" HeightRequest="1" Color="{StaticResource BorderColor}" VerticalOptions="End" Margin="0,0,0,-8" />
-				</Grid>
+        <!-- SIDEBAR -->
+        <Border Grid.Column="0" Background="{StaticResource CardColor}" Stroke="{StaticResource BorderColor}" StrokeThickness="1" StrokeShape="RoundRectangle 12" Padding="12">
+            <Grid RowDefinitions="Auto, *">
+                <Grid Grid.Row="0" RowDefinitions="Auto, Auto" RowSpacing="12" Margin="0,0,0,16">
+                    <Label Grid.Row="0" Text="Playlists" TextColor="{StaticResource TitleColor}" FontSize="20" FontAttributes="Bold" HorizontalOptions="Center" />
+                    <HorizontalStackLayout Grid.Row="1" Spacing="8" HorizontalOptions="Center">
+                        <ImageButton Source="upload_icon.png" Style="{StaticResource IconImageButton}" />
+                        <ImageButton Source="download_icon.png" Command="{Binding ImportPlaylistCommand}" Style="{StaticResource IconImageButton}" />
+                        <ImageButton Source="plus_icon.png" Command="{Binding AddNewPlaylistCommand}" Style="{StaticResource IconImageButton}" />
+                        <ImageButton Source="maximize_2_icon.png" Style="{StaticResource IconImageButton}" />
+                    </HorizontalStackLayout>
+                    <BoxView Grid.Row="1" HeightRequest="1" Color="{StaticResource BorderColor}" VerticalOptions="End" Margin="0,0,0,-8" />
+                </Grid>
 
-				<CollectionView Grid.Row="1" ItemsSource="{Binding Playlists}" SelectedItem="{Binding SelectedPlaylist, Mode=TwoWay}" SelectionMode="Single" ItemSizingStrategy="MeasureFirstItem">
-					<CollectionView.ItemTemplate>
-						<DataTemplate x:DataType="models:Playlist">
-							<Grid Margin="0,0,0,6">
+                <CollectionView Grid.Row="1" ItemsSource="{Binding Playlists}" SelectedItem="{Binding SelectedPlaylist, Mode=TwoWay}" SelectionMode="Single" ItemSizingStrategy="MeasureFirstItem">
+                    <CollectionView.ItemTemplate>
+                        <DataTemplate x:DataType="models:Playlist">
+                            <Grid Margin="0,0,0,6">
 
-								<!-- Layer 1: Background with DataTrigger instead of VSM -->
-								<Border x:Name="RootBorder" StrokeShape="RoundRectangle 12" Padding="0" Background="#1c2128" Stroke="Transparent">
-									<Border.Triggers>
-										<DataTrigger TargetType="Border" Binding="{Binding IsSelected}" Value="True">
-											<Setter Property="Background" Value="{StaticResource SelectedBgColor}" />
-											<Setter Property="Stroke" Value="{StaticResource AccentColor}" />
-										</DataTrigger>
-									</Border.Triggers>
-								</Border>
+                                <!-- Layer 1: Background with DataTrigger instead of VSM -->
+                                <Border x:Name="RootBorder" StrokeShape="RoundRectangle 12" Padding="0" Background="#1c2128" Stroke="Transparent">
+                                    <Border.Triggers>
+                                        <DataTrigger TargetType="Border" Binding="{Binding IsSelected}" Value="True">
+                                            <Setter Property="Background" Value="{StaticResource SelectedBgColor}" />
+                                            <Setter Property="Stroke" Value="{StaticResource AccentColor}" />
+                                        </DataTrigger>
+                                    </Border.Triggers>
+                                </Border>
 
-								<!-- Layer 2: Content (No input blockers) -->
-								<Grid RowDefinitions="Auto, Auto, Auto, Auto" RowSpacing="0" Padding="8">
-									<Image Grid.Row="0" Source="{Binding IconImageSource}" Aspect="AspectFill" HeightRequest="110" WidthRequest="110" HorizontalOptions="Center" Margin="0,0,0,4">
-										<Image.Clip>
-											<RoundRectangleGeometry CornerRadius="12" Rect="0,0,110,110" />
-										</Image.Clip>
-									</Image>
+                                <!-- Layer 2: Content (No input blockers) -->
+                                <Grid RowDefinitions="Auto, Auto, Auto, Auto" RowSpacing="0" Padding="8">
+                                    <Image Grid.Row="0" Source="{Binding IconImageSource}" Aspect="AspectFill" HeightRequest="110" WidthRequest="110" HorizontalOptions="Center" Margin="0,0,0,4">
+                                        <Image.Clip>
+                                            <RoundRectangleGeometry CornerRadius="12" Rect="0,0,110,110" />
+                                        </Image.Clip>
+                                    </Image>
 
-									<Label Grid.Row="1" Text="{Binding Name}" HorizontalTextAlignment="Center" FontSize="14" FontAttributes="Bold" />
+                                    <Label Grid.Row="1" Text="{Binding Name}" HorizontalTextAlignment="Center" FontSize="14" FontAttributes="Bold" />
 
-									<HorizontalStackLayout Grid.Row="2" HorizontalOptions="Center" Spacing="6">
-										<Border Background="#0d1117" Stroke="{StaticResource BorderColor}" StrokeThickness="1" Padding="8,2">
-											<Border.StrokeShape>
-												<RoundRectangle CornerRadius="6" />
-											</Border.StrokeShape>
-											<Label Text="{Binding ItemCount, StringFormat='{0} tracks'}" TextColor="{StaticResource MutedColor}" FontSize="10" />
-										</Border>
-										<Border Background="#0d1117" Stroke="{StaticResource BorderColor}" StrokeThickness="1" Padding="8,2">
-											<Border.StrokeShape>
-												<RoundRectangle CornerRadius="6" />
-											</Border.StrokeShape>
-											<Label Text="2:10:01" TextColor="{StaticResource MutedColor}" FontSize="10" HorizontalOptions="Center" VerticalOptions="Center" LineBreakMode="NoWrap"/>
-										</Border>
-									</HorizontalStackLayout>
-									<Label Grid.Row="3" Text="{Binding CreatedAt, StringFormat='CREATED {0:MMM dd, yyyy, hh:mm tt}'}" HorizontalTextAlignment="Center" TextColor="{StaticResource MutedColor}" FontSize="9" CharacterSpacing="0.5" TextTransform="Uppercase" Margin="0,4,0,0" />
-								</Grid>
+                                    <HorizontalStackLayout Grid.Row="2" HorizontalOptions="Center" Spacing="6">
+                                        <Border Background="#0d1117" Stroke="{StaticResource BorderColor}" StrokeThickness="1" Padding="8,2">
+                                            <Border.StrokeShape>
+                                                <RoundRectangle CornerRadius="6" />
+                                            </Border.StrokeShape>
+                                            <Label Text="{Binding ItemCount, StringFormat='{0} tracks'}" TextColor="{StaticResource MutedColor}" FontSize="10" />
+                                        </Border>
+                                        <Border Background="#0d1117" Stroke="{StaticResource BorderColor}" StrokeThickness="1" Padding="8,2">
+                                            <Border.StrokeShape>
+                                                <RoundRectangle CornerRadius="6" />
+                                            </Border.StrokeShape>
+                                            <Label Text="2:10:01" TextColor="{StaticResource MutedColor}" FontSize="10" HorizontalOptions="Center" VerticalOptions="Center" LineBreakMode="NoWrap"/>
+                                        </Border>
+                                    </HorizontalStackLayout>
+                                    <Label Grid.Row="3" Text="{Binding CreatedAt, StringFormat='CREATED {0:MMM dd, yyyy, hh:mm tt}'}" HorizontalTextAlignment="Center" TextColor="{StaticResource MutedColor}" FontSize="9" CharacterSpacing="0.5" TextTransform="Uppercase" Margin="0,4,0,0" />
+                                </Grid>
 
-								<!-- Layer 3: Desktop Hover Catcher & Action Buttons -->
-								<Grid BackgroundColor="Transparent" IsVisible="{OnPlatform Default=False, WinUI=True, MacCatalyst=True}">
-									<Grid.GestureRecognizers>
-										<PointerGestureRecognizer PointerEnteredCommand="{Binding PointerEnteredCommand}" PointerExitedCommand="{Binding PointerExitedCommand}" />
-									</Grid.GestureRecognizers>
+                                <!-- Layer 3: Desktop Hover Catcher & Action Buttons -->
+                                <Grid BackgroundColor="Transparent" IsVisible="{OnPlatform Default=False, WinUI=True, MacCatalyst=True}">
+                                    <Grid.GestureRecognizers>
+                                        <PointerGestureRecognizer PointerEnteredCommand="{Binding PointerEnteredCommand}" PointerExitedCommand="{Binding PointerExitedCommand}" />
+                                    </Grid.GestureRecognizers>
 
-									<!-- Hover Tint -->
-									<Border BackgroundColor="White" Opacity="0" InputTransparent="True" StrokeShape="RoundRectangle 12" Stroke="Transparent">
-										<Border.Triggers>
-											<DataTrigger TargetType="Border" Binding="{Binding IsHovered}" Value="True">
-												<Setter Property="Opacity" Value="0.06" />
-											</DataTrigger>
-										</Border.Triggers>
-									</Border>
+                                    <!-- Hover Tint -->
+                                    <Border BackgroundColor="White" Opacity="0" InputTransparent="True" StrokeShape="RoundRectangle 12" Stroke="Transparent">
+                                        <Border.Triggers>
+                                            <DataTrigger TargetType="Border" Binding="{Binding IsHovered}" Value="True">
+                                                <Setter Property="Opacity" Value="0.06" />
+                                            </DataTrigger>
+                                        </Border.Triggers>
+                                    </Border>
 
-									<!-- DESKTOP ACTION BUTTONS (Top Center) -->
-									<HorizontalStackLayout HorizontalOptions="Center" VerticalOptions="Start" Spacing="8" Margin="0,16,0,0" Opacity="0">
-										<HorizontalStackLayout.Triggers>
-											<!-- MultiTrigger: Only shows when the playlist is BOTH Selected AND Hovered over -->
-											<MultiTrigger TargetType="HorizontalStackLayout">
-												<MultiTrigger.Conditions>
-													<BindingCondition Binding="{Binding IsSelected}" Value="True" />
-													<BindingCondition Binding="{Binding IsHovered}" Value="True" />
-												</MultiTrigger.Conditions>
-												<Setter Property="Opacity" Value="1" />
-											</MultiTrigger>
-										</HorizontalStackLayout.Triggers>
-										
-											<ImageButton Source="edit_2_icon.png" Style="{StaticResource IconImageButton}" WidthRequest="36" HeightRequest="36" Padding="6" />
-											<ImageButton Source="trash_2_icon.png" BackgroundColor="{StaticResource DangerColor}" BorderColor="Transparent" CornerRadius="8" WidthRequest="36" HeightRequest="36" Padding="6">
-											<VisualStateManager.VisualStateGroups>
-												<VisualStateGroup x:Name="CommonStates">
-													<VisualState x:Name="Normal"/>
-													<VisualState x:Name="PointerOver">
-														<VisualState.Setters>
-															<Setter Property="BackgroundColor" Value="#e05462" />
-														</VisualState.Setters>
-													  </VisualState>
-													 </VisualStateGroup>
-												</VisualStateManager.VisualStateGroups>
-											</ImageButton>
-										
-									</HorizontalStackLayout>
-								</Grid>
+                                    <!-- DESKTOP ACTION BUTTONS (Top Center) -->
+                                    <HorizontalStackLayout HorizontalOptions="Center" VerticalOptions="Start" Spacing="8" Margin="0,16,0,0" Opacity="0">
+                                        <HorizontalStackLayout.Triggers>
+                                            <!-- MultiTrigger: Only shows when the playlist is BOTH Selected AND Hovered over -->
+                                            <MultiTrigger TargetType="HorizontalStackLayout">
+                                                <MultiTrigger.Conditions>
+                                                    <BindingCondition Binding="{Binding IsSelected}" Value="True" />
+                                                    <BindingCondition Binding="{Binding IsHovered}" Value="True" />
+                                                </MultiTrigger.Conditions>
+                                                <Setter Property="Opacity" Value="1" />
+                                            </MultiTrigger>
+                                        </HorizontalStackLayout.Triggers>
 
-							</Grid>
-						</DataTemplate>
-					</CollectionView.ItemTemplate>
-				</CollectionView>
-			</Grid>
-		</Border>
+                                        <ImageButton Source="edit_2_icon.png" Style="{StaticResource IconImageButton}" WidthRequest="36" HeightRequest="36" Padding="6" />
+                                        <ImageButton Source="trash_2_icon.png" BackgroundColor="{StaticResource DangerColor}" BorderColor="Transparent" CornerRadius="8" WidthRequest="36" HeightRequest="36" Padding="6" Command="{Binding BindingContext.DeletePlaylistCommand, Source={RelativeSource AncestorType={x:Type ContentPage}}}" CommandParameter="{Binding .}">
+                                            <VisualStateManager.VisualStateGroups>
+                                                <VisualStateGroupList>
+                                                    <VisualStateGroup x:Name="CommonStates">
+                                                        <VisualState x:Name="Normal"/>
+                                                        <VisualState x:Name="PointerOver">
+                                                            <VisualState.Setters>
+                                                                <Setter Property="BackgroundColor" Value="#e05462" />
+                                                            </VisualState.Setters>
+                                                        </VisualState>
+                                                    </VisualStateGroup>
+                                                </VisualStateGroupList>
+                                            </VisualStateManager.VisualStateGroups>
+                                        </ImageButton>
 
-		<!-- MAIN CONTENT -->
-		<Border Grid.Column="1" Background="{StaticResource CardColor}" Stroke="{StaticResource BorderColor}" StrokeThickness="1" StrokeShape="RoundRectangle 12" Padding="16">
-			<Grid RowDefinitions="Auto, Auto, *">
-				<Grid Grid.Row="0" ColumnDefinitions="*, Auto" Margin="0,0,0,16">
-					<Label Grid.Column="0" Text="{Binding SelectedPlaylist.Name, FallbackValue='Select a Playlist'}" TextColor="{StaticResource TitleColor}" FontSize="24" FontAttributes="Bold" LineBreakMode="TailTruncation" />
-					<HorizontalStackLayout Grid.Column="1" Spacing="16" VerticalOptions="Center">
-						<VerticalStackLayout VerticalOptions="Center">
-							<Label Text="{Binding SelectedPlaylist.ItemCount, StringFormat='{0} items'}" TextColor="{StaticResource MutedColor}" FontSize="13" HorizontalOptions="End"/>
-							<Label Text="00:00" TextColor="{StaticResource MutedColor}" FontSize="13" HorizontalOptions="End"/>
-						</VerticalStackLayout>
-						<ImageButton Source="settings_icon.png" Style="{StaticResource IconImageButton}" />
-					</HorizontalStackLayout>
-				</Grid>
+                                    </HorizontalStackLayout>
+                                </Grid>
 
-				<Grid Grid.Row="1" ColumnDefinitions="Auto, *" Margin="0,0,0,16" HeightRequest="44">
-					<HorizontalStackLayout Grid.Column="0" Spacing="8">
-						<ImageButton Source="play_icon.png" Command="{Binding PlayPlaylistCommand}" Style="{StaticResource IconImageButton}" />
-						<ImageButton Source="shuffle_icon.png" Command="{Binding ShufflePlaylistCommand}"  Style="{StaticResource IconImageButton}" />
-					</HorizontalStackLayout>
-					<HorizontalStackLayout Grid.Column="1" Spacing="8" HorizontalOptions="End">
-						<ImageButton Source="plus_icon.png" Style="{StaticResource IconImageButton}" />
-						<ImageButton Source="clipboard_icon.png" Style="{StaticResource IconImageButton}" />
-						<ImageButton Source="list_icon.png" Style="{StaticResource IconImageButton}" />
-					</HorizontalStackLayout>
-				</Grid>
+                            </Grid>
+                        </DataTemplate>
+                    </CollectionView.ItemTemplate>
+                </CollectionView>
+            </Grid>
+        </Border>
 
-				<!-- LIST ITEMS -->
-				<CollectionView Grid.Row="2" ItemsSource="{Binding SelectedPlaylist.Items}" SelectedItem="{Binding CurrentTrack, Mode=TwoWay}" SelectionMode="Single" ItemSizingStrategy="MeasureFirstItem">
-					<CollectionView.ItemTemplate>
-						<DataTemplate x:DataType="models:PlaylistItem">
-							<Grid Margin="0,0,0,4" HeightRequest="58">
+        <!-- MAIN CONTENT -->
+        <Border Grid.Column="1" Background="{StaticResource CardColor}" Stroke="{StaticResource BorderColor}" StrokeThickness="1" StrokeShape="RoundRectangle 12" Padding="16">
+            <Grid RowDefinitions="Auto, Auto, *">
+                <Grid Grid.Row="0" ColumnDefinitions="*, Auto" Margin="0,0,0,16">
+                    <Label Grid.Column="0" Text="{Binding SelectedPlaylist.Name, FallbackValue='Select a Playlist'}" TextColor="{StaticResource TitleColor}" FontSize="24" FontAttributes="Bold" LineBreakMode="TailTruncation" />
+                    <HorizontalStackLayout Grid.Column="1" Spacing="16" VerticalOptions="Center">
+                        <VerticalStackLayout VerticalOptions="Center">
+                            <Label Text="{Binding SelectedPlaylist.ItemCount, StringFormat='{0} items'}" TextColor="{StaticResource MutedColor}" FontSize="13" HorizontalOptions="End"/>
+                            <Label Text="00:00" TextColor="{StaticResource MutedColor}" FontSize="13" HorizontalOptions="End"/>
+                        </VerticalStackLayout>
+                        <ImageButton Source="settings_icon.png" Style="{StaticResource IconImageButton}" />
+                    </HorizontalStackLayout>
+                </Grid>
 
-								<!-- Layer 1: Background with DataTrigger instead of VSM -->
-								<Border x:Name="RootBorder" StrokeShape="RoundRectangle 8" Padding="0" Background="#1c2128" Stroke="{StaticResource BorderColor}">
-									<Border.Triggers>
-										<DataTrigger TargetType="Border" Binding="{Binding IsSelected}" Value="True">
-											<Setter Property="Background" Value="#253549" />
-											<Setter Property="Stroke" Value="{StaticResource AccentColor}" />
-										</DataTrigger>
-									</Border.Triggers>
-								</Border>
+                <Grid Grid.Row="1" ColumnDefinitions="Auto, *" Margin="0,0,0,16" HeightRequest="44">
+                    <HorizontalStackLayout Grid.Column="0" Spacing="8">
+                        <ImageButton Source="play_icon.png" Command="{Binding PlayPlaylistCommand}" Style="{StaticResource IconImageButton}" />
+                        <ImageButton Source="shuffle_icon.png" Command="{Binding ShufflePlaylistCommand}"  Style="{StaticResource IconImageButton}" />
+                    </HorizontalStackLayout>
+                    <HorizontalStackLayout Grid.Column="1" Spacing="8" HorizontalOptions="End">
+                        <ImageButton Source="plus_icon.png" Style="{StaticResource IconImageButton}" />
+                        <ImageButton Source="clipboard_icon.png" Style="{StaticResource IconImageButton}" />
+                        <ImageButton Source="list_icon.png" Style="{StaticResource IconImageButton}" />
+                    </HorizontalStackLayout>
+                </Grid>
 
-								<!-- Layer 2: Content Grid -->
-								<Grid ColumnDefinitions="Auto, *" ColumnSpacing="10" Padding="10">
-									<Grid Grid.Column="0" WidthRequest="36" HeightRequest="36" VerticalOptions="Center">
-										<Image Source="{Binding ItemIconSource}" Aspect="AspectFill">
-											<Image.Clip>
-												<RoundRectangleGeometry CornerRadius="6" Rect="0,0,36,36" />
-											</Image.Clip>
-										</Image>
-									</Grid>
+                <!-- LIST ITEMS -->
+                <CollectionView Grid.Row="2" ItemsSource="{Binding SelectedPlaylist.Items}" SelectedItem="{Binding CurrentTrack, Mode=TwoWay}" SelectionMode="Single" ItemSizingStrategy="MeasureFirstItem">
+                    <CollectionView.ItemTemplate>
+                        <DataTemplate x:DataType="models:PlaylistItem">
+                            <Grid Margin="0,0,0,4" HeightRequest="58">
 
-									<VerticalStackLayout Grid.Column="1" VerticalOptions="Center">
+                                <!-- Layer 1: Background with DataTrigger instead of VSM -->
+                                <Border x:Name="RootBorder" StrokeShape="RoundRectangle 8" Padding="0" Background="#1c2128" Stroke="{StaticResource BorderColor}">
+                                    <Border.Triggers>
+                                        <DataTrigger TargetType="Border" Binding="{Binding IsSelected}" Value="True">
+                                            <Setter Property="Background" Value="#253549" />
+                                            <Setter Property="Stroke" Value="{StaticResource AccentColor}" />
+                                        </DataTrigger>
+                                    </Border.Triggers>
+                                </Border>
 
-										<Label Grid.Row="0"
+                                <!-- Layer 2: Content Grid -->
+                                <Grid ColumnDefinitions="Auto, *" ColumnSpacing="10" Padding="10">
+                                    <Grid Grid.Column="0" WidthRequest="36" HeightRequest="36" VerticalOptions="Center">
+                                        <Image Source="{Binding ItemIconSource}" Aspect="AspectFill">
+                                            <Image.Clip>
+                                                <RoundRectangleGeometry CornerRadius="6" Rect="0,0,36,36" />
+                                            </Image.Clip>
+                                        </Image>
+                                    </Grid>
+
+                                    <VerticalStackLayout Grid.Column="1" VerticalOptions="Center">
+
+                                        <Label Grid.Row="0"
 											Text="{Binding Title}"
 											FontSize="15"
 											FontAttributes="Bold"
 											LineBreakMode="TailTruncation" />
 
-										<!-- Clipping container -->
-										<Grid HeightRequest="24" IsClippedToBounds="True">
+                                        <!-- Clipping container -->
+                                        <Grid HeightRequest="24" IsClippedToBounds="True">
 
-											<FlexLayout Grid.Row="1"
+                                            <FlexLayout Grid.Row="1"
 												Direction="Row"
 												Wrap="NoWrap"
 												AlignItems="Center"
 												IsVisible="{Binding HasTags}">
 
-												<!-- Tags -->
-												<Border Background="#1c304a" Stroke="{StaticResource AccentColor}" StrokeThickness="1" Padding="5,1" Margin="0,0,1,1" IsVisible="{Binding HasTag1}">
-													<Border.StrokeShape>
-														<RoundRectangle CornerRadius="6"/>
-													</Border.StrokeShape>
-													<Label Text="{Binding Tag1}" TextColor="#d9edff" FontSize="11"/>
-												</Border>
+                                                <!-- Tags -->
+                                                <Border Background="#1c304a" Stroke="{StaticResource AccentColor}" StrokeThickness="1" Padding="5,1" Margin="0,0,1,1" IsVisible="{Binding HasTag1}">
+                                                    <Border.StrokeShape>
+                                                        <RoundRectangle CornerRadius="6"/>
+                                                    </Border.StrokeShape>
+                                                    <Label Text="{Binding Tag1}" TextColor="#d9edff" FontSize="11"/>
+                                                </Border>
 
-												<Border Background="#1c304a" Stroke="{StaticResource AccentColor}" StrokeThickness="1" Padding="5,1" Margin="0,0,1,1" IsVisible="{Binding HasTag2}">
-													<Border.StrokeShape>
-														<RoundRectangle CornerRadius="6"/>
-													</Border.StrokeShape>
-													<Label Text="{Binding Tag2}" TextColor="#d9edff" FontSize="11"/>
-												</Border>
+                                                <Border Background="#1c304a" Stroke="{StaticResource AccentColor}" StrokeThickness="1" Padding="5,1" Margin="0,0,1,1" IsVisible="{Binding HasTag2}">
+                                                    <Border.StrokeShape>
+                                                        <RoundRectangle CornerRadius="6"/>
+                                                    </Border.StrokeShape>
+                                                    <Label Text="{Binding Tag2}" TextColor="#d9edff" FontSize="11"/>
+                                                </Border>
 
-												<Border Background="#1c304a" Stroke="{StaticResource AccentColor}" StrokeThickness="1" Padding="5,1" Margin="0,0,1,1" IsVisible="{Binding HasTag3}">
-													<Border.StrokeShape>
-														<RoundRectangle CornerRadius="6"/>
-													</Border.StrokeShape>
-													<Label Text="{Binding Tag3}" TextColor="#d9edff" FontSize="11"/>
-												</Border>
+                                                <Border Background="#1c304a" Stroke="{StaticResource AccentColor}" StrokeThickness="1" Padding="5,1" Margin="0,0,1,1" IsVisible="{Binding HasTag3}">
+                                                    <Border.StrokeShape>
+                                                        <RoundRectangle CornerRadius="6"/>
+                                                    </Border.StrokeShape>
+                                                    <Label Text="{Binding Tag3}" TextColor="#d9edff" FontSize="11"/>
+                                                </Border>
 
-												<Border Background="#1c304a" Stroke="{StaticResource AccentColor}" StrokeThickness="1" Padding="5,1" Margin="0,0,1,1" IsVisible="{Binding HasTag4}">
-													<Border.StrokeShape>
-														<RoundRectangle CornerRadius="6"/>
-													</Border.StrokeShape>
-													<Label Text="{Binding Tag4}" TextColor="#d9edff" FontSize="11"/>
-												</Border>
+                                                <Border Background="#1c304a" Stroke="{StaticResource AccentColor}" StrokeThickness="1" Padding="5,1" Margin="0,0,1,1" IsVisible="{Binding HasTag4}">
+                                                    <Border.StrokeShape>
+                                                        <RoundRectangle CornerRadius="6"/>
+                                                    </Border.StrokeShape>
+                                                    <Label Text="{Binding Tag4}" TextColor="#d9edff" FontSize="11"/>
+                                                </Border>
 
-											</FlexLayout>
+                                            </FlexLayout>
 
-										</Grid>
-									</VerticalStackLayout>
+                                        </Grid>
+                                    </VerticalStackLayout>
 
-									<!-- MOBILE ACTION BUTTONS with DataTrigger instead of VSM -->
-									<HorizontalStackLayout x:Name="MobileActionButtons" Grid.Column="2" Spacing="6" VerticalOptions="Center" HorizontalOptions="End" Opacity="0" IsVisible="{OnPlatform Default=True, WinUI=False, MacCatalyst=False}">
-										<HorizontalStackLayout.Triggers>
-											<DataTrigger TargetType="HorizontalStackLayout" Binding="{Binding IsSelected}" Value="True">
-												<Setter Property="Opacity" Value="1" />
-											</DataTrigger>
-										</HorizontalStackLayout.Triggers>
+                                    <!-- MOBILE ACTION BUTTONS with DataTrigger instead of VSM -->
+                                    <HorizontalStackLayout x:Name="MobileActionButtons" Grid.Column="2" Spacing="6" VerticalOptions="Center" HorizontalOptions="End" Opacity="0" IsVisible="{OnPlatform Default=True, WinUI=False, MacCatalyst=False}">
+                                        <HorizontalStackLayout.Triggers>
+                                            <DataTrigger TargetType="HorizontalStackLayout" Binding="{Binding IsSelected}" Value="True">
+                                                <Setter Property="Opacity" Value="1" />
+                                            </DataTrigger>
+                                        </HorizontalStackLayout.Triggers>
 
-										<ImageButton Source="edit_2_icon.png" Style="{StaticResource IconImageButton}" />
-										<ImageButton Source="trash_2_icon.png" Style="{StaticResource IconImageButton}" BackgroundColor="{StaticResource DangerColor}"/>
-									</HorizontalStackLayout>
-								</Grid>
+                                        <ImageButton Source="edit_2_icon.png" Style="{StaticResource IconImageButton}"
+			 Command="{Binding BindingContext.EditTrackCommand, Source={RelativeSource AncestorType={x:Type ContentPage}}}" 
+			 CommandParameter="{Binding .}"/>
 
-								<!-- Layer 3: Desktop Hover & Interaction Overlay -->
-								<!-- On Mobile this completely vanishes. No gestures block the CollectionView! -->
-								<Grid BackgroundColor="Transparent" IsVisible="{OnPlatform Default=False, WinUI=True, MacCatalyst=True}">
-									<Grid.GestureRecognizers>
-										<PointerGestureRecognizer PointerEnteredCommand="{Binding PointerEnteredCommand}" PointerExitedCommand="{Binding PointerExitedCommand}" />
-									</Grid.GestureRecognizers>
+                                        <ImageButton Source="trash_2_icon.png" Style="{StaticResource IconImageButton}" BackgroundColor="{StaticResource DangerColor}"
+			 Command="{Binding BindingContext.DeleteTrackCommand, Source={RelativeSource AncestorType={x:Type ContentPage}}}" 
+			 CommandParameter="{Binding .}"/>
+                                    </HorizontalStackLayout>
+                                </Grid>
 
-									<!-- Hover Tint -->
-									<Border BackgroundColor="White" Opacity="0" InputTransparent="True" StrokeShape="RoundRectangle 8" Stroke="Transparent">
-										<Border.Triggers>
-											<DataTrigger TargetType="Border" Binding="{Binding IsHovered}" Value="True">
-												<Setter Property="Opacity" Value="0.08" />
-											</DataTrigger>
-										</Border.Triggers>
-									</Border>
+                                <!-- Layer 3: Desktop Hover & Interaction Overlay -->
+                                <!-- On Mobile this completely vanishes. No gestures block the CollectionView! -->
+                                <Grid BackgroundColor="Transparent" IsVisible="{OnPlatform Default=False, WinUI=True, MacCatalyst=True}">
+                                    <Grid.GestureRecognizers>
+                                        <PointerGestureRecognizer PointerEnteredCommand="{Binding PointerEnteredCommand}" PointerExitedCommand="{Binding PointerExitedCommand}" />
+                                    </Grid.GestureRecognizers>
 
-									<!-- DESKTOP ACTION BUTTONS -->
-									<!-- Rendered directly inside the Desktop overlay so they don't break the hover events when clicked -->
-									<HorizontalStackLayout HorizontalOptions="End" VerticalOptions="Center" Spacing="6" Margin="10" Opacity="0">
-										<HorizontalStackLayout.Triggers>
-											<DataTrigger TargetType="HorizontalStackLayout" Binding="{Binding IsHovered}" Value="True">
-												<Setter Property="Opacity" Value="1" />
-											</DataTrigger>
-										</HorizontalStackLayout.Triggers>
+                                    <!-- Hover Tint -->
+                                    <Border BackgroundColor="White" Opacity="0" InputTransparent="True" StrokeShape="RoundRectangle 8" Stroke="Transparent">
+                                        <Border.Triggers>
+                                            <DataTrigger TargetType="Border" Binding="{Binding IsHovered}" Value="True">
+                                                <Setter Property="Opacity" Value="0.08" />
+                                            </DataTrigger>
+                                        </Border.Triggers>
+                                    </Border>
 
-										<ImageButton Source="edit_2_icon.png" Style="{StaticResource IconImageButton}" />
-										<ImageButton Source="trash_2_icon.png" BackgroundColor="{StaticResource DangerColor}" BorderColor="Transparent" CornerRadius="8" WidthRequest="38" HeightRequest="38" Padding="6">
-											<VisualStateManager.VisualStateGroups>
-												<VisualStateGroup x:Name="CommonStates">
-													<VisualState x:Name="Normal"/>
-													<VisualState x:Name="PointerOver">
-														<VisualState.Setters>
-															<Setter Property="BackgroundColor" Value="#e05462" />
-														</VisualState.Setters>
-													</VisualState>
-												</VisualStateGroup>
-											</VisualStateManager.VisualStateGroups>
-										</ImageButton>
-									</HorizontalStackLayout>
-								</Grid>
+                                    <!-- DESKTOP ACTION BUTTONS -->
+                                    <!-- Rendered directly inside the Desktop overlay so they don't break the hover events when clicked -->
+                                    <HorizontalStackLayout HorizontalOptions="End" VerticalOptions="Center" Spacing="6" Margin="10" Opacity="0">
+                                        <HorizontalStackLayout.Triggers>
+                                            <DataTrigger TargetType="HorizontalStackLayout" Binding="{Binding IsHovered}" Value="True">
+                                                <Setter Property="Opacity" Value="1" />
+                                            </DataTrigger>
+                                        </HorizontalStackLayout.Triggers>
 
-							</Grid>
-						</DataTemplate>
-					</CollectionView.ItemTemplate>
-				</CollectionView>
+                                        <ImageButton Source="edit_2_icon.png" Style="{StaticResource IconImageButton}"
+			 Command="{Binding BindingContext.EditTrackCommand, Source={RelativeSource AncestorType={x:Type ContentPage}}}" 
+			 CommandParameter="{Binding .}"/>
 
-			</Grid>
-		</Border>
-		<views:PlayerPaneView Grid.Column="2" />
+                                        <ImageButton Source="trash_2_icon.png" Style="{StaticResource IconImageButton}" BackgroundColor="{StaticResource DangerColor}"
+			 Command="{Binding BindingContext.DeleteTrackCommand, Source={RelativeSource AncestorType={x:Type ContentPage}}}" 
+			 CommandParameter="{Binding .}">
+                                            <VisualStateManager.VisualStateGroups>
+                                                <VisualStateGroupList>
+                                                    <VisualStateGroup x:Name="CommonStates">
+                                                        <VisualState x:Name="Normal"/>
+                                                        <VisualState x:Name="PointerOver">
+                                                            <VisualState.Setters>
+                                                                <Setter Property="BackgroundColor" Value="#e05462" />
+                                                            </VisualState.Setters>
+                                                        </VisualState>
+                                                    </VisualStateGroup>
+                                                </VisualStateGroupList>
+                                            </VisualStateManager.VisualStateGroups>
+                                        </ImageButton>
+                                    </HorizontalStackLayout>
+                                </Grid>
+
+                            </Grid>
+                        </DataTemplate>
+                    </CollectionView.ItemTemplate>
+                </CollectionView>
+
+            </Grid>
+        </Border>
+        <views:PlayerPaneView Grid.Column="2" />
 
 
         <!-- MODAL OVERLAY -->
@@ -340,12 +354,12 @@
 
                     <Label Text="{Binding ModalMessage}" TextColor="{StaticResource TextColor}" IsVisible="{Binding IsModalMessageVisible}" />
 
-                    <Entry Text="{Binding ModalInputText}" TextColor="{StaticResource TitleColor}" BackgroundColor="#0d1117" IsVisible="{Binding IsModalInputVisible}" Placeholder="Type here..." />
+                    <Entry Text="{Binding ModalInputText}" Style="{StaticResource FormEntryStyle}" IsVisible="{Binding IsModalInputVisible}" Placeholder="Type here..." />
 
                     <!-- Buttons -->
                     <HorizontalStackLayout HorizontalOptions="End" Spacing="12" Margin="0,8,0,0">
-                        <Button Text="Cancel" Command="{Binding ModalCancelCommand}" BackgroundColor="Transparent" TextColor="{StaticResource TextColor}" />
-                        <Button Text="{Binding ModalConfirmText}" Command="{Binding ModalConfirmCommand}" BackgroundColor="{Binding ModalConfirmColor}" TextColor="White" CornerRadius="8" FontAttributes="Bold" Padding="16,8"/>
+                        <Button Text="Cancel" Command="{Binding ModalCancelCommand}" Style="{StaticResource PopupSecondaryButtonStyle}" />
+                        <Button Text="{Binding ModalConfirmText}" Command="{Binding ModalConfirmCommand}" Style="{StaticResource PopupPrimaryButtonStyle}" BackgroundColor="{Binding ModalConfirmColor}" />
                     </HorizontalStackLayout>
 
                 </VerticalStackLayout>
