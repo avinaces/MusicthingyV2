@@ -1,6 +1,6 @@
 ﻿using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
-using Musicthingy.Services; // Ensure namespace for ImageScalingService
+using Musicthingy.Services;
 using System.Collections.ObjectModel;
 using System.Text.Json.Serialization;
 
@@ -74,24 +74,28 @@ public partial class Playlist : ObservableObject
 
         try
         {
+            //TODO: maybe its possible to dynamically figure out what size the icons are.
+            const int playlistIconUiSize = 110;
+            const int playlistIconLogicalSize = 12;
+
             ImageSource? source = null;
 
             if (string.IsNullOrEmpty(IconUrl))
             {
-                // Playlist visual size usually 140
-                source = await Task.Run(() => IconGenerator.GenerateIcon(Name, 12, 140));
+
+                source = await Task.Run(() => IconGenerator.GenerateIcon(Name, playlistIconLogicalSize, playlistIconUiSize));
             }
             else if (IconUrl.StartsWith("data:image"))
             {
                 var base64Data = IconUrl.Substring(IconUrl.IndexOf(',') + 1);
                 var imageBytes = Convert.FromBase64String(base64Data);
-                source = await ImageScalingService.ScaleIfSmallAsync(imageBytes, 140)
+                source = await ImageScalingService.ScaleIfSmallAsync(imageBytes, playlistIconUiSize)
                          ?? ImageSource.FromStream(() => new MemoryStream(imageBytes));
             }
             else if (File.Exists(IconUrl))
             {
                 var imageBytes = await File.ReadAllBytesAsync(IconUrl);
-                source = await ImageScalingService.ScaleIfSmallAsync(imageBytes, 140)
+                source = await ImageScalingService.ScaleIfSmallAsync(imageBytes, playlistIconUiSize)
                          ?? ImageSource.FromStream(() => new MemoryStream(imageBytes));
             }
             else
@@ -103,7 +107,8 @@ public partial class Playlist : ObservableObject
             _iconImageSource = source;
             MainThread.BeginInvokeOnMainThread(() => OnPropertyChanged(nameof(IconImageSource)));
         }
-        catch(Exception ex) {
+        catch (Exception ex)
+        {
             await Shell.Current.DisplayAlertAsync("Error", $"Failed to generate icon: {ex.Message}", "OK");
         }
     }

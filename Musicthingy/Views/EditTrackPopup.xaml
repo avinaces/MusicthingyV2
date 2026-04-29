@@ -17,94 +17,99 @@
             MaximumHeightRequest="750"
             Padding="0">
 
-        <ScrollView Padding="20">
-            <VerticalStackLayout Spacing="16">
+        <!-- Use a Grid to separate the scrollable area from the fixed area -->
+        <Grid RowDefinitions="*, Auto">
 
-                <Label Text="Edit Track" FontSize="22" FontAttributes="Bold" TextColor="{StaticResource TitleColor}" Margin="0,0,0,8" />
+            <!-- 1. Scrollable Content Area -->
+            <ScrollView Grid.Row="0" Padding="20,20,20,10">
+                <VerticalStackLayout Spacing="16">
 
-                <!-- Title -->
-                <VerticalStackLayout Spacing="4">
-                    <Label Text="Title" Style="{StaticResource FormLabelStyle}" />
-                    <Entry Text="{Binding EditTitle}" Style="{StaticResource FormEntryStyle}" IsSpellCheckEnabled="True"/>
-                </VerticalStackLayout>
+                    <Label Text="Edit Track" FontSize="22" FontAttributes="Bold" TextColor="{StaticResource TitleColor}" Margin="0,0,0,8" />
 
-                <!-- URL -->
-                <VerticalStackLayout Spacing="4">
-                    <Label Text="URL" Style="{StaticResource FormLabelStyle}" />
-                    <Entry Text="{Binding EditUrl}" Style="{StaticResource FormEntryStyle}"/>
-                </VerticalStackLayout>
-
-                <!-- Start / End Time -->
-                <Grid ColumnDefinitions="*, *" ColumnSpacing="16">
-                    <VerticalStackLayout Grid.Column="0" Spacing="4">
-                        <Label Text="Start (seconds)" Style="{StaticResource FormLabelStyle}" />
-                        <Entry Text="{Binding EditStartTime}" Keyboard="Numeric" Style="{StaticResource FormEntryStyle}"  />
+                    <!-- Title -->
+                    <VerticalStackLayout Spacing="4">
+                        <Label Text="Title" Style="{StaticResource FormLabelStyle}" />
+                        <Entry Text="{Binding EditTitle}" Style="{StaticResource FormEntryStyle}" IsSpellCheckEnabled="True"/>
                     </VerticalStackLayout>
 
-                    <VerticalStackLayout Grid.Column="1" Spacing="4">
-                        <Label Text="End (seconds)" Style="{StaticResource FormLabelStyle}" />
-                        <Entry Text="{Binding EditEndTime}" Keyboard="Numeric" Style="{StaticResource FormEntryStyle}" />
+                    <!-- URL -->
+                    <VerticalStackLayout Spacing="4">
+                        <Label Text="URL" Style="{StaticResource FormLabelStyle}" />
+                        <Entry Text="{Binding EditUrl}" Style="{StaticResource FormEntryStyle}"/>
                     </VerticalStackLayout>
-                </Grid>
 
-                <!-- Icon -->
-                <VerticalStackLayout Spacing="4">
-                    <Label Text="Icon" Style="{StaticResource FormLabelStyle}" />
-                    <HorizontalStackLayout Spacing="12" VerticalOptions="Center">
-                        <Image Source="{Binding ItemIconSource}" WidthRequest="48" HeightRequest="48" Aspect="AspectFill">
-                            <Image.Clip>
-                                <RoundRectangleGeometry CornerRadius="8" Rect="0,0,48,48"/>
-                            </Image.Clip>
-                        </Image>
-                        <!-- Uses the new unified global style without local overrides -->
-                        <Button Text="Reset" Style="{StaticResource PopupSecondaryButtonStyle}" />
-                    </HorizontalStackLayout>
+                    <!-- Start / End Time -->
+                    <Grid ColumnDefinitions="*, *" ColumnSpacing="16">
+                        <VerticalStackLayout Grid.Column="0" Spacing="4">
+                            <Label Text="Start (seconds)" Style="{StaticResource FormLabelStyle}" />
+                            <Entry Text="{Binding EditStartTime}" Keyboard="Numeric" Style="{StaticResource FormEntryStyle}"  />
+                        </VerticalStackLayout>
+
+                        <VerticalStackLayout Grid.Column="1" Spacing="4">
+                            <Label Text="End (seconds)" Style="{StaticResource FormLabelStyle}" />
+                            <Entry Text="{Binding EditEndTime}" Keyboard="Numeric" Style="{StaticResource FormEntryStyle}" />
+                        </VerticalStackLayout>
+                    </Grid>
+
+                    <!-- Icon -->
+                    <VerticalStackLayout Spacing="4">
+                        <Label Text="Icon" Style="{StaticResource FormLabelStyle}" />
+                        <HorizontalStackLayout Spacing="12" VerticalOptions="Center">
+                            <Image Source="{Binding ItemIconSource}" WidthRequest="48" HeightRequest="48" Aspect="AspectFill">
+                                <Image.Clip>
+                                    <RoundRectangleGeometry CornerRadius="8" Rect="0,0,48,48"/>
+                                </Image.Clip>
+                            </Image>
+                            <Button Text="Reset" Style="{StaticResource PopupSecondaryButtonStyle}" />
+                        </HorizontalStackLayout>
+                    </VerticalStackLayout>
+
+                    <!-- Tags -->
+                    <VerticalStackLayout Spacing="4">
+                        <Label Text="Tags" Style="{StaticResource FormLabelStyle}" />
+                        <FlexLayout Direction="Row" Wrap="Wrap" BindableLayout.ItemsSource="{Binding Tags}">
+                            <BindableLayout.ItemTemplate>
+                                <DataTemplate x:DataType="x:String">
+                                    <Border Background="{StaticResource TagBgColor}" 
+                                            Stroke="{StaticResource AccentColor}" 
+                                            StrokeThickness="1" 
+                                            Padding="8,4" 
+                                            Margin="0,0,2,4">
+                                        <Border.StrokeShape>
+                                            <RoundRectangle CornerRadius="8"/>
+                                        </Border.StrokeShape>
+                                        <Label Text="{Binding .}" TextColor="{StaticResource TitleColor}" FontSize="12"/>
+                                    </Border>
+                                </DataTemplate>
+                            </BindableLayout.ItemTemplate>
+                        </FlexLayout>
+                        <ImageButton Source="tag_icon.png" Style="{StaticResource IconImageButton}" Padding="6" HorizontalOptions="Start" />
+                    </VerticalStackLayout>
+
+                    <!-- Last Played -->
+                    <VerticalStackLayout Spacing="4">
+                        <Label Text="Last Played:" Style="{StaticResource FormLabelStyle}" />
+                        <Label Text="{Binding LastPlayedText}" TextColor="{StaticResource MutedColor}" />
+                    </VerticalStackLayout>
+
+                    <!-- Lyrics -->
+                    <VerticalStackLayout Spacing="4">
+                        <Label Text="Lyrics" Style="{StaticResource FormLabelStyle}" />
+                        <Button Text="Edit Lyrics" Style="{StaticResource PopupSecondaryButtonStyle}" HorizontalOptions="Start" />
+                    </VerticalStackLayout>
+
                 </VerticalStackLayout>
+                
+            </ScrollView>
 
-                <!-- Tags -->
-                <VerticalStackLayout Spacing="4">
-                    <Label Text="Tags" Style="{StaticResource FormLabelStyle}" />
+            <HorizontalStackLayout Grid.Row="1" 
+                                   HorizontalOptions="End" 
+                                   Spacing="12" 
+                                   Padding="20,16">
+                <Button Text="Cancel" Clicked="OnCancelClicked" Style="{StaticResource PopupSecondaryButtonStyle}" />
+                <Button Text="Save" Clicked="OnSaveClicked" Style="{StaticResource PopupPrimaryButtonStyle}" />
+            </HorizontalStackLayout>
 
-                    <!-- Dynamic Bindable Layout for Tags -->
-                    <FlexLayout Direction="Row" Wrap="Wrap" BindableLayout.ItemsSource="{Binding Tags}">
-                        <BindableLayout.ItemTemplate>
-                            <DataTemplate x:DataType="x:String">
-                                <Border Background="{StaticResource TagBgColor}" 
-                                        Stroke="{StaticResource AccentColor}" 
-                                        StrokeThickness="1" 
-                                        Padding="8,4" 
-                                        Margin="0,0,2,4">
-                                    <Border.StrokeShape>
-                                        <RoundRectangle CornerRadius="8"/>
-                                    </Border.StrokeShape>
-                                    <Label Text="{Binding .}" TextColor="{StaticResource TitleColor}" FontSize="12"/>
-                                </Border>
-                            </DataTemplate>
-                        </BindableLayout.ItemTemplate>
-                    </FlexLayout>
-
-                    <ImageButton Source="tag_icon.png" Style="{StaticResource IconImageButton}" Padding="6" HorizontalOptions="Start" />
-                </VerticalStackLayout>
-
-                <!-- Last Played -->
-                <VerticalStackLayout Spacing="4">
-                    <Label Text="Last Played:" Style="{StaticResource FormLabelStyle}" />
-                    <Label Text="{Binding LastPlayedText}" TextColor="{StaticResource MutedColor}" />
-                </VerticalStackLayout>
-
-                <!-- Lyrics -->
-                <VerticalStackLayout Spacing="4">
-                    <Label Text="Lyrics" Style="{StaticResource FormLabelStyle}" />
-                    <Button Text="Edit Lyrics" Style="{StaticResource PopupSecondaryButtonStyle}" HorizontalOptions="Start" />
-                </VerticalStackLayout>
-
-                <!-- Actions -->
-                <HorizontalStackLayout HorizontalOptions="End" Spacing="12" Margin="0,16,0,0">
-                    <Button Text="Cancel" Clicked="OnCancelClicked" Style="{StaticResource PopupSecondaryButtonStyle}" />
-                    <Button Text="Save" Clicked="OnSaveClicked" Style="{StaticResource PopupPrimaryButtonStyle}" />
-                </HorizontalStackLayout>
-
-            </VerticalStackLayout>
-        </ScrollView>
+        </Grid>
     </Border>
 </toolkit:Popup>

@@ -132,7 +132,7 @@
                                         </HorizontalStackLayout.Triggers>
 
                                         <ImageButton Source="edit_2_icon.png" Style="{StaticResource IconImageButton}" WidthRequest="36" HeightRequest="36" Padding="6" />
-                                        <ImageButton Source="trash_2_icon.png" BackgroundColor="{StaticResource DangerColor}" BorderColor="Transparent" CornerRadius="8" WidthRequest="36" HeightRequest="36" Padding="6" Command="{Binding BindingContext.DeletePlaylistCommand, Source={RelativeSource AncestorType={x:Type ContentPage}}}" CommandParameter="{Binding .}">
+                                        <ImageButton Source="trash_2_icon.png" BackgroundColor="{StaticResource DangerColor}" BorderColor="Transparent" CornerRadius="8" WidthRequest="37" HeightRequest="37" Padding="6" Command="{Binding BindingContext.DeletePlaylistCommand, Source={RelativeSource AncestorType={x:Type ContentPage}}}" CommandParameter="{Binding .}">
                                             <VisualStateManager.VisualStateGroups>
                                                 <VisualStateGroupList>
                                                     <VisualStateGroup x:Name="CommonStates">
