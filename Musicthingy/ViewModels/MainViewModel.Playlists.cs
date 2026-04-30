@@ -17,6 +17,8 @@ public partial class MainViewModel
         var newList = new Playlist { Name = $"New Playlist {Playlists.Count + 1}", CreatedAt = DateTime.Now };
         Playlists.Add(newList);
         SelectedPlaylist = newList;
+
+        RequestSaveLibrary(); // Trigger library save
     }
 
     [RelayCommand]
@@ -51,6 +53,8 @@ public partial class MainViewModel
                     {
                         Playlists.Add(importedPlaylist);
                         SelectedPlaylist = importedPlaylist;
+                        
+                        RequestSaveLibrary(); // Trigger library save
                     });
                 }
             }
@@ -76,30 +80,37 @@ public partial class MainViewModel
         {
             Playlists.Remove(playlist);
             if (SelectedPlaylist == playlist) SelectedPlaylist = null;
+            
+            RequestSaveLibrary(); // Trigger library save
         }
-    }
-
-    [RelayCommand]
+    }[RelayCommand]
     private void DeleteTrack(PlaylistItem track)
     {
         // Immediate deletion, no modal required
         if (SelectedPlaylist != null && SelectedPlaylist.Items.Contains(track))
         {
             SelectedPlaylist.Items.Remove(track);
+            RequestSaveLibrary(); // Trigger library save
         }
     }
 
     [RelayCommand]
     private async Task EditTrackAsync(PlaylistItem track)
     {
-        // Opens the separate XAML popup file we will create below
         var popup = new Views.EditTrackPopup(track);
 
-        // Show the popup. The result returns 'true' if they clicked Save, 'false/null' if Cancelled
-        var result = await Shell.Current.ShowPopupAsync(popup);
+        // SAFELY get the active page (Shell on PC, MainPage on Mobile)
+        var activePage = Shell.Current ?? Application.Current?.MainPage;
 
-        Debug.WriteLine(result);
+        if (activePage != null)
+        {
+            var popupResult = await activePage.ShowPopupAsync<bool>(popup);
 
+            if (popupResult?.Result is true)
+            {
+                RequestSaveLibrary();
+            }
+        }
     }
 
     private void LoadDummyData()

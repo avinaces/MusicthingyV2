@@ -10,7 +10,7 @@ namespace Musicthingy.ViewModels;
 public partial class MainViewModel
 {
     private readonly YoutubeClient _youtubeClient = new();
-    private readonly ConcurrentDictionary<string, (string Url, DateTime Expiry)> _resolvedCache = new();
+    private static readonly ConcurrentDictionary<string, (string Url, DateTime Expiry)> _resolvedCache = new();
 
     private PlaylistItem? _prefetchedTrack;
     private MediaSource? _prefetchedMediaSource;
@@ -112,7 +112,7 @@ public partial class MainViewModel
                     var manifest = await _youtubeClient.Videos.Streams.GetManifestAsync(videoId);
                     var progressiveStream = manifest.GetMuxedStreams()
                         .Where(s => s.Container == YoutubeExplode.Videos.Streams.Container.Mp4)
-                        .OrderByDescending(s => s.VideoQuality) 
+                        .OrderByDescending(s => s.VideoQuality)
                         .FirstOrDefault();
 
                     string? targetUrl = progressiveStream?.Url ?? manifest.GetAudioOnlyStreams().GetWithHighestBitrate()?.Url;
@@ -121,7 +121,7 @@ public partial class MainViewModel
                     {
                         string ffmpegPath = await GetFFmpegExecutableAsync();
                         string downloadingFilePath = Path.Combine(cacheDir, $"{videoId.Value}_{Guid.NewGuid()}.temp.m4a");
-                        
+
                         double startPos = track.StartTime ?? 0;
                         string args = $"-y -user_agent \"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36\" -reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5 -ss {startPos} -i \"{targetUrl}\" ";
                         if (track.EndTime.HasValue) args += $"-t {track.EndTime.Value - startPos} ";

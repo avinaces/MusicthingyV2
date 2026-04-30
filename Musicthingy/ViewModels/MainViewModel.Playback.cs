@@ -4,6 +4,7 @@ using CommunityToolkit.Mvvm.Messaging;
 using Musicthingy.Models;
 using System.Collections.ObjectModel;
 using System.Diagnostics;
+using System.Text.Json;
 
 namespace Musicthingy.ViewModels;
 
@@ -18,11 +19,20 @@ public partial class MainViewModel
 
     private PlaylistItem? _lastTrackSkipped;
     private bool _hasPerformedInitialSeek;
+    private DateTime _lastPositionSave = DateTime.MinValue;
 
     // --- THE BACKGROUND PLAYBACK QUEUE ---
     [ObservableProperty]
     public partial ObservableCollection<PlaylistItem> PlaybackQueue { get; set; } = new();
 
+    private void SavePlaybackQueueState()
+    {
+        if (_isRestoringState) return;
+
+        // Save the queue order as a lightweight JSON array of URLs
+        var queueUrls = PlaybackQueue.Select(t => t.Url).ToList();
+        Preferences.Default.Set("PlaybackQueueUrls", JsonSerializer.Serialize(queueUrls));
+    }
     [RelayCommand]
     private void PlayPlaylist()
     {
@@ -31,6 +41,7 @@ public partial class MainViewModel
         PlaybackQueue.Clear();
         foreach (var item in SelectedPlaylist.Items) PlaybackQueue.Add(item);
 
+        SavePlaybackQueueState(); // Remember the queue order
         CurrentTrack = PlaybackQueue[0];
     }
 
@@ -44,6 +55,7 @@ public partial class MainViewModel
         PlaybackQueue.Clear();
         foreach (var item in shuffledItems) PlaybackQueue.Add(item);
 
+        SavePlaybackQueueState(); // Remember the shuffled queue order
         CurrentTrack = PlaybackQueue[0];
     }
 
@@ -57,6 +69,7 @@ public partial class MainViewModel
         int nextIndex = (currentIndex + 1) % PlaybackQueue.Count;
         CurrentTrack = PlaybackQueue[nextIndex];
     }
+
     [RelayCommand]
     public void PlayPrevious()
     {
@@ -75,14 +88,27 @@ public partial class MainViewModel
         {
             _hasPerformedInitialSeek = true;
             double startPos = CurrentTrack.StartTime ?? 0;
+            string action = "StartPlayback"; // By default, actively start playing
 
+            if (_initialRestorePosition > 0)
+            {
+                // We are restoring exactly where the user left off
+                startPos = _initialRestorePosition;
+                _initialRestorePosition = 0; // Consume the value
+
+                // Change action so the view knows to stay paused
+                action = "RestorePlayback";
+            }
+            else
+            {
 #if WINDOWS
-            startPos = 0; // Windows slices the file, so it starts at 0
+                startPos = 0; // Windows slices the file, so it starts at 0
 #endif
+            }
 
             WeakReferenceMessenger.Default.Send(new MediaControlMessage
             {
-                Action = "StartPlayback",
+                Action = action,
                 Position = TimeSpan.FromSeconds(startPos)
             });
         }
@@ -90,6 +116,13 @@ public partial class MainViewModel
 
     partial void OnCurrentPositionChanged(TimeSpan value)
     {
+        // Save the position to preferences every 5 seconds without freezing the UI
+        if (!_isRestoringState && value.TotalSeconds > 0 && (DateTime.Now - _lastPositionSave).TotalSeconds >= 5)
+        {
+            Preferences.Default.Set("CurrentPositionSeconds", value.TotalSeconds);
+            _lastPositionSave = DateTime.Now;
+        }
+
         if (CurrentTrack?.EndTime.HasValue == true && _lastTrackSkipped != CurrentTrack)
         {
             double endTimeCheck = CurrentTrack.EndTime.Value;
@@ -111,10 +144,20 @@ public partial class MainViewModel
         _lastTrackSkipped = null;
         _hasPerformedInitialSeek = false;
 
+        // Check if we are restoring state OR if the new value is null (app is cleaning up)
+        // We only want to save to Preferences if a USER actively changed the track.
+        if (!_isRestoringState && newValue != null)
+        {
+            Preferences.Default.Set("CurrentTrackUrl", newValue.Url ?? string.Empty);
+            Preferences.Default.Set("CurrentPositionSeconds", 0.0);
+        }
+        // If newValue is null, we usually don't want to wipe the "Last Played" 
+        // preference immediately, because it might be the "Cleanup" logic firing.
+
         if (newValue == null)
         {
             CurrentMediaSource = null;
-            WeakReferenceMessenger.Default.Send(new MediaControlMessage { Action = "Stop" });
+            // Only send stop if this is the active instance
             return;
         }
 
@@ -122,6 +165,7 @@ public partial class MainViewModel
         {
             PlaybackQueue.Clear();
             foreach (var item in SelectedPlaylist.Items) PlaybackQueue.Add(item);
+            SavePlaybackQueueState(); // Remember if it rebuilt sequentially
             _ = WarmPlaylistCacheAsync();
         }
 

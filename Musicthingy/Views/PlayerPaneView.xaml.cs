@@ -12,7 +12,6 @@ public partial class PlayerPaneView : ContentView
         // Listen for the Stop message from the ViewModel
         WeakReferenceMessenger.Default.Register<Models.MediaControlMessage>(this, (r, m) =>
         {
-
             if (m.Action == "StartPlayback")
             {
                 MainThread.BeginInvokeOnMainThread(() =>
@@ -24,6 +23,19 @@ public partial class PlayerPaneView : ContentView
                     }
                     // THEN play, forcing a fresh, high-speed HTTP Range Request
                     MainPlayer.Play();
+                });
+            }
+            // NEW: Handles restoring app state without playing
+            else if (m.Action == "RestorePlayback")
+            {
+                MainThread.BeginInvokeOnMainThread(() =>
+                {
+                    if (m.Position.HasValue && m.Position.Value.TotalSeconds > 0)
+                    {
+                        MainPlayer.SeekTo(m.Position.Value);
+                    }
+                    // Explicitly pause so it doesn't auto-play on load
+                    MainPlayer.Pause();
                 });
             }
             else if (m.Action == "Seek" && m.Position.HasValue)
@@ -44,8 +56,6 @@ public partial class PlayerPaneView : ContentView
             }
 
         });
-
-
     }
 
     private void MainPlayer_MediaEnded(object? sender, EventArgs e)
@@ -65,10 +75,10 @@ public partial class PlayerPaneView : ContentView
         if (MainPlayer.Handler?.PlatformView is Microsoft.UI.Xaml.Controls.MediaPlayerElement playerElement)
         {
             var smtc = playerElement.MediaPlayer.SystemMediaTransportControls;
-            
+
             smtc.IsNextEnabled = true;
             smtc.IsPreviousEnabled = true;
-            
+
             // Unsubscribe first to prevent duplicate events firing if the song changes
             smtc.ButtonPressed -= Smtc_ButtonPressed;
             smtc.ButtonPressed += Smtc_ButtonPressed;
