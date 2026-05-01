@@ -1,15 +1,17 @@
 ﻿using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
-using Musicthingy.Services; // Ensure namespace for ImageScalingService
+using Musicthingy.Services;
 using System.Collections.ObjectModel;
 using System.Text.Json.Serialization;
+using System.Collections.Concurrent;
+using System.Threading;
 
 namespace Musicthingy.Models;
 
 public partial class PlaylistItem : ObservableObject
 {
     [ObservableProperty] public partial string Title { get; set; } = string.Empty;
-    [ObservableProperty] public partial string Url { get; set; } = string.Empty; 
+    [ObservableProperty] public partial string Url { get; set; } = string.Empty;
     [ObservableProperty] public partial int? StartTime { get; set; }
     [ObservableProperty] public partial int? EndTime { get; set; }
     [ObservableProperty] public partial string IconUrl { get; set; } = string.Empty;
@@ -29,52 +31,116 @@ public partial class PlaylistItem : ObservableObject
     public string Tag4 => Tags.Count > 3 ? Tags[3] : "";
     public bool HasTag4 => Tags.Count > 3;
 
-    public string DisplayUrl => string.IsNullOrEmpty(Url) ? "" : new Uri(Url).Host;
-
-    private ImageSource? _itemIconSource;
-    public ImageSource ItemIconSource
+    public string DisplayUrl
     {
         get
         {
+            if (string.IsNullOrEmpty(Url)) return "";
+            if (Uri.TryCreate(Url, UriKind.Absolute, out var uri)) return uri.Host;
+            return "";
+        }
+    }
+
+    // Static cache and throttler across ALL playlist items
+    private static readonly ConcurrentDictionary<string, ImageSource> _sharedItemIconCache = new();
+    private static readonly SemaphoreSlim _itemIconSemaphore = new(4, 4);
+
+    private ImageSource? _itemIconSource;
+    private bool _isGeneratingIcon;
+
+    [JsonIgnore]
+    public ImageSource? ItemIconSource
+    {
+        get
+        {
+
+            //return ImageSource.FromStream(() => new MemoryStream(new byte[1]));
             if (_itemIconSource != null) return _itemIconSource;
 
-            GenerateIconAsync();
+            // Fast path: if we've generated this icon before, return it instantly to the UI
+            string cacheKey = string.IsNullOrEmpty(IconUrl) ? $"TITLE_{Title}" : IconUrl;
+            if (_sharedItemIconCache.TryGetValue(cacheKey, out var cachedSource))
+            {
+                _itemIconSource = cachedSource;
+                return cachedSource;
+            }
+
+            if (!_isGeneratingIcon)
+            {
+                _isGeneratingIcon = true;
+                GenerateIconAsync(cacheKey);
+            }
 
             return null;
         }
     }
 
-    private async void GenerateIconAsync()
+    private void GenerateIconAsync(string cacheKey)
     {
-        ImageSource? source = null;
+        Task.Run(async () =>
+        {
+            try
+            {
+                // Prevent ThreadPool explosion by limiting concurrent operations
+                await _itemIconSemaphore.WaitAsync();
 
-        if (string.IsNullOrEmpty(IconUrl))
-        {
-            // ListItem visual size is usually 36
-            source = await Task.Run(() => IconGenerator.GenerateIcon(Title, 8, 36));
-        }
-        else if (IconUrl.StartsWith("data:image"))
-        {
-            var base64Data = IconUrl.Substring(IconUrl.IndexOf(',') + 1);
-            var imageBytes = Convert.FromBase64String(base64Data);
-            source = await ImageScalingService.ScaleIfSmallAsync(imageBytes, 36)
-                     ?? ImageSource.FromStream(() => new MemoryStream(imageBytes));
-        }
-        else if (File.Exists(IconUrl))
-        {
-            var imageBytes = await File.ReadAllBytesAsync(IconUrl);
-            source = await ImageScalingService.ScaleIfSmallAsync(imageBytes, 36)
-                     ?? ImageSource.FromStream(() => new MemoryStream(imageBytes));
-        }
-        else
-        {
-            // Fallback for MauiAssets
-            source = ImageSource.FromFile(IconUrl);
-        }
+                // Double-check cache in case another task just finished it
+                if (_sharedItemIconCache.TryGetValue(cacheKey, out var cachedSource))
+                {
+                    _itemIconSource = cachedSource;
+                    MainThread.BeginInvokeOnMainThread(() => OnPropertyChanged(nameof(ItemIconSource)));
+                    return;
+                }
 
-        _itemIconSource = source;
-        MainThread.BeginInvokeOnMainThread(() => OnPropertyChanged(nameof(ItemIconSource)));
+                ImageSource? source = null;
+
+                if (string.IsNullOrEmpty(IconUrl))
+                {
+                    source = IconGenerator.GenerateIcon(Title, 8, 36);
+                }
+                else if (IconUrl.StartsWith("data:image"))
+                {
+                    var base64Data = IconUrl.Substring(IconUrl.IndexOf(',') + 1);
+                    var imageBytes = Convert.FromBase64String(base64Data);
+                    source = await ImageScalingService.ScaleIfSmallAsync(imageBytes, 36)
+                             ?? ImageSource.FromStream(() => new MemoryStream(imageBytes));
+                }
+                else if (File.Exists(IconUrl))
+                {
+                    var imageBytes = await File.ReadAllBytesAsync(IconUrl);
+                    source = await ImageScalingService.ScaleIfSmallAsync(imageBytes, 36)
+                             ?? ImageSource.FromStream(() => new MemoryStream(imageBytes));
+                }
+                else
+                {
+                    source = ImageSource.FromFile(IconUrl);
+                }
+
+                if (source != null)
+                {
+                    _sharedItemIconCache[cacheKey] = source;
+                    _itemIconSource = source;
+                    MainThread.BeginInvokeOnMainThread(() => OnPropertyChanged(nameof(ItemIconSource)));
+                }
+            }
+            catch
+            {
+                // Ignore silent failures to prevent alert spam
+            }
+            finally
+            {
+                _itemIconSemaphore.Release();
+            }
+        });
     }
 
-    [RelayCommand] private void OnPointerEntered() => IsHovered = true; [RelayCommand] private void OnPointerExited() => IsHovered = false;
+    partial void OnIconUrlChanged(string value)
+    {
+        _itemIconSource = null;
+        _isGeneratingIcon = false;
+        OnPropertyChanged(nameof(ItemIconSource));
+    }
+
+    [RelayCommand] private void OnPointerEntered() => IsHovered = true;
+    [RelayCommand] private void OnPointerExited() => IsHovered = false;
 }
