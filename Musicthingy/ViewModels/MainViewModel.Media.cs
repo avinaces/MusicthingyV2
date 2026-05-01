@@ -189,7 +189,7 @@ public partial class MainViewModel
     }
 #endif
 
-    private void CleanupCache()
+    private static void CleanupCache()
     {
         try
         {

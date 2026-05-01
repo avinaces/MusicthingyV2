@@ -88,7 +88,8 @@
 							MediaEnded="MainPlayer_MediaEnded"
 							MediaOpened="MainPlayer_MediaOpened"
 							MetadataTitle="{Binding CurrentTrack.Title}"
-                            MetadataArtist="{Binding SelectedPlaylist.Name}"/>
+                            MetadataArtist="{Binding SelectedPlaylist.Name}"
+                            MetadataArtworkUrl="{Binding CurrentTrack.IconUrl}"/>
                     </Grid>
                 </Border>
 
