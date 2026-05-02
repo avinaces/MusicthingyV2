@@ -1,5 +1,4 @@
-﻿using CommunityToolkit.Maui.Views;
-using CommunityToolkit.Mvvm.ComponentModel;
+﻿using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Messaging;
 using Musicthingy.Models;
 using Musicthingy.Services;
@@ -13,17 +12,10 @@ public partial class MainViewModel : ObservableObject
 
     private readonly PlaylistDataService _dataService;
 
-    [ObservableProperty]
-    public partial bool IsLoadingMedia { get; set; }
-
-    [ObservableProperty]
-    public partial double MediaDownloadProgress { get; set; }
-
-    [ObservableProperty]
-    public partial ObservableCollection<Playlist> Playlists { get; set; } = new();
-
-    [ObservableProperty]
-    public partial Playlist? SelectedPlaylist { get; set; }
+    [ObservableProperty] public partial bool IsLoadingMedia { get; set; }
+    [ObservableProperty] public partial double MediaDownloadProgress { get; set; }
+    [ObservableProperty] public partial ObservableCollection<Playlist> Playlists { get; set; } = new();
+    [ObservableProperty] public partial Playlist? SelectedPlaylist { get; set; }
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsMediaSelected))]
@@ -33,46 +25,35 @@ public partial class MainViewModel : ObservableObject
     public bool IsMediaSelected => CurrentTrack != null;
     public bool IsNotMediaSelected => CurrentTrack == null;
 
-    [ObservableProperty]
-    public partial MediaSource? CurrentMediaSource { get; set; }
-
     public MainViewModel()
     {
-        // Stop media and unhook any existing background instances to prevent multiple tracks playing
         _cleanupOldInstances?.Invoke();
         _cleanupOldInstances = CleanupMedia;
 
         _dataService = new PlaylistDataService();
 
-        // Load your saved library asynchronously instead of just DummyData
         Task.Run(LoadStateAsync);
 
 #if WINDOWS
-        // Clean up old cached video files in the background on startup
         Task.Run(CleanupCache);
 #endif
 
-        // Listen for OS Media Key presses (Next/Previous) from Windows and Android
+        // Restore Hardware Keyboard/Bluetooth support sent from MainActivity.cs
         WeakReferenceMessenger.Default.Register<MediaControlMessage>(this, (r, m) =>
         {
             if (m.Action == "Next" && PlayNextCommand.CanExecute(null))
                 PlayNextCommand.Execute(null);
             else if (m.Action == "Previous" && PlayPreviousCommand.CanExecute(null))
                 PlayPreviousCommand.Execute(null);
+            else if (m.Action == "PlayPause" && TogglePlayCommand.CanExecute(null))
+                TogglePlayCommand.Execute(null);
         });
     }
 
-    // In MainViewModel.cs
-
     private void CleanupMedia()
     {
-        // 1. Unregister first so this instance stops listening to messages
         WeakReferenceMessenger.Default.Unregister<MediaControlMessage>(this);
-
-        // 2. Tell the background player to stop
-        WeakReferenceMessenger.Default.Send(new MediaControlMessage { Action = "Stop" });
-
-        CurrentMediaSource = null;
+        _player?.Stop();
     }
 
     partial void OnSelectedPlaylistChanged(Playlist? oldValue, Playlist? newValue)

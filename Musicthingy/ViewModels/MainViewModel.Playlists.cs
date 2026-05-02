@@ -99,8 +99,8 @@ public partial class MainViewModel
     {
         var popup = new Views.EditTrackPopup(track);
 
-        // SAFELY get the active page (Shell on PC, MainPage on Mobile)
-        var activePage = Shell.Current ?? Application.Current?.MainPage;
+        // --- Fix is here: Replaced .MainPage with .Windows.FirstOrDefault()?.Page ---
+        var activePage = Shell.Current ?? Application.Current?.Windows.FirstOrDefault()?.Page;
 
         if (activePage != null)
         {

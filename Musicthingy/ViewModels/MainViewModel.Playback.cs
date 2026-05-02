@@ -1,38 +1,41 @@
 ﻿using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
-using CommunityToolkit.Mvvm.Messaging;
 using Musicthingy.Models;
 using System.Collections.ObjectModel;
-using System.Diagnostics;
 using System.Text.Json;
 
 namespace Musicthingy.ViewModels;
 
 public partial class MainViewModel
 {
-    // --- TIME TRACKING & ENFORCING END TIME ---
-    [ObservableProperty]
-    public partial TimeSpan CurrentPosition { get; set; }
+    // Real time tracking properties for internal logic
+    [ObservableProperty] public partial TimeSpan CurrentPosition { get; set; }
+    [ObservableProperty] public partial TimeSpan Duration { get; set; }
+
+    // Numeric properties specifically bound to the MAUI Slider UI
+    [ObservableProperty] public partial double CurrentPositionSeconds { get; set; }
+    [ObservableProperty] public partial double DurationSeconds { get; set; }
 
     [ObservableProperty]
-    public partial TimeSpan Duration { get; set; }
+    [NotifyPropertyChangedFor(nameof(PlayPauseIcon))]
+    public partial bool IsPlaying { get; set; }
+
+    public string PlayPauseIcon => IsPlaying ? "pause_icon.png" : "play_icon.png";
 
     private PlaylistItem? _lastTrackSkipped;
-    private bool _hasPerformedInitialSeek;
     private DateTime _lastPositionSave = DateTime.MinValue;
+    private bool _isDragging;
 
-    // --- THE BACKGROUND PLAYBACK QUEUE ---
     [ObservableProperty]
     public partial ObservableCollection<PlaylistItem> PlaybackQueue { get; set; } = new();
 
     private void SavePlaybackQueueState()
     {
         if (_isRestoringState) return;
-
-        // Save the queue order as a lightweight JSON array of URLs
         var queueUrls = PlaybackQueue.Select(t => t.Url).ToList();
         Preferences.Default.Set("PlaybackQueueUrls", JsonSerializer.Serialize(queueUrls));
     }
+
     [RelayCommand]
     private void PlayPlaylist()
     {
@@ -41,7 +44,7 @@ public partial class MainViewModel
         PlaybackQueue.Clear();
         foreach (var item in SelectedPlaylist.Items) PlaybackQueue.Add(item);
 
-        SavePlaybackQueueState(); // Remember the queue order
+        SavePlaybackQueueState();
         CurrentTrack = PlaybackQueue[0];
     }
 
@@ -51,11 +54,10 @@ public partial class MainViewModel
         if (SelectedPlaylist == null || SelectedPlaylist.Items.Count == 0) return;
 
         var shuffledItems = SelectedPlaylist.Items.OrderBy(x => Random.Shared.Next()).ToList();
-
         PlaybackQueue.Clear();
         foreach (var item in shuffledItems) PlaybackQueue.Add(item);
 
-        SavePlaybackQueueState(); // Remember the shuffled queue order
+        SavePlaybackQueueState();
         CurrentTrack = PlaybackQueue[0];
     }
 
@@ -82,82 +84,56 @@ public partial class MainViewModel
         CurrentTrack = PlaybackQueue[prevIndex];
     }
 
-    partial void OnDurationChanged(TimeSpan value)
+    [RelayCommand]
+    private void TogglePlay()
     {
-        if (!_hasPerformedInitialSeek && CurrentTrack != null && value.TotalSeconds > 0)
+        if (_player == null) return;
+
+        if (IsPlaying) _player.Pause();
+        else _player.Play();
+
+        if (CurrentTrack != null)
+            UpdateOSMediaWidgets(CurrentTrack.Title, SelectedPlaylist?.Name ?? "Musicthingy", CurrentTrack.IconUrl, IsPlaying);
+    }
+
+    [RelayCommand]
+    private void DragStarted()
+    {
+        _isDragging = true; // Tell the VLC updates to ignore the slider while user is holding it
+    }
+
+    [RelayCommand]
+    private void Seek()
+    {
+        if (_player != null && _player.IsSeekable)
         {
-            _hasPerformedInitialSeek = true;
-            double startPos = CurrentTrack.StartTime ?? 0;
-            string action = "StartPlayback"; // By default, actively start playing
-
-            if (_initialRestorePosition > 0)
-            {
-                // We are restoring exactly where the user left off
-                startPos = _initialRestorePosition;
-                _initialRestorePosition = 0; // Consume the value
-
-                // Change action so the view knows to stay paused
-                action = "RestorePlayback";
-            }
-            else
-            {
-#if WINDOWS
-                startPos = 0; // Windows slices the file, so it starts at 0
-#endif
-            }
-
-            WeakReferenceMessenger.Default.Send(new MediaControlMessage
-            {
-                Action = action,
-                Position = TimeSpan.FromSeconds(startPos)
-            });
+            _player.Time = (long)(CurrentPositionSeconds * 1000);
         }
+        _isDragging = false; // Release the hold
     }
 
     partial void OnCurrentPositionChanged(TimeSpan value)
     {
-        // Save the position to preferences every 5 seconds without freezing the UI
         if (!_isRestoringState && value.TotalSeconds > 0 && (DateTime.Now - _lastPositionSave).TotalSeconds >= 5)
         {
             Preferences.Default.Set("CurrentPositionSeconds", value.TotalSeconds);
             _lastPositionSave = DateTime.Now;
-        }
-
-        if (CurrentTrack?.EndTime.HasValue == true && _lastTrackSkipped != CurrentTrack)
-        {
-            double endTimeCheck = CurrentTrack.EndTime.Value;
-
-#if WINDOWS
-            endTimeCheck = CurrentTrack.EndTime.Value - (CurrentTrack.StartTime ?? 0);
-#endif
-
-            if (value.TotalSeconds >= endTimeCheck)
-            {
-                _lastTrackSkipped = CurrentTrack;
-                MainThread.BeginInvokeOnMainThread(() => PlayNextCommand.Execute(null));
-            }
         }
     }
 
     partial void OnCurrentTrackChanged(PlaylistItem? oldValue, PlaylistItem? newValue)
     {
         _lastTrackSkipped = null;
-        _hasPerformedInitialSeek = false;
 
-        // Check if we are restoring state OR if the new value is null (app is cleaning up)
-        // We only want to save to Preferences if a USER actively changed the track.
         if (!_isRestoringState && newValue != null)
         {
             Preferences.Default.Set("CurrentTrackUrl", newValue.Url ?? string.Empty);
             Preferences.Default.Set("CurrentPositionSeconds", 0.0);
         }
-        // If newValue is null, we usually don't want to wipe the "Last Played" 
-        // preference immediately, because it might be the "Cleanup" logic firing.
 
         if (newValue == null)
         {
-            CurrentMediaSource = null;
-            // Only send stop if this is the active instance
+            _player?.Stop();
             return;
         }
 
@@ -165,40 +141,14 @@ public partial class MainViewModel
         {
             PlaybackQueue.Clear();
             foreach (var item in SelectedPlaylist.Items) PlaybackQueue.Add(item);
-            SavePlaybackQueueState(); // Remember if it rebuilt sequentially
-            _ = WarmPlaylistCacheAsync();
+            SavePlaybackQueueState();
         }
 
-        Debug.WriteLine("Last played at: " + newValue?.LastPlayedAt);
-        if (newValue != null) newValue.LastPlayedAt = DateTime.Now;
+        newValue.LastPlayedAt = DateTime.Now;
 
         if (oldValue != null) oldValue.IsSelected = false;
-        if (newValue != null) newValue.IsSelected = true;
-
-#if ANDROID
-        if (oldValue != null && oldValue.Url == newValue.Url && CurrentMediaSource != null)
-        {
-            double newStart = newValue.StartTime ?? 0;
-            bool isContinuous = Math.Abs(CurrentPosition.TotalSeconds - newStart) <= 10;
-
-            _hasPerformedInitialSeek = true;
-            if (!isContinuous)
-            {
-                WeakReferenceMessenger.Default.Send(new MediaControlMessage
-                {
-                    Action = "StartPlayback",
-                    Position = TimeSpan.FromSeconds(newStart)
-                });
-            }
-            _ = PrefetchNextTrackAsync();
-            return;
-        }
-#endif
-
-        WeakReferenceMessenger.Default.Send(new MediaControlMessage { Action = "Stop" });
-        CurrentMediaSource = null;
+        newValue.IsSelected = true;
 
         _ = ReloadMediaAsync(newValue);
-        _ = PrefetchNextTrackAsync();
     }
 }

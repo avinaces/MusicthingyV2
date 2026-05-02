@@ -1,5 +1,6 @@
 ﻿using Microsoft.Extensions.Logging;
 using CommunityToolkit.Maui;
+using LibVLCSharp.Shared;
 
 namespace Musicthingy
 {
@@ -7,6 +8,10 @@ namespace Musicthingy
     {
         public static MauiApp CreateMauiApp()
         {
+
+            // Initialize the native VLC C++ libraries
+            Core.Initialize();
+
             var builder = MauiApp.CreateBuilder();
             builder.UseMauiApp<App>()
                 .UseMauiCommunityToolkit()
