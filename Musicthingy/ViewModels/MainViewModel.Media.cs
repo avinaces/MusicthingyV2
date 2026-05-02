@@ -13,6 +13,8 @@ public partial class MainViewModel
     private LibVLC? _libVLC;
     private MediaPlayer? _player;
 
+    private long _lastTimeUpdateTicks = 0;
+
     private void InitializeVLCEngine()
     {
         if (_libVLC != null) return;
@@ -20,28 +22,98 @@ public partial class MainViewModel
         _libVLC = new LibVLC("--no-video");
         _player = new MediaPlayer(_libVLC);
 
-        _player.TimeChanged += (s, e) => MainThread.BeginInvokeOnMainThread(() =>
+        // Convert VLC's absolute time to relative time for sliced tracks
+        _player.TimeChanged += (s, e) =>
         {
-            CurrentPosition = TimeSpan.FromMilliseconds(e.Time);
-            // Only update the visual slider position if the user ISN'T currently dragging it
-            if (!_isDragging)
+            long currentTicks = Environment.TickCount64;
+            if (currentTicks - _lastTimeUpdateTicks < 500) return;
+            _lastTimeUpdateTicks = currentTicks;
+
+            double startMs = (CurrentTrack?.StartTime ?? 0) * 1000.0;
+            double relativeTimeMs = e.Time - startMs;
+            if (relativeTimeMs < 0) relativeTimeMs = 0;
+
+            // FIX: Push UI-bound property updates to the Main Thread
+            MainThread.BeginInvokeOnMainThread(() =>
             {
-                CurrentPositionSeconds = CurrentPosition.TotalSeconds;
-            }
-        });
+                CurrentPosition = TimeSpan.FromMilliseconds(relativeTimeMs);
+                if (!_isDragging)
+                {
+                    CurrentPositionSeconds = CurrentPosition.TotalSeconds;
+                }
+            });
+        };
 
-        _player.LengthChanged += (s, e) => MainThread.BeginInvokeOnMainThread(() =>
+        // Calculate relative duration for sliced tracks
+        _player.LengthChanged += (s, e) =>
         {
-            Duration = TimeSpan.FromMilliseconds(e.Length);
-            DurationSeconds = Duration.TotalSeconds;
-        });
+            double totalSeconds = e.Length / 1000.0;
+            double end = CurrentTrack?.EndTime ?? totalSeconds;
+            double start = CurrentTrack?.StartTime ?? 0;
+            double duration = end - start;
+            if (duration <= 0) duration = totalSeconds; // Fallback
 
-        _player.Playing += (s, e) => MainThread.BeginInvokeOnMainThread(() => { IsPlaying = true; IsLoadingMedia = false; });
-        _player.Paused += (s, e) => MainThread.BeginInvokeOnMainThread(() => IsPlaying = false);
+            // FIX: Route to Main Thread
+            MainThread.BeginInvokeOnMainThread(() =>
+            {
+                Duration = TimeSpan.FromSeconds(duration);
+                DurationSeconds = duration;
+            });
+
+            if (CurrentTrack != null)
+            {
+                string widgetIconUrl = !string.IsNullOrEmpty(SelectedPlaylist?.IconUrl)
+                    ? SelectedPlaylist.IconUrl
+                    : CurrentTrack.IconUrl;
+
+                // Task.Run is fine here since OS APIs have their own thread marshalling
+                _ = UpdateOSMediaWidgetsAsync(CurrentTrack.Title, SelectedPlaylist?.Name ?? "Musicthingy", widgetIconUrl);
+            }
+        };
+
+        _player.Playing += (s, e) => {
+            MainThread.BeginInvokeOnMainThread(() => {
+                IsPlaying = true;
+                IsLoadingMedia = false;
+                SyncOSPlaybackState();
+            });
+            ReleaseTransientWakeLock();
+        };
+
+        _player.Paused += (s, e) => {
+            MainThread.BeginInvokeOnMainThread(() => {
+                IsPlaying = false;
+                SyncOSPlaybackState();
+            });
+            if (!IsLoadingMedia) ReleaseTransientWakeLock();
+        };
+
+        _player.Stopped += (s, e) => {
+            MainThread.BeginInvokeOnMainThread(() => {
+                IsPlaying = false;
+                SyncOSPlaybackState();
+            });
+            if (!IsLoadingMedia) ReleaseTransientWakeLock();
+        };
+
+        _player.EncounteredError += (s, e) => {
+            MainThread.BeginInvokeOnMainThread(() => {
+                IsLoadingMedia = false;
+            });
+            ReleaseTransientWakeLock();
+        };
 
         _player.EndReached += (s, e) =>
         {
-            Task.Run(() => MainThread.BeginInvokeOnMainThread(() => PlayNextCommand.Execute(null)));
+            AcquireTransientWakeLock();
+
+            // FIX: Do NOT use Task.Run for UI Commands! 
+            // BeginInvokeOnMainThread escapes the LibVLC deadlock while keeping the CollectionView safe.
+            MainThread.BeginInvokeOnMainThread(() =>
+            {
+                IsLoadingMedia = true;
+                PlayNextCommand.Execute(null);
+            });
         };
     }
 
@@ -53,7 +125,6 @@ public partial class MainViewModel
         {
             try
             {
-                // FORCE DNS AND HTTP REQUESTS OFF THE MAIN THREAD FOR ANDROID!
                 return await Task.Run(async () =>
                 {
                     var videoId = YoutubeExplode.Videos.VideoId.Parse(track.Url);
@@ -72,15 +143,22 @@ public partial class MainViewModel
 
     private async Task ReloadMediaAsync(PlaylistItem newValue)
     {
+        IsLoadingMedia = true; // Set this BEFORE Stop() is called
+        AcquireTransientWakeLock(); // Keep CPU awake while fetching the youtube stream URL
+
         InitializeVLCEngine();
 
-        IsLoadingMedia = true;
         _player!.Stop();
+
+        CurrentPosition = TimeSpan.Zero;
+        CurrentPositionSeconds = 0;
+        SyncOSPlaybackState();
 
         string? rawAudioUrl = await ResolveMediaSourceAsync(newValue);
         if (rawAudioUrl == null)
         {
             IsLoadingMedia = false;
+            ReleaseTransientWakeLock(); // Release lock if it failed
             return;
         }
 
@@ -91,13 +169,12 @@ public partial class MainViewModel
 
         if (_initialRestorePosition > 0)
         {
-            media.AddOption($":start-time={_initialRestorePosition}");
+            double absoluteRestore = _initialRestorePosition + (newValue.StartTime ?? 0);
+            media.AddOption($":start-time={absoluteRestore}");
             _initialRestorePosition = 0;
         }
 
         _player.Play(media);
-
-        UpdateOSMediaWidgets(newValue.Title, SelectedPlaylist?.Name ?? "Musicthingy", newValue.IconUrl, true);
     }
 
     private static void CleanupCache()

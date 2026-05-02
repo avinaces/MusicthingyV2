@@ -8,11 +8,8 @@ namespace Musicthingy.ViewModels;
 
 public partial class MainViewModel
 {
-    // Real time tracking properties for internal logic
     [ObservableProperty] public partial TimeSpan CurrentPosition { get; set; }
     [ObservableProperty] public partial TimeSpan Duration { get; set; }
-
-    // Numeric properties specifically bound to the MAUI Slider UI
     [ObservableProperty] public partial double CurrentPositionSeconds { get; set; }
     [ObservableProperty] public partial double DurationSeconds { get; set; }
 
@@ -35,7 +32,6 @@ public partial class MainViewModel
         var queueUrls = PlaybackQueue.Select(t => t.Url).ToList();
         Preferences.Default.Set("PlaybackQueueUrls", JsonSerializer.Serialize(queueUrls));
     }
-
     [RelayCommand]
     private void PlayPlaylist()
     {
@@ -89,17 +85,21 @@ public partial class MainViewModel
     {
         if (_player == null) return;
 
-        if (IsPlaying) _player.Pause();
-        else _player.Play();
-
-        if (CurrentTrack != null)
-            UpdateOSMediaWidgets(CurrentTrack.Title, SelectedPlaylist?.Name ?? "Musicthingy", CurrentTrack.IconUrl, IsPlaying);
+        if (IsPlaying)
+        {
+            _player.Pause();
+        }
+        else
+        {
+            AcquireTransientWakeLock(); // Keep awake while network reconnects/buffers
+            _player.Play();
+        }
     }
 
     [RelayCommand]
     private void DragStarted()
     {
-        _isDragging = true; // Tell the VLC updates to ignore the slider while user is holding it
+        _isDragging = true;
     }
 
     [RelayCommand]
@@ -107,9 +107,14 @@ public partial class MainViewModel
     {
         if (_player != null && _player.IsSeekable)
         {
-            _player.Time = (long)(CurrentPositionSeconds * 1000);
+            // Convert the slider's relative time back to absolute VLC time
+            double startMs = (CurrentTrack?.StartTime ?? 0) * 1000.0;
+            _player.Time = (long)((CurrentPositionSeconds * 1000.0) + startMs);
         }
-        _isDragging = false; // Release the hold
+        _isDragging = false;
+
+        // Notify the OS widget so its seekbar updates seamlessly
+        SyncOSPlaybackState();
     }
 
     partial void OnCurrentPositionChanged(TimeSpan value)
@@ -139,9 +144,13 @@ public partial class MainViewModel
 
         if (SelectedPlaylist != null && !PlaybackQueue.Contains(newValue))
         {
-            PlaybackQueue.Clear();
-            foreach (var item in SelectedPlaylist.Items) PlaybackQueue.Add(item);
-            SavePlaybackQueueState();
+            // ObservableCollections crash if modified on a background thread. Protect this block!
+            MainThread.BeginInvokeOnMainThread(() =>
+            {
+                PlaybackQueue.Clear();
+                foreach (var item in SelectedPlaylist.Items) PlaybackQueue.Add(item);
+                SavePlaybackQueueState();
+            });
         }
 
         newValue.LastPlayedAt = DateTime.Now;

@@ -54,6 +54,18 @@ public partial class MainViewModel : ObservableObject
     {
         WeakReferenceMessenger.Default.Unregister<MediaControlMessage>(this);
         _player?.Stop();
+        ReleaseTransientWakeLock();
+
+#if ANDROID
+        try
+        {
+            var context = Android.App.Application.Context;
+            var intent = new Android.Content.Intent(context, typeof(AndroidMediaService));
+            intent.SetAction("STOP");
+            context.StartService(intent);
+        }
+        catch { }
+#endif
     }
 
     partial void OnSelectedPlaylistChanged(Playlist? oldValue, Playlist? newValue)
@@ -66,4 +78,7 @@ public partial class MainViewModel : ObservableObject
         if (oldValue != null) oldValue.IsSelected = false;
         if (newValue != null) newValue.IsSelected = true;
     }
+
+
+
 }

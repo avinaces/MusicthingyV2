@@ -20,8 +20,7 @@ namespace Musicthingy
                 fonts.AddFont("OpenSans-Regular.ttf", "OpenSansRegular");
                 fonts.AddFont("OpenSans-Semibold.ttf", "OpenSansSemibold");
                 fonts.AddFont("Roboto_VariableFont_wdth.ttf", "Roboto");
-            })
-                .UseMauiCommunityToolkitMediaElement(true);
+            });
 #if DEBUG
             builder.Logging.AddDebug();
 #endif
