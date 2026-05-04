@@ -2,7 +2,6 @@ namespace Musicthingy.Views;
 
 public partial class MobileMainPage : FlyoutPage
 {
-    // Added nullable '?' to fix CS8618 and CS8625 warnings
     private SwipeView? _openedSwipeView;
 
     public MobileMainPage()
@@ -28,7 +27,6 @@ public partial class MobileMainPage : FlyoutPage
 
     private void OnSwipeStarted(object sender, SwipeStartedEventArgs e)
     {
-        // Safe type check to fix CS8601 warning
         if (sender is SwipeView currentSwipeView)
         {
             // If a DIFFERENT swipe view is already open, snap it shut

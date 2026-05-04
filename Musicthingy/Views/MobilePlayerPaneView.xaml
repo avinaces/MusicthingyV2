@@ -1,0 +1,167 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentView xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             x:Class="Musicthingy.Views.MobilePlayerPaneView">
+
+    <Border x:Name="PlayerRoot" 
+            Background="#161b22" 
+            Stroke="#30363d" 
+            StrokeThickness="1" 
+            Margin="0" 
+            Padding="0"
+            VerticalOptions="End"
+            HeightRequest="72"
+            IsVisible="{Binding IsMediaSelected}">
+
+        <Border.StrokeShape>
+            <RoundRectangle CornerRadius="16,16,0,0" />
+        </Border.StrokeShape>
+
+        <VisualStateManager.VisualStateGroups>
+            <VisualStateGroup x:Name="PlayerStates">
+
+                <VisualState x:Name="Mini">
+                    <VisualState.Setters>
+                        <Setter TargetName="DragHandle" Property="IsVisible" Value="False" />
+                        <Setter TargetName="TrackImageBorder" Property="WidthRequest" Value="44" />
+                        <Setter TargetName="TrackImageBorder" Property="HeightRequest" Value="44" />
+                        <Setter TargetName="MiniControls" Property="IsVisible" Value="True" />
+                        <Setter TargetName="ExpandedContentZone" Property="IsVisible" Value="False" />
+                        <Setter TargetName="HeaderDragZone" Property="Padding" Value="12" />
+                    </VisualState.Setters>
+                </VisualState>
+
+                <VisualState x:Name="Medium">
+                    <VisualState.Setters>
+                        <Setter TargetName="DragHandle" Property="IsVisible" Value="True" />
+                        <Setter TargetName="TrackImageBorder" Property="WidthRequest" Value="68" />
+                        <Setter TargetName="TrackImageBorder" Property="HeightRequest" Value="68" />
+                        <Setter TargetName="MiniControls" Property="IsVisible" Value="False" />
+                        <Setter TargetName="ExpandedContentZone" Property="IsVisible" Value="True" />
+                        <Setter TargetName="LyricsScrollView" Property="IsVisible" Value="True" />
+                        <Setter TargetName="HeaderDragZone" Property="Padding" Value="16,10,16,8" />
+                    </VisualState.Setters>
+                </VisualState>
+
+                <VisualState x:Name="FullScreen">
+                    <VisualState.Setters>
+                        <Setter TargetName="DragHandle" Property="IsVisible" Value="True" />
+                        <Setter TargetName="TrackImageBorder" Property="WidthRequest" Value="68" />
+                        <Setter TargetName="TrackImageBorder" Property="HeightRequest" Value="68" />
+                        <Setter TargetName="MiniControls" Property="IsVisible" Value="False" />
+                        <Setter TargetName="ExpandedContentZone" Property="IsVisible" Value="True" />
+                        <Setter TargetName="LyricsScrollView" Property="IsVisible" Value="True" />
+                        <Setter TargetName="HeaderDragZone" Property="Padding" Value="16,10,16,8" />
+                    </VisualState.Setters>
+                </VisualState>
+
+            </VisualStateGroup>
+        </VisualStateManager.VisualStateGroups>
+
+        <Grid RowDefinitions="Auto, *" BackgroundColor="Transparent">
+
+            <!-- ========================================== -->
+            <!-- 1. DRAG ZONE (Header Area)                 -->
+            <!-- ========================================== -->
+            <Grid x:Name="HeaderDragZone" Grid.Row="0" RowDefinitions="Auto, Auto" BackgroundColor="Transparent" Padding="12">
+
+                <!-- Drag Handle -->
+                <RoundRectangle x:Name="DragHandle" 
+                                Grid.Row="0"
+                                Fill="#484f58" 
+                                WidthRequest="36" 
+                                HeightRequest="5" 
+                                CornerRadius="2.5" 
+                                HorizontalOptions="Center" 
+                                Margin="0,0,0,12" 
+                                IsVisible="False" />
+
+                <!-- Header Info -->
+                <Grid Grid.Row="1" ColumnDefinitions="Auto, *, Auto" ColumnSpacing="12">
+
+                    <Border x:Name="TrackImageBorder" 
+                            Grid.Column="0" WidthRequest="44" HeightRequest="44" StrokeThickness="0" VerticalOptions="Center">
+                        <Border.StrokeShape>
+                            <RoundRectangle CornerRadius="8" />
+                        </Border.StrokeShape>
+                        <Image Source="{Binding CurrentTrack.ItemIconSource}" Aspect="AspectFill" />
+                    </Border>
+
+                    <VerticalStackLayout Grid.Column="1" VerticalOptions="Center" Spacing="2">
+                        <Label Text="{Binding CurrentTrack.Title}" TextColor="#adcff0" FontSize="16" FontAttributes="Bold" LineBreakMode="TailTruncation" />
+                        <Label Text="{Binding CurrentTrack.Artist, FallbackValue='Unknown Artist'}" TextColor="#8b949e" FontSize="13" LineBreakMode="TailTruncation" />
+                    </VerticalStackLayout>
+
+                    <!-- Mini Controls -->
+                    <HorizontalStackLayout x:Name="MiniControls" Grid.Column="2" Spacing="4" VerticalOptions="Center">
+                        <ImageButton Source="{Binding PlayPauseIcon}" Command="{Binding TogglePlayCommand}" WidthRequest="40" HeightRequest="40" BackgroundColor="Transparent" Padding="8"/>
+                        <ImageButton Source="skip_forward_icon.png" Command="{Binding PlayNextCommand}" WidthRequest="40" HeightRequest="40" BackgroundColor="Transparent" Padding="8"/>
+                    </HorizontalStackLayout>
+                </Grid>
+            </Grid>
+
+            <!-- ========================================== -->
+            <!-- 2. EXPANDED ZONE (Controls & Lyrics)       -->
+            <!-- ========================================== -->
+            <Grid x:Name="ExpandedContentZone" Grid.Row="1" RowDefinitions="Auto, *" Padding="16,10,16,16" IsVisible="False">
+
+                <VerticalStackLayout Grid.Row="0" Spacing="16" Margin="0,0,0,10">
+
+                    <!-- Tags -->
+                    <ScrollView Orientation="Horizontal" HorizontalScrollBarVisibility="Never" Margin="0,0,0,10">
+                        <HorizontalStackLayout BindableLayout.ItemsSource="{Binding CurrentTrack.Tags}" Spacing="4">
+                            <BindableLayout.ItemTemplate>
+                                <DataTemplate x:DataType="x:String">
+                                    <Border Background="#1c304a" Stroke="#58a6ff" StrokeThickness="1" Padding="6,2">
+                                        <Border.StrokeShape>
+                                            <RoundRectangle CornerRadius="6"/>
+                                        </Border.StrokeShape>
+                                        <Label Text="{Binding .}" TextColor="#d9edff" FontSize="10"/>
+                                    </Border>
+                                </DataTemplate>
+                            </BindableLayout.ItemTemplate>
+                        </HorizontalStackLayout>
+                    </ScrollView>
+
+                    <!-- Progress Bar -->
+                    <Grid ColumnDefinitions="Auto, *, Auto" ColumnSpacing="12" Margin="0,0,0,4">
+                        <Label Grid.Column="0" Text="{Binding CurrentPosition, StringFormat='{0:mm\\:ss}'}" TextColor="#8b949e" FontSize="11" VerticalOptions="Center" MinimumWidthRequest="35"/>
+                        <Slider Grid.Column="1" Minimum="0" Maximum="{Binding DurationSeconds}" Value="{Binding CurrentPositionSeconds, Mode=TwoWay}"
+                                DragStartedCommand="{Binding DragStartedCommand}" DragCompletedCommand="{Binding SeekCommand}"
+                                MinimumTrackColor="#58a6ff" MaximumTrackColor="#30363d" ThumbColor="#adcff0" VerticalOptions="Center" Margin="0,-6,0,-6"/>
+                        <Label Grid.Column="2" Text="{Binding Duration, StringFormat='{0:mm\\:ss}'}" TextColor="#8b949e" FontSize="11" VerticalOptions="Center" MinimumWidthRequest="35"/>
+                    </Grid>
+
+                    <!-- Main Transport Controls -->
+                    <HorizontalStackLayout HorizontalOptions="Center" Spacing="24" Margin="0,8,0,0">
+                        <ImageButton Source="shuffle_icon.png" Command="{Binding ShufflePlaylistCommand}" WidthRequest="36" HeightRequest="36" BackgroundColor="Transparent" Padding="8" />
+                        <ImageButton Source="skip_back_icon.png" Command="{Binding PlayPreviousCommand}" WidthRequest="44" HeightRequest="44" BackgroundColor="Transparent" Padding="10" />
+
+                        <Border Background="#1c2128" Stroke="#30363d" StrokeThickness="1" WidthRequest="56" HeightRequest="56">
+                            <Border.StrokeShape>
+                                <RoundRectangle CornerRadius="28" />
+                            </Border.StrokeShape>
+                            <ImageButton Source="{Binding PlayPauseIcon}" Command="{Binding TogglePlayCommand}" WidthRequest="56" HeightRequest="56" BackgroundColor="Transparent" Padding="14"/>
+                        </Border>
+
+                        <ImageButton Source="skip_forward_icon.png" Command="{Binding PlayNextCommand}" WidthRequest="44" HeightRequest="44" BackgroundColor="Transparent" Padding="10" />
+                        <ImageButton Source="repeat_icon.png" WidthRequest="36" HeightRequest="36" BackgroundColor="Transparent" Padding="8" />
+                    </HorizontalStackLayout>
+                </VerticalStackLayout>
+
+                <!-- Lyrics -->
+                <ScrollView x:Name="LyricsScrollView" Grid.Row="1" VerticalOptions="Fill" Margin="0,15,0,0" IsVisible="False">
+                    <Label Text="{Binding CurrentTrack.Lyrics}" TextColor="#c9d1d9" FontSize="18" HorizontalOptions="Center" HorizontalTextAlignment="Center" VerticalOptions="Start" LineHeight="1.4" Margin="10,0,10,40"/>
+                </ScrollView>
+            </Grid>
+
+            <!-- Loading Overlay -->
+            <Grid Grid.RowSpan="2" BackgroundColor="#D9161b22" IsVisible="{Binding IsLoadingMedia}" ZIndex="10">
+                <HorizontalStackLayout HorizontalOptions="Center" VerticalOptions="Center" Spacing="10">
+                    <ActivityIndicator IsRunning="{Binding IsLoadingMedia}" Color="#58a6ff" WidthRequest="24" HeightRequest="24" />
+                    <Label Text="Opening Stream..." TextColor="#adcff0" VerticalOptions="Center" FontSize="14" FontAttributes="Bold" />
+                </HorizontalStackLayout>
+            </Grid>
+        </Grid>
+    </Border>
+</ContentView>
