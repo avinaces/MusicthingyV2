@@ -83,14 +83,16 @@ public partial class MainViewModel
             
             RequestSaveLibrary(); // Trigger library save
         }
-    }[RelayCommand]
+    }
+
+    [RelayCommand]
     private void DeleteTrack(PlaylistItem track)
     {
-        // Immediate deletion, no modal required
-        if (SelectedPlaylist != null && SelectedPlaylist.Items.Contains(track))
+        // TODO: add delete modal
+        if (track.Playlist != null && track.Playlist.Items.Contains(track))
         {
-            SelectedPlaylist.Items.Remove(track);
-            RequestSaveLibrary(); // Trigger library save
+            track.Playlist.Items.Remove(track);
+            RequestSaveLibrary();
         }
     }
 

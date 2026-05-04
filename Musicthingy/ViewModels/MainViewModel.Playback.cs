@@ -142,13 +142,13 @@ public partial class MainViewModel
             return;
         }
 
-        if (SelectedPlaylist != null && !PlaybackQueue.Contains(newValue))
+        // FIX: Look at the track's native Playlist, not SelectedPlaylist
+        if (newValue.Playlist != null && !PlaybackQueue.Contains(newValue))
         {
-            // ObservableCollections crash if modified on a background thread. Protect this block!
             MainThread.BeginInvokeOnMainThread(() =>
             {
                 PlaybackQueue.Clear();
-                foreach (var item in SelectedPlaylist.Items) PlaybackQueue.Add(item);
+                foreach (var item in newValue.Playlist.Items) PlaybackQueue.Add(item);
                 SavePlaybackQueueState();
             });
         }

@@ -5,11 +5,40 @@ using System.Collections.ObjectModel;
 using System.Text.Json.Serialization;
 using System.Collections.Concurrent;
 using System.Threading;
+using System.Collections.Specialized;
 
 namespace Musicthingy.Models;
 
 public partial class Playlist : ObservableObject
 {
+
+    public Playlist()
+    {
+        Items.CollectionChanged += Items_CollectionChanged;
+    }
+
+    private void Items_CollectionChanged(object? sender, NotifyCollectionChangedEventArgs e)
+    {
+        if (e.NewItems != null)
+        {
+            foreach (PlaylistItem item in e.NewItems)
+            {
+                item.Playlist = this;
+            }
+        }
+    }
+
+    // Catches cases where the entire Items collection is replaced
+    partial void OnItemsChanged(ObservableCollection<PlaylistItem> oldValue, ObservableCollection<PlaylistItem> newValue)
+    {
+        if (oldValue != null) oldValue.CollectionChanged -= Items_CollectionChanged;
+        if (newValue != null)
+        {
+            newValue.CollectionChanged += Items_CollectionChanged;
+            foreach (var item in newValue) item.Playlist = this;
+        }
+    }
+
     [ObservableProperty]
     [JsonPropertyName("name")]
     public partial string Name { get; set; } = string.Empty; [ObservableProperty]

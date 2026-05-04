@@ -21,6 +21,10 @@ public partial class PlaylistItem : ObservableObject
     [ObservableProperty] public partial string Lyrics { get; set; } = string.Empty;
     [ObservableProperty] public partial DateTime? LastPlayedAt { get; set; }
 
+    [ObservableProperty]
+    [JsonIgnore]
+    public partial Playlist? Playlist { get; set; }
+
     public bool HasTags => Tags.Count > 0;
     public string Tag1 => Tags.Count > 0 ? Tags[0] : "";
     public bool HasTag1 => Tags.Count > 0;
@@ -72,6 +76,16 @@ public partial class PlaylistItem : ObservableObject
             }
 
             return null;
+        }
+    }
+
+    [JsonIgnore]
+    public string? Artist
+    {
+        get
+        {
+            // For now atleast the artist will be playlist name
+            return Playlist?.Name;
         }
     }
 

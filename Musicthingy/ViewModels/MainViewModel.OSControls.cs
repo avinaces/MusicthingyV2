@@ -278,7 +278,7 @@ public partial class MainViewModel
         var builder = new Android.App.Notification.Builder(context, "musicthingy_media")
             .SetSmallIcon(Android.Resource.Drawable.IcMediaPlay)
             .SetContentTitle(CurrentTrack?.Title ?? "Unknown Track")
-            .SetContentText(SelectedPlaylist?.Name ?? "Musicthingy")
+            .SetContentText(CurrentTrack?.Playlist?.Name ?? "Musicthingy")
             .SetStyle(mediaStyle)
             .SetOngoing(IsPlaying)
             .SetVisibility(NotificationVisibility.Public);

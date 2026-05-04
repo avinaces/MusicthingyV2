@@ -33,7 +33,7 @@ public partial class MainViewModel
             double relativeTimeMs = e.Time - startMs;
             if (relativeTimeMs < 0) relativeTimeMs = 0;
 
-            // FIX: Push UI-bound property updates to the Main Thread
+            // Push UI-bound property updates to the Main Thread
             MainThread.BeginInvokeOnMainThread(() =>
             {
                 CurrentPosition = TimeSpan.FromMilliseconds(relativeTimeMs);
@@ -53,7 +53,6 @@ public partial class MainViewModel
             double duration = end - start;
             if (duration <= 0) duration = totalSeconds; // Fallback
 
-            // FIX: Route to Main Thread
             MainThread.BeginInvokeOnMainThread(() =>
             {
                 Duration = TimeSpan.FromSeconds(duration);
@@ -62,12 +61,11 @@ public partial class MainViewModel
 
             if (CurrentTrack != null)
             {
-                string widgetIconUrl = !string.IsNullOrEmpty(SelectedPlaylist?.IconUrl)
-                    ? SelectedPlaylist.IconUrl
+                string widgetIconUrl = !string.IsNullOrEmpty(CurrentTrack.Playlist?.IconUrl)
+                    ? CurrentTrack.Playlist.IconUrl
                     : CurrentTrack.IconUrl;
 
-                // Task.Run is fine here since OS APIs have their own thread marshalling
-                _ = UpdateOSMediaWidgetsAsync(CurrentTrack.Title, SelectedPlaylist?.Name ?? "Musicthingy", widgetIconUrl);
+                _ = UpdateOSMediaWidgetsAsync(CurrentTrack.Title, CurrentTrack.Playlist?.Name ?? "Musicthingy", widgetIconUrl);
             }
         };
 
@@ -107,8 +105,6 @@ public partial class MainViewModel
         {
             AcquireTransientWakeLock();
 
-            // FIX: Do NOT use Task.Run for UI Commands! 
-            // BeginInvokeOnMainThread escapes the LibVLC deadlock while keeping the CollectionView safe.
             MainThread.BeginInvokeOnMainThread(() =>
             {
                 IsLoadingMedia = true;
