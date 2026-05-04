@@ -1,7 +1,6 @@
-﻿using System.Diagnostics;
+﻿using Musicthingy.Models;
+using System.Diagnostics;
 using System.Text.Json;
-using Microsoft.Maui.Storage;
-using Musicthingy.Models;
 
 namespace Musicthingy.ViewModels;
 
@@ -142,11 +141,13 @@ public partial class MainViewModel
 
     private void RestorePlaybackState()
     {
-        string? selectedPlaylistName = Preferences.Default.Get("SelectedPlaylistName", string.Empty);
-        string? currentTrackUrl = Preferences.Default.Get("CurrentTrackUrl", string.Empty);
-        string? queueJson = Preferences.Default.Get("PlaybackQueueUrls", string.Empty);
+        IsShuffleEnabled = Preferences.Default.Get("IsShuffleEnabled", false);
+        RepeatState = (RepeatMode)Preferences.Default.Get("RepeatState", (int)RepeatMode.Off);
 
-        // Grab the position we were at before app close
+        string? selectedPlaylistName = Preferences.Default.Get("SelectedPlaylistName", string.Empty);
+        string? queueJson = Preferences.Default.Get("PlaybackQueueData", string.Empty);
+        string? currentTrackJson = Preferences.Default.Get("CurrentTrackData", string.Empty);
+
         _initialRestorePosition = Preferences.Default.Get("CurrentPositionSeconds", 0.0);
 
         if (!string.IsNullOrEmpty(selectedPlaylistName))
@@ -154,42 +155,67 @@ public partial class MainViewModel
             SelectedPlaylist = Playlists.FirstOrDefault(p => p.Name == selectedPlaylistName);
         }
 
-        if (SelectedPlaylist != null)
+        // 1. Restore the PlaybackQueue
+        if (!string.IsNullOrEmpty(queueJson))
         {
-            // 1. Restore the PlaybackQueue BEFORE setting the CurrentTrack.
-            // This prevents OnCurrentTrackChanged from thinking the queue is empty and destroying the shuffle.
-            if (!string.IsNullOrEmpty(queueJson))
+            try
             {
-                try
+                var queueRefs = JsonSerializer.Deserialize<List<QueueItemRef>>(queueJson);
+                if (queueRefs != null && queueRefs.Count > 0)
                 {
-                    var queueUrls = JsonSerializer.Deserialize<List<string>>(queueJson);
-                    if (queueUrls != null && queueUrls.Count > 0)
+                    PlaybackQueue.Clear();
+                    foreach (var qRef in queueRefs)
                     {
-                        PlaybackQueue.Clear();
-                        foreach (var url in queueUrls)
+                        var targetPlaylist = Playlists.FirstOrDefault(p => p.Name == qRef.Playlist);
+
+                        // FIX: Match exact slices using StartTime and EndTime!
+                        var track = targetPlaylist?.Items.FirstOrDefault(i =>
+                            i.Url == qRef.Url &&
+                            i.StartTime == qRef.StartTime &&
+                            i.EndTime == qRef.EndTime);
+
+                        if (track != null)
                         {
-                            var track = SelectedPlaylist.Items.FirstOrDefault(i => i.Url == url);
-                            if (track != null)
-                            {
-                                PlaybackQueue.Add(track);
-                            }
+                            PlaybackQueue.Add(track);
                         }
                     }
                 }
-                catch { /* Ignore parsing errors from old/bad cache */ }
             }
+            catch { /* Ignore parsing errors */ }
+        }
 
-            // 2. Now restore the CurrentTrack.
-            if (!string.IsNullOrEmpty(currentTrackUrl))
+        // 2. Restore CurrentTrack
+        if (!string.IsNullOrEmpty(currentTrackJson))
+        {
+            try
             {
-                var track = SelectedPlaylist.Items.FirstOrDefault(i => i.Url == currentTrackUrl);
-                if (track != null)
+                var currentRef = JsonSerializer.Deserialize<QueueItemRef>(currentTrackJson);
+                if (currentRef != null && !string.IsNullOrEmpty(currentRef.Url))
                 {
-                    CurrentTrack = track;
+                    var targetPlaylist = Playlists.FirstOrDefault(p => p.Name == currentRef.Playlist);
+
+                    var track = targetPlaylist?.Items.FirstOrDefault(i =>
+                        i.Url == currentRef.Url &&
+                        i.StartTime == currentRef.StartTime &&
+                        i.EndTime == currentRef.EndTime);
+
+                    if (track != null)
+                    {
+                        CurrentTrack = track;
+                    }
                 }
             }
+            catch { /* Fallback */ }
         }
 
         _isRestoringState = false;
+    }
+
+    public class QueueItemRef
+    {
+        public string Playlist { get; set; } = string.Empty;
+        public string Url { get; set; } = string.Empty;
+        public int? StartTime { get; set; }
+        public int? EndTime { get; set; }
     }
 }

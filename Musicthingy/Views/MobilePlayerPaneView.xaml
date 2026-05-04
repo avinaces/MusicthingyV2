@@ -134,7 +134,7 @@
 
                     <!-- Main Transport Controls -->
                     <HorizontalStackLayout HorizontalOptions="Center" Spacing="24" Margin="0,8,0,0">
-                        <ImageButton Source="shuffle_icon.png" Command="{Binding ShufflePlaylistCommand}" WidthRequest="36" HeightRequest="36" BackgroundColor="Transparent" Padding="8" />
+                        <ImageButton Source="shuffle_icon.png" Command="{Binding ToggleShuffleCommand}" BackgroundColor="{Binding ShuffleButtonBackground}" CornerRadius="8" WidthRequest="36" HeightRequest="36" Padding="8" />
                         <ImageButton Source="skip_back_icon.png" Command="{Binding PlayPreviousCommand}" WidthRequest="44" HeightRequest="44" BackgroundColor="Transparent" Padding="10" />
 
                         <Border Background="#1c2128" Stroke="#30363d" StrokeThickness="1" WidthRequest="56" HeightRequest="56">
@@ -145,7 +145,8 @@
                         </Border>
 
                         <ImageButton Source="skip_forward_icon.png" Command="{Binding PlayNextCommand}" WidthRequest="44" HeightRequest="44" BackgroundColor="Transparent" Padding="10" />
-                        <ImageButton Source="repeat_icon.png" WidthRequest="36" HeightRequest="36" BackgroundColor="Transparent" Padding="8" />
+
+                        <ImageButton Source="repeat_icon.png" Command="{Binding ToggleRepeatCommand}" BackgroundColor="{Binding RepeatButtonBackground}" CornerRadius="8" WidthRequest="36" HeightRequest="36" Padding="8" />
                     </HorizontalStackLayout>
                 </VerticalStackLayout>
 

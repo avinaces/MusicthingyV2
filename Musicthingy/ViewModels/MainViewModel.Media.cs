@@ -1,5 +1,6 @@
 ﻿using LibVLCSharp.Shared;
 using Musicthingy.Models;
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using YoutubeExplode;
 using YoutubeExplode.Videos.Streams;
@@ -9,11 +10,13 @@ namespace Musicthingy.ViewModels;
 public partial class MainViewModel
 {
     private readonly YoutubeClient _youtubeClient = new();
+    private readonly ConcurrentDictionary<string, (string RawUrl, DateTime FetchedAt)> _streamUrlCache = new();
 
     private LibVLC? _libVLC;
     private MediaPlayer? _player;
 
     private long _lastTimeUpdateTicks = 0;
+
 
     private void InitializeVLCEngine()
     {
@@ -69,8 +72,10 @@ public partial class MainViewModel
             }
         };
 
-        _player.Playing += (s, e) => {
-            MainThread.BeginInvokeOnMainThread(() => {
+        _player.Playing += (s, e) =>
+        {
+            MainThread.BeginInvokeOnMainThread(() =>
+            {
                 IsPlaying = true;
                 IsLoadingMedia = false;
                 SyncOSPlaybackState();
@@ -78,24 +83,30 @@ public partial class MainViewModel
             ReleaseTransientWakeLock();
         };
 
-        _player.Paused += (s, e) => {
-            MainThread.BeginInvokeOnMainThread(() => {
+        _player.Paused += (s, e) =>
+        {
+            MainThread.BeginInvokeOnMainThread(() =>
+            {
                 IsPlaying = false;
                 SyncOSPlaybackState();
             });
             if (!IsLoadingMedia) ReleaseTransientWakeLock();
         };
 
-        _player.Stopped += (s, e) => {
-            MainThread.BeginInvokeOnMainThread(() => {
+        _player.Stopped += (s, e) =>
+        {
+            MainThread.BeginInvokeOnMainThread(() =>
+            {
                 IsPlaying = false;
                 SyncOSPlaybackState();
             });
             if (!IsLoadingMedia) ReleaseTransientWakeLock();
         };
 
-        _player.EncounteredError += (s, e) => {
-            MainThread.BeginInvokeOnMainThread(() => {
+        _player.EncounteredError += (s, e) =>
+        {
+            MainThread.BeginInvokeOnMainThread(() =>
+            {
                 IsLoadingMedia = false;
             });
             ReleaseTransientWakeLock();
@@ -108,9 +119,24 @@ public partial class MainViewModel
             MainThread.BeginInvokeOnMainThread(() =>
             {
                 IsLoadingMedia = true;
-                PlayNextCommand.Execute(null);
+                // Pass "Natural" so the system knows to loop if Repeat One is active
+                PlayNextCommand.Execute("Natural");
             });
         };
+    }
+
+    private async Task PreloadNextTrackAsync()
+    {
+        if (PlaybackQueue == null || PlaybackQueue.Count == 0 || CurrentTrack == null) return;
+
+        int currentIndex = PlaybackQueue.IndexOf(CurrentTrack);
+        if (currentIndex == -1) return;
+
+        int nextIndex = (currentIndex + 1) % PlaybackQueue.Count;
+        var nextTrack = PlaybackQueue[nextIndex];
+
+        // Silently resolve and cache the next track's URL in the background
+        await ResolveMediaSourceAsync(nextTrack);
     }
 
     private async Task<string?> ResolveMediaSourceAsync(PlaylistItem track)
@@ -119,14 +145,29 @@ public partial class MainViewModel
 
         if (track.Url.Contains("youtube.com") || track.Url.Contains("youtu.be"))
         {
+            // 1. FAST PATH: Check if we already preloaded this URL
+            if (_streamUrlCache.TryGetValue(track.Url, out var cached) && (DateTime.Now - cached.FetchedAt).TotalHours < 2)
+            {
+                return cached.RawUrl;
+            }
+
+            // 2. SLOW PATH: Fetch it from YouTube
             try
             {
-                return await Task.Run(async () =>
+                var rawAudioUrl = await Task.Run(async () =>
                 {
                     var videoId = YoutubeExplode.Videos.VideoId.Parse(track.Url);
                     var manifest = await _youtubeClient.Videos.Streams.GetManifestAsync(videoId);
                     return manifest.GetAudioOnlyStreams().GetWithHighestBitrate()?.Url;
                 });
+
+                if (rawAudioUrl != null)
+                {
+                    // Save it to the cache for later
+                    _streamUrlCache[track.Url] = (rawAudioUrl, DateTime.Now);
+                }
+
+                return rawAudioUrl;
             }
             catch (Exception ex)
             {
@@ -160,6 +201,8 @@ public partial class MainViewModel
 
         var media = new Media(_libVLC!, new Uri(rawAudioUrl));
 
+        media.AddOption(":network-caching=1000");
+
         if (newValue.StartTime.HasValue) media.AddOption($":start-time={newValue.StartTime.Value}");
         if (newValue.EndTime.HasValue) media.AddOption($":stop-time={newValue.EndTime.Value}");
 
@@ -171,6 +214,8 @@ public partial class MainViewModel
         }
 
         _player.Play(media);
+
+        _ = Task.Run(PreloadNextTrackAsync);
     }
 
     private static void CleanupCache()

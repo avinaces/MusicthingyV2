@@ -6,65 +6,189 @@ using System.Text.Json;
 
 namespace Musicthingy.ViewModels;
 
+public enum RepeatMode
+{
+    Off = 0,
+    All = 1,
+    One = 2
+}
+
 public partial class MainViewModel
 {
     [ObservableProperty] public partial TimeSpan CurrentPosition { get; set; }
     [ObservableProperty] public partial TimeSpan Duration { get; set; }
     [ObservableProperty] public partial double CurrentPositionSeconds { get; set; }
     [ObservableProperty] public partial double DurationSeconds { get; set; }
-
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(PlayPauseIcon))]
     public partial bool IsPlaying { get; set; }
 
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShuffleButtonBackground))]
+    public partial bool IsShuffleEnabled { get; set; }
+
+    // 3-State Repeat System
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(RepeatButtonBackground))]
+    public partial RepeatMode RepeatState { get; set; } = RepeatMode.Off;
+
     public string PlayPauseIcon => IsPlaying ? "pause_icon.png" : "play_icon.png";
+
+    public Color ShuffleButtonBackground => IsShuffleEnabled ? Color.FromArgb("#374C69") : Colors.Transparent;
+
+    public Color RepeatButtonBackground => RepeatState switch
+    {
+        RepeatMode.All => Color.FromArgb("#374C69"), // Dimmed selection blue
+        RepeatMode.One => Color.FromArgb("#58a6ff"), // Bright glowing accent blue
+        _ => Colors.Transparent
+    };
 
     private PlaylistItem? _lastTrackSkipped;
     private DateTime _lastPositionSave = DateTime.MinValue;
-    private bool _isDragging;
-
-    [ObservableProperty]
+    private bool _isDragging; [ObservableProperty]
     public partial ObservableCollection<PlaylistItem> PlaybackQueue { get; set; } = new();
 
     private void SavePlaybackQueueState()
     {
         if (_isRestoringState) return;
-        var queueUrls = PlaybackQueue.Select(t => t.Url).ToList();
-        Preferences.Default.Set("PlaybackQueueUrls", JsonSerializer.Serialize(queueUrls));
+
+        var queueData = PlaybackQueue
+            .Where(t => t.Playlist != null)
+            .Select(t => new QueueItemRef
+            {
+                Playlist = t.Playlist!.Name,
+                Url = t.Url,
+                StartTime = t.StartTime,
+                EndTime = t.EndTime
+            })
+            .ToList();
+
+        Preferences.Default.Set("PlaybackQueueData", JsonSerializer.Serialize(queueData));
     }
+
+    [RelayCommand]
+    private void ToggleShuffle()
+    {
+        IsShuffleEnabled = !IsShuffleEnabled;
+        Preferences.Default.Set("IsShuffleEnabled", IsShuffleEnabled);
+
+        if (PlaybackQueue == null || PlaybackQueue.Count == 0 || CurrentTrack == null) return;
+
+        MainThread.BeginInvokeOnMainThread(() =>
+        {
+            if (IsShuffleEnabled)
+            {
+                var remaining = PlaybackQueue.Where(x => x != CurrentTrack).OrderBy(x => Random.Shared.Next()).ToList();
+                PlaybackQueue.Clear();
+                PlaybackQueue.Add(CurrentTrack);
+                foreach (var item in remaining) PlaybackQueue.Add(item);
+            }
+            else
+            {
+                if (CurrentTrack.Playlist != null)
+                {
+                    PlaybackQueue.Clear();
+                    foreach (var item in CurrentTrack.Playlist.Items) PlaybackQueue.Add(item);
+                }
+            }
+            SavePlaybackQueueState();
+        });
+    }
+
+    [RelayCommand]
+    private void ToggleRepeat()
+    {
+        // Cycle through: Off -> All -> One -> Off
+        RepeatState = RepeatState switch
+        {
+            RepeatMode.Off => RepeatMode.All,
+            RepeatMode.All => RepeatMode.One,
+            RepeatMode.One => RepeatMode.Off,
+            _ => RepeatMode.Off
+        };
+
+        Preferences.Default.Set("RepeatState", (int)RepeatState);
+    }
+
     [RelayCommand]
     private void PlayPlaylist()
     {
         if (SelectedPlaylist == null || SelectedPlaylist.Items.Count == 0) return;
 
-        PlaybackQueue.Clear();
-        foreach (var item in SelectedPlaylist.Items) PlaybackQueue.Add(item);
+        IsShuffleEnabled = false;
+        Preferences.Default.Set("IsShuffleEnabled", false);
 
-        SavePlaybackQueueState();
-        CurrentTrack = PlaybackQueue[0];
+        MainThread.BeginInvokeOnMainThread(() =>
+        {
+            PlaybackQueue.Clear();
+            foreach (var item in SelectedPlaylist.Items) PlaybackQueue.Add(item);
+            SavePlaybackQueueState();
+            CurrentTrack = PlaybackQueue[0];
+        });
     }
-
     [RelayCommand]
     private void ShufflePlaylist()
     {
         if (SelectedPlaylist == null || SelectedPlaylist.Items.Count == 0) return;
 
-        var shuffledItems = SelectedPlaylist.Items.OrderBy(x => Random.Shared.Next()).ToList();
-        PlaybackQueue.Clear();
-        foreach (var item in shuffledItems) PlaybackQueue.Add(item);
+        IsShuffleEnabled = true;
+        Preferences.Default.Set("IsShuffleEnabled", true);
 
-        SavePlaybackQueueState();
-        CurrentTrack = PlaybackQueue[0];
+        MainThread.BeginInvokeOnMainThread(() =>
+        {
+            var shuffledItems = SelectedPlaylist.Items.OrderBy(x => Random.Shared.Next()).ToList();
+            PlaybackQueue.Clear();
+            foreach (var item in shuffledItems) PlaybackQueue.Add(item);
+            SavePlaybackQueueState();
+            CurrentTrack = PlaybackQueue[0];
+        });
     }
 
     [RelayCommand]
-    public void PlayNext()
+    public void PlayNext(string? trigger = null)
     {
         if (PlaybackQueue == null || PlaybackQueue.Count == 0 || CurrentTrack == null) return;
+
         int currentIndex = PlaybackQueue.IndexOf(CurrentTrack);
         if (currentIndex == -1) return;
 
-        int nextIndex = (currentIndex + 1) % PlaybackQueue.Count;
+        // If the track ended naturally and we are on "Repeat One", seamlessly restart it
+        if (trigger == "Natural" && RepeatState == RepeatMode.One)
+        {
+            CurrentTrack.LastPlayedAt = DateTime.Now;
+            _ = ReloadMediaAsync(CurrentTrack); // Re-feed VLC instantly
+            return;
+        }
+
+        int nextIndex = currentIndex + 1;
+        if (nextIndex >= PlaybackQueue.Count)
+        {
+            if (RepeatState == RepeatMode.All || RepeatState == RepeatMode.One)
+            {
+                if (IsShuffleEnabled)
+                {
+                    MainThread.BeginInvokeOnMainThread(() =>
+                    {
+                        var shuffled = PlaybackQueue.OrderBy(x => Random.Shared.Next()).ToList();
+                        PlaybackQueue.Clear();
+                        foreach (var item in shuffled) PlaybackQueue.Add(item);
+                        SavePlaybackQueueState();
+                        CurrentTrack = PlaybackQueue[0];
+                    });
+                    return;
+                }
+                else
+                {
+                    nextIndex = 0;
+                }
+            }
+            else
+            {
+                MainThread.BeginInvokeOnMainThread(() => CurrentTrack = null);
+                return;
+            }
+        }
+
         CurrentTrack = PlaybackQueue[nextIndex];
     }
 
@@ -72,14 +196,34 @@ public partial class MainViewModel
     public void PlayPrevious()
     {
         if (PlaybackQueue == null || PlaybackQueue.Count == 0 || CurrentTrack == null) return;
+
         int currentIndex = PlaybackQueue.IndexOf(CurrentTrack);
         if (currentIndex == -1) return;
 
+        if (CurrentPosition.TotalSeconds > 3)
+        {
+            CurrentPositionSeconds = 0;
+            SeekCommand.Execute(null);
+            return;
+        }
+
         int prevIndex = currentIndex - 1;
-        if (prevIndex < 0) prevIndex = PlaybackQueue.Count - 1;
+        if (prevIndex < 0)
+        {
+            if (RepeatState == RepeatMode.All || RepeatState == RepeatMode.One)
+            {
+                prevIndex = PlaybackQueue.Count - 1;
+            }
+            else
+            {
+                CurrentPositionSeconds = 0;
+                SeekCommand.Execute(null);
+                return;
+            }
+        }
+
         CurrentTrack = PlaybackQueue[prevIndex];
     }
-
     [RelayCommand]
     private void TogglePlay()
     {
@@ -91,11 +235,10 @@ public partial class MainViewModel
         }
         else
         {
-            AcquireTransientWakeLock(); // Keep awake while network reconnects/buffers
+            AcquireTransientWakeLock();
             _player.Play();
         }
     }
-
     [RelayCommand]
     private void DragStarted()
     {
@@ -107,13 +250,10 @@ public partial class MainViewModel
     {
         if (_player != null && _player.IsSeekable)
         {
-            // Convert the slider's relative time back to absolute VLC time
             double startMs = (CurrentTrack?.StartTime ?? 0) * 1000.0;
             _player.Time = (long)((CurrentPositionSeconds * 1000.0) + startMs);
         }
         _isDragging = false;
-
-        // Notify the OS widget so its seekbar updates seamlessly
         SyncOSPlaybackState();
     }
 
@@ -132,7 +272,15 @@ public partial class MainViewModel
 
         if (!_isRestoringState && newValue != null)
         {
-            Preferences.Default.Set("CurrentTrackUrl", newValue.Url ?? string.Empty);
+            var currentRef = new QueueItemRef
+            {
+                Playlist = newValue.Playlist?.Name ?? string.Empty,
+                Url = newValue.Url ?? string.Empty,
+                StartTime = newValue.StartTime,
+                EndTime = newValue.EndTime
+            };
+
+            Preferences.Default.Set("CurrentTrackData", JsonSerializer.Serialize(currentRef));
             Preferences.Default.Set("CurrentPositionSeconds", 0.0);
         }
 
@@ -142,13 +290,21 @@ public partial class MainViewModel
             return;
         }
 
-        // FIX: Look at the track's native Playlist, not SelectedPlaylist
         if (newValue.Playlist != null && !PlaybackQueue.Contains(newValue))
         {
             MainThread.BeginInvokeOnMainThread(() =>
             {
                 PlaybackQueue.Clear();
-                foreach (var item in newValue.Playlist.Items) PlaybackQueue.Add(item);
+                if (IsShuffleEnabled)
+                {
+                    var remaining = newValue.Playlist.Items.Where(x => x != newValue).OrderBy(x => Random.Shared.Next()).ToList();
+                    PlaybackQueue.Add(newValue);
+                    foreach (var item in remaining) PlaybackQueue.Add(item);
+                }
+                else
+                {
+                    foreach (var item in newValue.Playlist.Items) PlaybackQueue.Add(item);
+                }
                 SavePlaybackQueueState();
             });
         }
