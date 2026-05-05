@@ -8,7 +8,7 @@
             Background="#161b22" 
             Stroke="#30363d" 
             StrokeThickness="1" 
-            Margin="-1,0,-1,-2"
+            Margin="-1,0,0,-2"
             Padding="0"
             VerticalOptions="End"
             HeightRequest="72"
@@ -100,8 +100,8 @@
 
                     <!-- Mini Controls -->
                     <HorizontalStackLayout x:Name="MiniControls" Grid.Column="2" Spacing="4" VerticalOptions="Center">
-                        <ImageButton Source="{Binding PlayPauseIcon}" Command="{Binding TogglePlayCommand}" WidthRequest="40" HeightRequest="40" BackgroundColor="Transparent" Padding="8"/>
-                        <ImageButton Source="skip_forward_icon.png" Command="{Binding PlayNextCommand}" WidthRequest="40" HeightRequest="40" BackgroundColor="Transparent" Padding="8"/>
+                        <ImageButton Source="{Binding PlayPauseIcon}" Command="{Binding TogglePlayCommand}" WidthRequest="40" HeightRequest="40" BackgroundColor="Transparent" Padding="8" CornerRadius="20"/>
+                        <ImageButton Source="skip_forward_icon.png" Command="{Binding PlayNextCommand}" WidthRequest="40" HeightRequest="40" BackgroundColor="Transparent" Padding="8" CornerRadius="20"/>
                     </HorizontalStackLayout>
                 </Grid>
             </Grid>
@@ -146,7 +146,7 @@
                             Source="shuffle_icon.png" 
                             Command="{Binding ToggleShuffleCommand}" 
                             BackgroundColor="Transparent" 
-                            CornerRadius="8" WidthRequest="36" HeightRequest="36" Padding="8">
+                            CornerRadius="18" WidthRequest="36" HeightRequest="36" Padding="8">
                             <ImageButton.Behaviors>
                                 <!-- Manually pass the BindingContext to bypass the v10 Toolkit breaking change -->
                                 <toolkit:IconTintColorBehavior 
@@ -155,7 +155,7 @@
                             </ImageButton.Behaviors>
                         </ImageButton>
 
-                        <ImageButton Source="skip_back_icon.png" Command="{Binding PlayPreviousCommand}" WidthRequest="44" HeightRequest="44" BackgroundColor="Transparent" Padding="10" />
+                        <ImageButton Source="skip_back_icon.png" Command="{Binding PlayPreviousCommand}" WidthRequest="44" HeightRequest="44" BackgroundColor="Transparent" Padding="10" CornerRadius="22" />
 
                         <Border Background="#1c2128" Stroke="#30363d" StrokeThickness="1" WidthRequest="56" HeightRequest="56">
                             <Border.StrokeShape>
@@ -164,14 +164,14 @@
                             <ImageButton Source="{Binding PlayPauseIcon}" Command="{Binding TogglePlayCommand}" WidthRequest="56" HeightRequest="56" BackgroundColor="Transparent" Padding="14"/>
                         </Border>
 
-                        <ImageButton Source="skip_forward_icon.png" Command="{Binding PlayNextCommand}" WidthRequest="44" HeightRequest="44" BackgroundColor="Transparent" Padding="10" />
+                        <ImageButton Source="skip_forward_icon.png" Command="{Binding PlayNextCommand}" WidthRequest="44" HeightRequest="44" BackgroundColor="Transparent" Padding="10" CornerRadius="22"/>
 
                         <!-- REPEAT BUTTON -->
                         <ImageButton x:Name="RepeatBtn" 
                             Source="{Binding RepeatIconSource}" 
                             Command="{Binding ToggleRepeatCommand}" 
                             BackgroundColor="Transparent" 
-                            CornerRadius="8" WidthRequest="36" HeightRequest="36" Padding="8">
+                            CornerRadius="18" WidthRequest="36" HeightRequest="36" Padding="8">
                             <ImageButton.Behaviors>
                                 <!-- Manually pass the BindingContext to bypass the v10 Toolkit breaking change -->
                                 <toolkit:IconTintColorBehavior 

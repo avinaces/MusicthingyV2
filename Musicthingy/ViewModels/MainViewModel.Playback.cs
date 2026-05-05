@@ -238,7 +238,7 @@ public partial class MainViewModel
     [RelayCommand]
     private void TogglePlay()
     {
-        if (_player == null) return;
+        if (_player == null || IsLoadingMedia) return;
 
         if (IsPlaying)
         {
