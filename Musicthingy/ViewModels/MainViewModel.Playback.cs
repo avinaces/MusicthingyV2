@@ -19,28 +19,39 @@ public partial class MainViewModel
     [ObservableProperty] public partial TimeSpan Duration { get; set; }
     [ObservableProperty] public partial double CurrentPositionSeconds { get; set; }
     [ObservableProperty] public partial double DurationSeconds { get; set; }
+
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(PlayPauseIcon))]
     public partial bool IsPlaying { get; set; }
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(ShuffleButtonBackground))]
+    [NotifyPropertyChangedFor(nameof(ShuffleIconColor))]
     public partial bool IsShuffleEnabled { get; set; }
 
-    // 3-State Repeat System
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(RepeatButtonBackground))]
+    [NotifyPropertyChangedFor(nameof(RepeatIconSource))]
+    [NotifyPropertyChangedFor(nameof(RepeatIconColor))]
     public partial RepeatMode RepeatState { get; set; } = RepeatMode.Off;
 
     public string PlayPauseIcon => IsPlaying ? "pause_icon.png" : "play_icon.png";
 
-    public Color ShuffleButtonBackground => IsShuffleEnabled ? Color.FromArgb("#374C69") : Colors.Transparent;
+    // Gray when off, Soft Pastel Blue when active
+    public Color ShuffleIconColor => IsShuffleEnabled ? Color.FromArgb("#adcff0") : Color.FromArgb("#8b949e");
 
-    public Color RepeatButtonBackground => RepeatState switch
+    // Dynamic Icon Images
+    public string RepeatIconSource => RepeatState switch
     {
-        RepeatMode.All => Color.FromArgb("#374C69"), // Dimmed selection blue
-        RepeatMode.One => Color.FromArgb("#58a6ff"), // Bright glowing accent blue
-        _ => Colors.Transparent
+        RepeatMode.All => "repeat_icon.png",
+        RepeatMode.One => "repeat_1_icon.png",
+        _ => "repeat_off_icon.png"
+    };
+
+    // Gray when off, Soft Pastel Blue when repeating All or One
+    public Color RepeatIconColor => RepeatState switch
+    {
+        RepeatMode.All => Color.FromArgb("#adcff0"),
+        RepeatMode.One => Color.FromArgb("#adcff0"),
+        _ => Color.FromArgb("#8b949e")
     };
 
     private PlaylistItem? _lastTrackSkipped;
