@@ -189,7 +189,7 @@
                                                                         <Grid.GestureRecognizers>
                                                                             <TapGestureRecognizer Command="{Binding BindingContext.EditTrackCommand, Source={x:Reference DetailRoot}}" CommandParameter="{Binding .}" Tapped="OnTrackActionTapped" />
                                                                         </Grid.GestureRecognizers>
-                                                                        <Image Source="edit_2_icon.png" WidthRequest="20" HeightRequest="20" HorizontalOptions="Center" VerticalOptions="Center" />
+                                                                        <Image Source="pencil_icon.png" WidthRequest="20" HeightRequest="20" HorizontalOptions="Center" VerticalOptions="Center" />
                                                                     </Grid>
 
                                                                     <!-- Delete Button (Right side of the block) -->

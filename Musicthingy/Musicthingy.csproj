@@ -73,10 +73,11 @@
 
 	<ItemGroup>
 	  <None Remove="Resources\Images\feather\*" />
+		<None Remove="Resources\Images\lucide\*" />
 	</ItemGroup>
 
 	<ItemGroup>
-	  <MauiImage Include="Resources\Images\feather\*" TintColor="#FFFFFF" />
+	  <MauiImage Include="Resources\Images\lucide\*" TintColor="#FFFFFF" />
 	</ItemGroup>
 
 	<ItemGroup>
