@@ -58,7 +58,7 @@
                 </Grid>
 
                 <!-- Playlists List -->
-                <CollectionView Grid.Row="1" ItemsSource="{Binding Playlists}" SelectedItem="{Binding SelectedPlaylist, Mode=TwoWay}" SelectionMode="Single" SelectionChanged="OnPlaylistSelected" Scrolled="OnListScrolled">
+                <CollectionView Grid.Row="1" ItemsSource="{Binding Playlists}" SelectedItem="{Binding SelectedPlaylist, Mode=TwoWay}" SelectionMode="Single" SelectionChanged="OnPlaylistSelected" Scrolled="OnListScrolled" ItemSizingStrategy="MeasureFirstItem">
                     <CollectionView.ItemTemplate>
                         <DataTemplate x:DataType="models:Playlist">
                             <Grid Padding="12,4">

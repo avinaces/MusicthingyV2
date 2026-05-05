@@ -14,8 +14,6 @@
 		<AndroidSigningKeyPass>***REMOVED***</AndroidSigningKeyPass>
 
 		<LangVersion>latest</LangVersion>
-		
-		
 
 		<OutputType>Exe</OutputType>
 		<RootNamespace>Musicthingy</RootNamespace>
@@ -81,11 +79,19 @@
 	</ItemGroup>
 
 	<ItemGroup>
+	  <None Remove="Platforms\Android\Environment.txt" />
+	</ItemGroup>
+
+	<ItemGroup>
+	  <AndroidEnvironment Include="Platforms\Android\Environment.txt" />
+	</ItemGroup>
+
+	<ItemGroup>
 		<PackageReference Include="CommunityToolkit.Maui" Version="14.1.0" />
 		<PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" />
 		<PackageReference Include="LibVLCSharp" Version="3.9.7.1" />
 		<PackageReference Include="Microsoft.Maui.Controls" Version="10.0.60" />
-		<PackageReference Include="Microsoft.Extensions.Logging.Debug" Version="10.0.6" />
+		<PackageReference Include="Microsoft.Extensions.Logging.Debug" Version="10.0.7" />
 		<PackageReference Include="VideoLAN.LibVLC.Android" Version="3.6.5" />
 		<PackageReference Include="VideoLAN.LibVLC.Windows" Version="3.0.23.1" />
 		<PackageReference Include="YoutubeExplode" Version="6.6.0" />
