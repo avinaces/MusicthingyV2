@@ -1,6 +1,7 @@
-﻿using Microsoft.Extensions.Logging;
-using CommunityToolkit.Maui;
+﻿using CommunityToolkit.Maui;
 using LibVLCSharp.Shared;
+using Microsoft.Extensions.Logging;
+using MPowerKit.VirtualizeListView;
 
 namespace Musicthingy
 {
@@ -15,6 +16,7 @@ namespace Musicthingy
             var builder = MauiApp.CreateBuilder();
             builder.UseMauiApp<App>()
                 .UseMauiCommunityToolkit()
+                .UseMPowerKitListView()
                 .ConfigureFonts(fonts =>
             {
                 fonts.AddFont("OpenSans-Regular.ttf", "OpenSansRegular");

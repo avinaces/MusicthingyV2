@@ -1,3 +1,5 @@
+using Musicthingy.Models;
+
 namespace Musicthingy.Views;
 
 public partial class MobileMainPage : FlyoutPage
@@ -10,39 +12,48 @@ public partial class MobileMainPage : FlyoutPage
         BindingContext = new ViewModels.MainViewModel();
     }
 
-    private void OnPlaylistSelected(object sender, SelectionChangedEventArgs e)
+    private void OnPlaylistTapped(object sender, TappedEventArgs e)
     {
         CloseSwipeView();
 
-        if (e.CurrentSelection.FirstOrDefault() != null)
+        if (sender is BindableObject bindable && bindable.BindingContext is Playlist playlist)
         {
+            if (BindingContext is ViewModels.MainViewModel vm)
+            {
+                vm.SelectedPlaylist = playlist;
+            }
             this.IsPresented = false;
         }
     }
 
-    private void OnTrackSelected(object sender, SelectionChangedEventArgs e)
+    private void OnTrackTapped(object sender, TappedEventArgs e)
     {
         CloseSwipeView();
+
+        if (sender is BindableObject bindable && bindable.BindingContext is PlaylistItem track)
+        {
+            if (BindingContext is ViewModels.MainViewModel vm)
+            {
+                vm.CurrentTrack = track;
+            }
+        }
     }
 
     private void OnSwipeStarted(object sender, SwipeStartedEventArgs e)
     {
         if (sender is SwipeView currentSwipeView)
         {
-            // If a DIFFERENT swipe view is already open, snap it shut
             if (_openedSwipeView != null && _openedSwipeView != currentSwipeView)
             {
                 _openedSwipeView.Close();
             }
-
-            // Track the currently open one
             _openedSwipeView = currentSwipeView;
         }
     }
 
-    private void OnListScrolled(object sender, ItemsViewScrolledEventArgs e)
+    // Standard EventHandler works since VirtualizeListView inherits MAUI's ScrollView events
+    private void OnListScrolled(object sender, ScrolledEventArgs e)
     {
-        // Snap the swipe view shut the moment the user starts scrolling
         CloseSwipeView();
     }
 
@@ -50,7 +61,7 @@ public partial class MobileMainPage : FlyoutPage
     {
         if (_openedSwipeView != null)
         {
-            _openedSwipeView.Close(); // Triggers the native snap-back animation
+            _openedSwipeView.Close();
             _openedSwipeView = null;
         }
     }
@@ -58,9 +69,6 @@ public partial class MobileMainPage : FlyoutPage
     private void OnDeletePlaylistTapped(object sender, TappedEventArgs e)
     {
         CloseSwipeView();
-
-        // IMPORTANT: The modal exists in the Detail view. 
-        // We MUST close the drawer instantly so the user can see the modal popup.
         this.IsPresented = false;
     }
 

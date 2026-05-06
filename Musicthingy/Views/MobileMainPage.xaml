@@ -5,7 +5,9 @@
             xmlns:views="clr-namespace:Musicthingy.Views"
             xmlns:android="clr-namespace:Microsoft.Maui.Controls.PlatformConfiguration.AndroidSpecific;assembly=Microsoft.Maui.Controls"
             xmlns:ios="clr-namespace:Microsoft.Maui.Controls.PlatformConfiguration.iOSSpecific;assembly=Microsoft.Maui.Controls"
+            xmlns:mpowerkit="clr-namespace:MPowerKit.VirtualizeListView;assembly=MPowerKit.VirtualizeListView"
             x:Class="Musicthingy.Views.MobileMainPage"
+            x:Name="RootPage"
             BackgroundColor="#0d1117"
             FlyoutLayoutBehavior="Popover">
 
@@ -21,8 +23,6 @@
         <Color x:Key="MutedColor">#8b949e</Color>
         <Color x:Key="TextColor">#c9d1d9</Color>
         <Color x:Key="BorderColor">#30363d</Color>
-
-        <!-- A rich slate-blue that contrasts distinctly against SelectedBgColor without breaking the dark aesthetic -->
         <Color x:Key="SwipeEditColor">#2d5b8c</Color>
         <Color x:Key="SwipeDeleteColor">#5c181f</Color>
 
@@ -48,7 +48,7 @@
         <ContentPage x:Name="FlyoutRoot" Title="Library" BackgroundColor="{StaticResource BgColor}">
             <Grid RowDefinitions="Auto, *">
 
-                <!-- Drawer Header -->
+                <!-- Drawer Header (StaticResource is fine here because it's not virtualized) -->
                 <Grid Grid.Row="0" Padding="16,30,16,16" ColumnDefinitions="*, Auto">
                     <Label Grid.Column="0" Text="Playlists" TextColor="{StaticResource TitleColor}" FontSize="24" FontAttributes="Bold" VerticalOptions="Center" />
                     <HorizontalStackLayout Grid.Column="1" Spacing="8" VerticalOptions="Center">
@@ -57,70 +57,67 @@
                     </HorizontalStackLayout>
                 </Grid>
 
-                <!-- Playlists List -->
-                <CollectionView Grid.Row="1" ItemsSource="{Binding Playlists}" SelectedItem="{Binding SelectedPlaylist, Mode=TwoWay}" SelectionMode="Single" SelectionChanged="OnPlaylistSelected" Scrolled="OnListScrolled" ItemSizingStrategy="MeasureFirstItem">
-                    <CollectionView.ItemTemplate>
+                <!-- MPowerKit Playlists List -->
+                <mpowerkit:VirtualizeListView Grid.Row="1" ItemsSource="{Binding Playlists}" Scrolled="OnListScrolled">
+                    <mpowerkit:VirtualizeListView.ItemTemplate>
                         <DataTemplate x:DataType="models:Playlist">
-                            <Grid Padding="12,4">
 
-                                <VisualStateManager.VisualStateGroups>
-                                    <VisualStateGroup x:Name="CommonStates">
-                                        <VisualState x:Name="Normal" />
-                                        <VisualState x:Name="Selected">
-                                            <VisualState.Setters>
-                                                <Setter Property="BackgroundColor" Value="Transparent" />
-                                            </VisualState.Setters>
-                                        </VisualState>
-                                    </VisualStateGroup>
-                                </VisualStateManager.VisualStateGroups>
+                            <mpowerkit:VirtualizeListViewCell>
+                                <Grid Padding="12,4">
+                                    <!-- CRASH FIX: Changed all StaticResource to DynamicResource inside the Template -->
+                                    <Border StrokeShape="RoundRectangle 12" Padding="0" Background="{DynamicResource CardColor}" Stroke="{DynamicResource BorderColor}">
+                                        <Border.Triggers>
+                                            <DataTrigger TargetType="Border" Binding="{Binding IsSelected}" Value="True">
+                                                <Setter Property="Background" Value="{DynamicResource SelectedBgColor}" />
+                                                <Setter Property="Stroke" Value="{DynamicResource AccentColor}" />
+                                            </DataTrigger>
+                                        </Border.Triggers>
 
-                                <!-- SwipeView is housed perfectly inside the Border to retain corner clipping -->
-                                <Border StrokeShape="RoundRectangle 12" Padding="0" Background="{StaticResource CardColor}" Stroke="{StaticResource BorderColor}">
-                                    <Border.Triggers>
-                                        <DataTrigger TargetType="Border" Binding="{Binding IsSelected}" Value="True">
-                                            <Setter Property="Background" Value="{StaticResource SelectedBgColor}" />
-                                            <Setter Property="Stroke" Value="{StaticResource AccentColor}" />
-                                        </DataTrigger>
-                                    </Border.Triggers>
+                                        <SwipeView android:SwipeView.SwipeTransitionMode="Drag" ios:SwipeView.SwipeTransitionMode="Drag" Threshold="90" SwipeStarted="OnSwipeStarted">
+                                            <SwipeView.LeftItems>
+                                                <SwipeItems Mode="Reveal">
+                                                    <SwipeItemView WidthRequest="75" MinimumWidthRequest="75" HeightRequest="84">
+                                                        <!-- Using ContentView instead of Grid enforces a strict touch boundary -->
+                                                        <ContentView WidthRequest="75" HeightRequest="84" BackgroundColor="{DynamicResource SwipeDeleteColor}">
+                                                            <ContentView.GestureRecognizers>
+                                                                <TapGestureRecognizer Command="{Binding BindingContext.DeletePlaylistCommand, Source={x:Reference FlyoutRoot}}" CommandParameter="{Binding .}" Tapped="OnDeletePlaylistTapped" />
+                                                            </ContentView.GestureRecognizers>
+                                                            <!-- InputTransparent ensures tapping directly on the icon triggers the parent's TapGesture -->
+                                                            <Image Source="trash_2_icon.png" WidthRequest="22" HeightRequest="22" HorizontalOptions="Center" VerticalOptions="Center" InputTransparent="True" />
+                                                        </ContentView>
+                                                    </SwipeItemView>
+                                                </SwipeItems>
+                                            </SwipeView.LeftItems>
 
-                                    <!-- Restored Drag transition to fix the "teleport" effect -->
-                                    <SwipeView android:SwipeView.SwipeTransitionMode="Drag" ios:SwipeView.SwipeTransitionMode="Drag" Threshold="90" SwipeStarted="OnSwipeStarted">
-                                        <SwipeView.LeftItems>
-                                            <SwipeItems Mode="Reveal">
-                                                <SwipeItemView WidthRequest="75" MinimumWidthRequest="75">
-                                                    <Grid BackgroundColor="{StaticResource SwipeDeleteColor}" HorizontalOptions="Fill" VerticalOptions="Fill">
-                                                        <Grid.GestureRecognizers>
-                                                            <TapGestureRecognizer Command="{Binding BindingContext.DeletePlaylistCommand, Source={x:Reference FlyoutRoot}}" CommandParameter="{Binding .}" Tapped="OnDeletePlaylistTapped" />
-                                                        </Grid.GestureRecognizers>
-                                                        <Image Source="trash_2_icon.png" WidthRequest="22" HeightRequest="22" HorizontalOptions="Center" VerticalOptions="Center" />
-                                                    </Grid>
-                                                </SwipeItemView>
-                                            </SwipeItems>
-                                        </SwipeView.LeftItems>
+                                            <Grid ColumnDefinitions="Auto, *" ColumnSpacing="12" Padding="12" BackgroundColor="Transparent">
+                                                <Grid.GestureRecognizers>
+                                                    <TapGestureRecognizer Tapped="OnPlaylistTapped" />
+                                                </Grid.GestureRecognizers>
 
-                                        <Grid ColumnDefinitions="Auto, *" ColumnSpacing="12" Padding="12" BackgroundColor="Transparent">
-                                            <Image Grid.Column="0" Source="{Binding IconImageSource}" HeightRequest="60" WidthRequest="60" Aspect="AspectFill" VerticalOptions="Center">
-                                                <Image.Clip>
-                                                    <RoundRectangleGeometry CornerRadius="8" Rect="0,0,60,60" />
-                                                </Image.Clip>
-                                            </Image>
+                                                <Image Grid.Column="0" Source="{Binding IconImageSource}" HeightRequest="60" WidthRequest="60" Aspect="AspectFill" VerticalOptions="Center">
+                                                    <Image.Clip>
+                                                        <RoundRectangleGeometry CornerRadius="8" Rect="0,0,60,60" />
+                                                    </Image.Clip>
+                                                </Image>
 
-                                            <VerticalStackLayout Grid.Column="1" VerticalOptions="Center" Spacing="2">
-                                                <Label Text="{Binding Name}" FontSize="15" FontAttributes="Bold" LineBreakMode="TailTruncation" />
-                                                <HorizontalStackLayout Spacing="8">
-                                                    <Label Text="{Binding ItemCount, StringFormat='{0} tracks'}" FontSize="12" TextColor="{StaticResource MutedColor}" />
-                                                    <Label Text="•" TextColor="{StaticResource MutedColor}" FontSize="12" />
-                                                    <Label Text="2:10:01" FontSize="12" TextColor="{StaticResource MutedColor}" />
-                                                </HorizontalStackLayout>
-                                                <Label Text="{Binding CreatedAt, StringFormat='CREATED {0:MMM dd, yyyy}'}" FontSize="10" TextColor="{StaticResource MutedColor}" TextTransform="Uppercase" />
-                                            </VerticalStackLayout>
-                                        </Grid>
-                                    </SwipeView>
-                                </Border>
-                            </Grid>
+                                                <VerticalStackLayout Grid.Column="1" VerticalOptions="Center" Spacing="2">
+                                                    <Label Text="{Binding Name}" FontSize="15" FontAttributes="Bold" LineBreakMode="TailTruncation" />
+                                                    <HorizontalStackLayout Spacing="8">
+                                                        <Label Text="{Binding ItemCount, StringFormat='{0} tracks'}" FontSize="12" TextColor="{DynamicResource MutedColor}" />
+                                                        <Label Text="•" TextColor="{DynamicResource MutedColor}" FontSize="12" />
+                                                        <Label Text="2:10:01" FontSize="12" TextColor="{DynamicResource MutedColor}" />
+                                                    </HorizontalStackLayout>
+                                                    <Label Text="{Binding CreatedAt, StringFormat='CREATED {0:MMM dd, yyyy}'}" FontSize="10" TextColor="{DynamicResource MutedColor}" TextTransform="Uppercase" />
+                                                </VerticalStackLayout>
+                                            </Grid>
+                                        </SwipeView>
+                                    </Border>
+                                </Grid>
+                            </mpowerkit:VirtualizeListViewCell>
+
                         </DataTemplate>
-                    </CollectionView.ItemTemplate>
-                </CollectionView>
+                    </mpowerkit:VirtualizeListView.ItemTemplate>
+                </mpowerkit:VirtualizeListView>
             </Grid>
         </ContentPage>
     </FlyoutPage.Flyout>
@@ -134,10 +131,8 @@
                 <ContentPage x:Name="DetailRoot" Title="{Binding SelectedPlaylist.Name}" BackgroundColor="{StaticResource BgColor}">
 
                     <Grid>
-                        <!-- Grid Padding removed here so CollectionView spans to absolute screen edges, fixing edge clipping -->
                         <Grid RowDefinitions="Auto, *, Auto">
 
-                            <!-- Top Bar (Margins moved here explicitly) -->
                             <Grid Grid.Row="0" Margin="12,12,12,12" ColumnDefinitions="*, Auto">
                                 <VerticalStackLayout Grid.Column="0" VerticalOptions="Center">
                                     <Label Text="{Binding SelectedPlaylist.ItemCount, StringFormat='{0} tracks'}" TextColor="{StaticResource MutedColor}" FontSize="13" />
@@ -149,115 +144,92 @@
                                 </HorizontalStackLayout>
                             </Grid>
 
-                            <!-- Tracks List -->
-                            <CollectionView Grid.Row="1" ItemsSource="{Binding SelectedPlaylist.Items}" SelectedItem="{Binding CurrentTrack, Mode=TwoWay}" SelectionMode="Single" SelectionChanged="OnTrackSelected" Scrolled="OnListScrolled" ItemSizingStrategy="MeasureFirstItem">
-                                <CollectionView.ItemTemplate>
+                            <!-- MPowerKit Tracks List -->
+                            <mpowerkit:VirtualizeListView Grid.Row="1" ItemsSource="{Binding SelectedPlaylist.Items}" Scrolled="OnListScrolled">
+                                <mpowerkit:VirtualizeListView.ItemTemplate>
                                     <DataTemplate x:DataType="models:PlaylistItem">
 
-                                        <!-- Safe horizontal margins applied to the item directly -->
-                                        <Grid Margin="12,0,12,4" HeightRequest="58">
+                                        <mpowerkit:VirtualizeListViewCell>
+                                            <Grid Margin="12,0,12,4" HeightRequest="58">
+                                                <Border StrokeShape="RoundRectangle 8" Padding="0" Background="{DynamicResource CardColor}" Stroke="{DynamicResource BorderColor}">
+                                                    <Border.Triggers>
+                                                        <DataTrigger TargetType="Border" Binding="{Binding IsSelected}" Value="True">
+                                                            <Setter Property="Background" Value="#253549" />
+                                                            <Setter Property="Stroke" Value="{DynamicResource AccentColor}" />
+                                                        </DataTrigger>
+                                                    </Border.Triggers>
 
-                                            <VisualStateManager.VisualStateGroups>
-                                                <VisualStateGroup x:Name="CommonStates">
-                                                    <VisualState x:Name="Normal" />
-                                                    <VisualState x:Name="Selected">
-                                                        <VisualState.Setters>
-                                                            <Setter Property="BackgroundColor" Value="Transparent" />
-                                                        </VisualState.Setters>
-                                                    </VisualState>
-                                                </VisualStateGroup>
-                                            </VisualStateManager.VisualStateGroups>
+                                                    <SwipeView android:SwipeView.SwipeTransitionMode="Drag" Threshold="100" SwipeStarted="OnSwipeStarted">
+                                                        <SwipeView.RightItems>
+                                                            <SwipeItems Mode="Reveal">
+                                                                <SwipeItemView WidthRequest="140" HeightRequest="58">
+                                                                    <!-- Explicit dimensions and zero spacing ensure the layout doesn't shift -->
+                                                                    <Grid WidthRequest="140" HeightRequest="58" ColumnDefinitions="70, 70" ColumnSpacing="0" RowSpacing="0" Margin="0" Padding="0">
 
-                                            <!-- SwipeView nested securely back inside the Border -->
-                                            <Border StrokeShape="RoundRectangle 8" Padding="0" Background="{StaticResource CardColor}" Stroke="{StaticResource BorderColor}">
-                                                <Border.Triggers>
-                                                    <DataTrigger TargetType="Border" Binding="{Binding IsSelected}" Value="True">
-                                                        <Setter Property="Background" Value="#253549" />
-                                                        <Setter Property="Stroke" Value="{StaticResource AccentColor}" />
-                                                    </DataTrigger>
-                                                </Border.Triggers>
+                                                                        <ContentView Grid.Column="0" WidthRequest="70" HeightRequest="58" BackgroundColor="{DynamicResource SwipeEditColor}">
+                                                                            <ContentView.GestureRecognizers>
+                                                                                <TapGestureRecognizer Command="{Binding BindingContext.EditTrackCommand, Source={x:Reference DetailRoot}}" CommandParameter="{Binding .}" Tapped="OnTrackActionTapped" />
+                                                                            </ContentView.GestureRecognizers>
+                                                                            <Image Source="pencil_icon.png" WidthRequest="20" HeightRequest="20" HorizontalOptions="Center" VerticalOptions="Center" InputTransparent="True" />
+                                                                        </ContentView>
 
-                                                <SwipeView android:SwipeView.SwipeTransitionMode="Drag" Threshold="100" SwipeStarted="OnSwipeStarted">
-                                                    <SwipeView.RightItems>
-                                                        <SwipeItems Mode="Reveal">
-                                                            <!-- Use ONE SwipeItemView as a container -->
-                                                            <SwipeItemView WidthRequest="140">
-                                                                <Grid ColumnDefinitions="70, 70" WidthRequest="140" HorizontalOptions="End">
+                                                                        <ContentView Grid.Column="1" WidthRequest="70" HeightRequest="58" BackgroundColor="{DynamicResource SwipeDeleteColor}">
+                                                                            <ContentView.GestureRecognizers>
+                                                                                <TapGestureRecognizer Command="{Binding BindingContext.DeleteTrackCommand, Source={x:Reference DetailRoot}}" CommandParameter="{Binding .}" Tapped="OnTrackActionTapped" />
+                                                                            </ContentView.GestureRecognizers>
+                                                                            <Image Source="trash_2_icon.png" WidthRequest="20" HeightRequest="20" HorizontalOptions="Center" VerticalOptions="Center" InputTransparent="True" />
+                                                                        </ContentView>
 
-                                                                    <!-- Edit Button (Left side of the block) -->
-                                                                    <Grid Grid.Column="0" BackgroundColor="{StaticResource SwipeEditColor}">
-                                                                        <Grid.GestureRecognizers>
-                                                                            <TapGestureRecognizer Command="{Binding BindingContext.EditTrackCommand, Source={x:Reference DetailRoot}}" CommandParameter="{Binding .}" Tapped="OnTrackActionTapped" />
-                                                                        </Grid.GestureRecognizers>
-                                                                        <Image Source="pencil_icon.png" WidthRequest="20" HeightRequest="20" HorizontalOptions="Center" VerticalOptions="Center" />
                                                                     </Grid>
+                                                                </SwipeItemView>
+                                                            </SwipeItems>
+                                                        </SwipeView.RightItems>
 
-                                                                    <!-- Delete Button (Right side of the block) -->
-                                                                    <Grid Grid.Column="1" BackgroundColor="{StaticResource SwipeDeleteColor}">
-                                                                        <Grid.GestureRecognizers>
-                                                                            <TapGestureRecognizer Command="{Binding BindingContext.DeleteTrackCommand, Source={x:Reference DetailRoot}}" CommandParameter="{Binding .}" Tapped="OnTrackActionTapped" />
-                                                                        </Grid.GestureRecognizers>
-                                                                        <Image Source="trash_2_icon.png" WidthRequest="20" HeightRequest="20" HorizontalOptions="Center" VerticalOptions="Center" />
-                                                                    </Grid>
+                                                        <Grid ColumnDefinitions="Auto, *" ColumnSpacing="10" Padding="10" BackgroundColor="Transparent">
+                                                            <Grid.GestureRecognizers>
+                                                                <TapGestureRecognizer Tapped="OnTrackTapped" />
+                                                            </Grid.GestureRecognizers>
 
-                                                                </Grid>
-                                                            </SwipeItemView>
-                                                        </SwipeItems>
-                                                    </SwipeView.RightItems>
-
-                                                    <Grid ColumnDefinitions="Auto, *" ColumnSpacing="10" Padding="10" BackgroundColor="Transparent">
-                                                        <Grid Grid.Column="0" WidthRequest="36" HeightRequest="36" VerticalOptions="Center">
-                                                            <Image Source="{Binding ItemIconSource}" Aspect="AspectFill">
-                                                                <Image.Clip>
-                                                                    <RoundRectangleGeometry CornerRadius="6" Rect="0,0,36,36" />
-                                                                </Image.Clip>
-                                                            </Image>
-                                                        </Grid>
-
-                                                        <VerticalStackLayout Grid.Column="1" VerticalOptions="Center">
-                                                            <Label Text="{Binding Title}" FontSize="15" FontAttributes="Bold" LineBreakMode="TailTruncation" />
-
-                                                            <Grid HeightRequest="24" IsClippedToBounds="True">
-                                                                <HorizontalStackLayout Spacing="0" VerticalOptions="Center">
-                                                                    <Border Background="#1c304a" Stroke="{StaticResource AccentColor}" StrokeThickness="1" Padding="5,1" Margin="0,0,1,1" IsVisible="{Binding HasTag1}">
-                                                                        <Border.StrokeShape>
-                                                                            <RoundRectangle CornerRadius="6"/>
-                                                                        </Border.StrokeShape>
-                                                                        <Label Text="{Binding Tag1}" TextColor="#d9edff" FontSize="11"/>
-                                                                    </Border>
-                                                                    <Border Background="#1c304a" Stroke="{StaticResource AccentColor}" StrokeThickness="1" Padding="5,1" Margin="0,0,1,1" IsVisible="{Binding HasTag2}">
-                                                                        <Border.StrokeShape>
-                                                                            <RoundRectangle CornerRadius="6"/>
-                                                                        </Border.StrokeShape>
-                                                                        <Label Text="{Binding Tag2}" TextColor="#d9edff" FontSize="11"/>
-                                                                    </Border>
-                                                                    <Border Background="#1c304a" Stroke="{StaticResource AccentColor}" StrokeThickness="1" Padding="5,1" Margin="0,0,1,1" IsVisible="{Binding HasTag3}">
-                                                                        <Border.StrokeShape>
-                                                                            <RoundRectangle CornerRadius="6"/>
-                                                                        </Border.StrokeShape>
-                                                                        <Label Text="{Binding Tag3}" TextColor="#d9edff" FontSize="11"/>
-                                                                    </Border>
-                                                                    <Border Background="#1c304a" Stroke="{StaticResource AccentColor}" StrokeThickness="1" Padding="5,1" Margin="0,0,1,1" IsVisible="{Binding HasTag4}">
-                                                                        <Border.StrokeShape>
-                                                                            <RoundRectangle CornerRadius="6"/>
-                                                                        </Border.StrokeShape>
-                                                                        <Label Text="{Binding Tag4}" TextColor="#d9edff" FontSize="11"/>
-                                                                    </Border>
-                                                                </HorizontalStackLayout>
+                                                            <Grid Grid.Column="0" WidthRequest="36" HeightRequest="36" VerticalOptions="Center">
+                                                                <Image Source="{Binding ItemIconSource}" Aspect="AspectFill">
+                                                                    <Image.Clip>
+                                                                        <RoundRectangleGeometry CornerRadius="6" Rect="0,0,36,36" />
+                                                                    </Image.Clip>
+                                                                </Image>
                                                             </Grid>
-                                                        </VerticalStackLayout>
-                                                    </Grid>
-                                                </SwipeView>
-                                            </Border>
-                                        </Grid>
+
+                                                            <VerticalStackLayout Grid.Column="1" VerticalOptions="Center">
+                                                                <Label Text="{Binding Title}" FontSize="15" FontAttributes="Bold" LineBreakMode="TailTruncation" />
+
+                                                                <Grid HeightRequest="24" IsClippedToBounds="True">
+                                                                    <HorizontalStackLayout Spacing="0" VerticalOptions="Center">
+                                                                        <Border Background="#1c304a" Stroke="{DynamicResource AccentColor}" StrokeThickness="1" Padding="5,1" Margin="0,0,1,1" IsVisible="{Binding HasTag1}">
+                                                                            <Border.StrokeShape>
+                                                                                <RoundRectangle CornerRadius="6"/>
+                                                                            </Border.StrokeShape>
+                                                                            <Label Text="{Binding Tag1}" TextColor="#d9edff" FontSize="11"/>
+                                                                        </Border>
+                                                                        <Border Background="#1c304a" Stroke="{DynamicResource AccentColor}" StrokeThickness="1" Padding="5,1" Margin="0,0,1,1" IsVisible="{Binding HasTag2}">
+                                                                            <Border.StrokeShape>
+                                                                                <RoundRectangle CornerRadius="6"/>
+                                                                            </Border.StrokeShape>
+                                                                            <Label Text="{Binding Tag2}" TextColor="#d9edff" FontSize="11"/>
+                                                                        </Border>
+                                                                    </HorizontalStackLayout>
+                                                                </Grid>
+                                                            </VerticalStackLayout>
+                                                        </Grid>
+                                                    </SwipeView>
+                                                </Border>
+                                            </Grid>
+                                        </mpowerkit:VirtualizeListViewCell>
+
                                     </DataTemplate>
-                                </CollectionView.ItemTemplate>
-                            </CollectionView>
+                                </mpowerkit:VirtualizeListView.ItemTemplate>
+                            </mpowerkit:VirtualizeListView>
 
                             <!-- ROW 2: The Player Pane -->
-                            <views:MobilePlayerPaneView Grid.Row="0" 
-                                Grid.RowSpan="3" 
-                                VerticalOptions="End"/>
+                            <views:MobilePlayerPaneView Grid.Row="0" Grid.RowSpan="3" VerticalOptions="End"/>
                         </Grid>
 
                         <!-- MODAL OVERLAY -->
