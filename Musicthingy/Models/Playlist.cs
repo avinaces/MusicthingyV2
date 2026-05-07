@@ -17,28 +17,6 @@ public partial class Playlist : ObservableObject
         Items.CollectionChanged += Items_CollectionChanged;
     }
 
-    private void Items_CollectionChanged(object? sender, NotifyCollectionChangedEventArgs e)
-    {
-        if (e.NewItems != null)
-        {
-            foreach (PlaylistItem item in e.NewItems)
-            {
-                item.Playlist = this;
-            }
-        }
-    }
-
-    // Catches cases where the entire Items collection is replaced
-    partial void OnItemsChanged(ObservableCollection<PlaylistItem> oldValue, ObservableCollection<PlaylistItem> newValue)
-    {
-        if (oldValue != null) oldValue.CollectionChanged -= Items_CollectionChanged;
-        if (newValue != null)
-        {
-            newValue.CollectionChanged += Items_CollectionChanged;
-            foreach (var item in newValue) item.Playlist = this;
-        }
-    }
-
     [ObservableProperty]
     [JsonPropertyName("name")]
     public partial string Name { get; set; } = string.Empty; [ObservableProperty]
@@ -68,6 +46,10 @@ public partial class Playlist : ObservableObject
     public partial ObservableCollection<string> Tags { get; set; } = new();
 
     [ObservableProperty]
+    [JsonPropertyName("duration")]
+    public partial TimeSpan Duration { get; set; }
+
+    [ObservableProperty]
     public partial bool IsHovered { get; set; }
 
     [ObservableProperty]
@@ -82,12 +64,17 @@ public partial class Playlist : ObservableObject
     [JsonIgnore]
     public int ItemCount => Items.Count;
 
+    [ObservableProperty]
+    [JsonIgnore]
+    public partial bool HasUnresolvedTracks { get; set; }
+
     // Static cache and throttler across ALL playlists
     private static readonly ConcurrentDictionary<string, ImageSource> _sharedPlaylistIconCache = new();
     private static readonly SemaphoreSlim _playlistIconSemaphore = new(4, 4);
 
     private ImageSource? _iconImageSource;
     private bool _isGeneratingIcon;
+    private bool _recalcPending;
 
     [JsonIgnore]
     public ImageSource? IconImageSource
@@ -120,59 +107,157 @@ public partial class Playlist : ObservableObject
         {
             try
             {
-                // Prevent ThreadPool explosion by limiting concurrent operations
                 await _playlistIconSemaphore.WaitAsync();
 
-                // Double-check cache in case another task just finished it
                 if (_sharedPlaylistIconCache.TryGetValue(cacheKey, out var cachedSource))
                 {
-                    _iconImageSource = cachedSource;
-                    MainThread.BeginInvokeOnMainThread(() => OnPropertyChanged(nameof(IconImageSource)));
+                    MainThread.BeginInvokeOnMainThread(() => {
+                        _iconImageSource = cachedSource;
+                        OnPropertyChanged(nameof(IconImageSource));
+                    });
                     return;
                 }
 
                 const int playlistIconUiSize = 110;
                 const int playlistIconLogicalSize = 12;
-                ImageSource? source = null;
+
+                byte[]? imageBytes = null;
+                bool isGenerator = false;
+                bool isFileFallback = false;
 
                 if (string.IsNullOrEmpty(IconUrl))
                 {
-                    source = IconGenerator.GenerateIcon(Name, playlistIconLogicalSize, playlistIconUiSize);
+                    isGenerator = true;
                 }
                 else if (IconUrl.StartsWith("data:image"))
                 {
                     var base64Data = IconUrl.Substring(IconUrl.IndexOf(',') + 1);
-                    var imageBytes = Convert.FromBase64String(base64Data);
-                    source = await ImageScalingService.ScaleIfSmallAsync(imageBytes, playlistIconUiSize)
-                             ?? ImageSource.FromStream(() => new MemoryStream(imageBytes));
+                    imageBytes = Convert.FromBase64String(base64Data);
                 }
                 else if (File.Exists(IconUrl))
                 {
-                    var imageBytes = await File.ReadAllBytesAsync(IconUrl);
-                    source = await ImageScalingService.ScaleIfSmallAsync(imageBytes, playlistIconUiSize)
-                             ?? ImageSource.FromStream(() => new MemoryStream(imageBytes));
+                    imageBytes = await File.ReadAllBytesAsync(IconUrl);
                 }
                 else
                 {
-                    source = ImageSource.FromFile(IconUrl);
+                    isFileFallback = true;
                 }
 
-                if (source != null)
+                // Push ImageSource creation to UI Thread
+                MainThread.BeginInvokeOnMainThread(async () =>
                 {
-                    _sharedPlaylistIconCache[cacheKey] = source;
-                    _iconImageSource = source;
-                    MainThread.BeginInvokeOnMainThread(() => OnPropertyChanged(nameof(IconImageSource)));
-                }
+                    try
+                    {
+                        ImageSource? source = null;
+
+                        if (isGenerator)
+                        {
+                            source = IconGenerator.GenerateIcon(Name, playlistIconLogicalSize, playlistIconUiSize);
+                        }
+                        else if (imageBytes != null)
+                        {
+                            source = await ImageScalingService.ScaleIfSmallAsync(imageBytes, playlistIconUiSize)
+                                     ?? ImageSource.FromStream(() => new MemoryStream(imageBytes));
+                        }
+                        else if (isFileFallback)
+                        {
+                            source = ImageSource.FromFile(IconUrl);
+                        }
+
+                        if (source != null)
+                        {
+                            _sharedPlaylistIconCache[cacheKey] = source;
+                            _iconImageSource = source;
+                            OnPropertyChanged(nameof(IconImageSource));
+                        }
+                    }
+                    catch { }
+                });
             }
-            catch
-            {
-                // Ignore silent failures to prevent alert spam during scrolling
-            }
+            catch { }
             finally
             {
                 _playlistIconSemaphore.Release();
             }
         });
+    }
+
+    private void Items_CollectionChanged(object? sender, NotifyCollectionChangedEventArgs e)
+    {
+        if (e.NewItems != null)
+        {
+            foreach (PlaylistItem item in e.NewItems)
+            {
+                item.Playlist = this;
+            }
+        }
+        RecalculateDuration();
+    }
+
+    // Catches cases where the entire Items collection is replaced
+    partial void OnItemsChanged(ObservableCollection<PlaylistItem> oldValue, ObservableCollection<PlaylistItem> newValue)
+    {
+        if (oldValue != null) oldValue.CollectionChanged -= Items_CollectionChanged;
+        if (newValue != null)
+        {
+            newValue.CollectionChanged += Items_CollectionChanged;
+            foreach (var item in newValue) item.Playlist = this;
+        }
+        RecalculateDuration();
+    }
+
+    [JsonIgnore]
+    public string DisplayDuration
+    {
+        get
+        {
+            string suffix = HasUnresolvedTracks ? "+" : "";
+
+            if (Duration.TotalHours >= 1)
+                return $"{(int)Duration.TotalHours}:{Duration.Minutes:D2}:{Duration.Seconds:D2}{suffix}";
+            return $"{Duration.Minutes:D2}:{Duration.Seconds:D2}{suffix}";
+        }
+    }
+
+    partial void OnDurationChanged(TimeSpan value)
+    {
+        OnPropertyChanged(nameof(DisplayDuration));
+    }
+
+    partial void OnHasUnresolvedTracksChanged(bool value)
+    {
+        OnPropertyChanged(nameof(DisplayDuration));
+    }
+
+    public void RequestRecalculateDuration()
+    {
+        if (_recalcPending) return;
+        _recalcPending = true;
+
+        MainThread.BeginInvokeOnMainThread(() =>
+        {
+            _recalcPending = false;
+            RecalculateDuration();
+        });
+    }
+
+    public void RecalculateDuration()
+    {
+        double totalSeconds = 0;
+        bool hasUnresolved = false;
+
+        foreach (var item in Items)
+        {
+            // If length is unknown, it actually has a URL, and we HAVEN'T attempted to resolve it yet
+            if (item.Duration.TotalSeconds <= 0 && !string.IsNullOrEmpty(item.Url) && !item.IsResolutionAttempted)
+            {
+                hasUnresolved = true;
+            }
+            totalSeconds += item.Duration.TotalSeconds;
+        }
+
+        Duration = TimeSpan.FromSeconds(totalSeconds);
+        HasUnresolvedTracks = hasUnresolved;
     }
 
     partial void OnIconUrlChanged(string value)

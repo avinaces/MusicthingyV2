@@ -9,11 +9,15 @@ namespace Musicthingy.ViewModels;
 
 public partial class MainViewModel
 {
+    private static readonly SemaphoreSlim _ytSemaphore = new(4, 4);
+    private static readonly SemaphoreSlim _vlcParseSemaphore = new(1, 1);
+
     private readonly YoutubeClient _youtubeClient = new();
     private readonly ConcurrentDictionary<string, (string RawUrl, DateTime FetchedAt)> _streamUrlCache = new();
 
     private LibVLC? _libVLC;
     private MediaPlayer? _player;
+    private static LibVLC? _probeVlc;
 
     private long _lastTimeUpdateTicks = 0;
 
@@ -60,6 +64,18 @@ public partial class MainViewModel
             {
                 Duration = TimeSpan.FromSeconds(duration);
                 DurationSeconds = duration;
+
+                if (CurrentTrack != null)
+                {
+                    bool changed = CurrentTrack.Duration != Duration;
+                    CurrentTrack.Duration = Duration;
+
+                    if (changed)
+                    {
+                        // Cache the newly discovered length into JSON
+                        RequestSaveLibrary();
+                    }
+                }
             });
 
             if (CurrentTrack != null)
@@ -139,45 +155,6 @@ public partial class MainViewModel
         await ResolveMediaSourceAsync(nextTrack);
     }
 
-    private async Task<string?> ResolveMediaSourceAsync(PlaylistItem track)
-    {
-        if (track == null || string.IsNullOrEmpty(track.Url)) return null;
-
-        if (track.Url.Contains("youtube.com") || track.Url.Contains("youtu.be"))
-        {
-            // 1. FAST PATH: Check if we already preloaded this URL
-            if (_streamUrlCache.TryGetValue(track.Url, out var cached) && (DateTime.Now - cached.FetchedAt).TotalHours < 2)
-            {
-                return cached.RawUrl;
-            }
-
-            // 2. SLOW PATH: Fetch it from YouTube
-            try
-            {
-                var rawAudioUrl = await Task.Run(async () =>
-                {
-                    var videoId = YoutubeExplode.Videos.VideoId.Parse(track.Url);
-                    var manifest = await _youtubeClient.Videos.Streams.GetManifestAsync(videoId);
-                    return manifest.GetAudioOnlyStreams().GetWithHighestBitrate()?.Url;
-                });
-
-                if (rawAudioUrl != null)
-                {
-                    // Save it to the cache for later
-                    _streamUrlCache[track.Url] = (rawAudioUrl, DateTime.Now);
-                }
-
-                return rawAudioUrl;
-            }
-            catch (Exception ex)
-            {
-                Debug.WriteLine($"Failed to parse YouTube stream: {ex.Message}");
-                return null;
-            }
-        }
-        return track.Url;
-    }
-
     private async Task ReloadMediaAsync(PlaylistItem newValue)
     {
         IsLoadingMedia = true; // Set this BEFORE Stop() is called
@@ -216,6 +193,226 @@ public partial class MainViewModel
         _player.Play(media);
 
         _ = Task.Run(PreloadNextTrackAsync);
+    }
+
+    private async Task<string?> ResolveMediaSourceAsync(PlaylistItem track)
+    {
+        if (track == null || string.IsNullOrEmpty(track.Url)) return null;
+
+        if (track.Url.Contains("youtube.com") || track.Url.Contains("youtu.be"))
+        {
+            // 1. FAST PATH: Check if we already preloaded this URL
+            if (_streamUrlCache.TryGetValue(track.Url, out var cached) && (DateTime.Now - cached.FetchedAt).TotalHours < 2)
+            {
+                return cached.RawUrl;
+            }
+
+            // 2. SLOW PATH: Fetch it from YouTube
+            try
+            {
+                var rawAudioUrl = await Task.Run(async () =>
+                {
+                    var videoId = YoutubeExplode.Videos.VideoId.Parse(track.Url);
+
+                    // Added 10s Timeout to prevent silent background thread locks
+                    using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+                    var manifest = await _youtubeClient.Videos.Streams.GetManifestAsync(videoId, cts.Token);
+                    return manifest.GetAudioOnlyStreams().GetWithHighestBitrate()?.Url;
+                });
+
+                if (rawAudioUrl != null)
+                {
+                    // Save it to the cache for later
+                    _streamUrlCache[track.Url] = (rawAudioUrl, DateTime.Now);
+                }
+
+                return rawAudioUrl;
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Failed to parse YouTube stream: {ex.Message}");
+                return null;
+            }
+        }
+        return track.Url;
+    }
+
+    private async Task ResolvePlaylistDurationsAsync(Playlist playlist, CancellationToken cancellationToken = default)
+    {
+        if (playlist == null) return;
+
+        // CRITICAL FIX: Snapshot items on the Main Thread to avoid JNI/Threading crashes 
+        // when the user interacts with SwipeViews while this starts.
+        List<PlaylistItem> itemsToResolve = new();
+        if (MainThread.IsMainThread)
+        {
+            itemsToResolve = playlist.Items.Where(i => i.Duration.TotalSeconds <= 0 && !i.IsResolutionAttempted && !string.IsNullOrEmpty(i.Url)).ToList();
+        }
+        else
+        {
+            var tcs = new TaskCompletionSource<List<PlaylistItem>>();
+            MainThread.BeginInvokeOnMainThread(() =>
+            {
+                try { tcs.SetResult(playlist.Items.Where(i => i.Duration.TotalSeconds <= 0 && !i.IsResolutionAttempted && !string.IsNullOrEmpty(i.Url)).ToList()); }
+                catch { tcs.SetResult(new()); }
+            });
+            itemsToResolve = await tcs.Task;
+        }
+
+        if (!itemsToResolve.Any()) return;
+
+        // Move off the main thread entirely
+        await Task.Run(async () =>
+        {
+            // Lock at the playlist level so we don't process 5 playlists at once if the user clicks around rapidly
+            try
+            {
+                await _vlcParseSemaphore.WaitAsync(cancellationToken);
+            }
+            catch (OperationCanceledException)
+            {
+                return; // User navigated away before this even started
+            }
+
+            try
+            {
+                if (_probeVlc == null)
+                {
+                    _probeVlc = new LibVLC("--no-video", "--no-audio", "--network-caching=500");
+                }
+
+                var itemsToResolve = playlist.Items
+                    .Where(i => i.Duration.TotalSeconds <= 0 && !i.IsResolutionAttempted && !string.IsNullOrEmpty(i.Url))
+                    .ToList();
+
+                if (!itemsToResolve.Any()) return;
+
+                bool needsSave = false;
+
+                // ALLOW CONCURRENCY: Process up to 4 tracks at the exact same time.
+                // This is fast enough to feel responsive, but low enough to not trigger YouTube's bot protection.
+                var concurrencyLimit = new SemaphoreSlim(4, 4);
+
+                var tasks = itemsToResolve.Select(async track =>
+                {
+                    await concurrencyLimit.WaitAsync(cancellationToken);
+                    try
+                    {
+                        if (cancellationToken.IsCancellationRequested) return;
+
+                        bool isSuccess = false;
+
+                        if (track.EndTime.HasValue)
+                        {
+                            double end = track.EndTime.Value;
+                            double start = track.StartTime ?? 0;
+                            if (end > start)
+                            {
+                                MainThread.BeginInvokeOnMainThread(() => track.Duration = TimeSpan.FromSeconds(end - start));
+                                isSuccess = true;
+                            }
+                        }
+
+                        if (!isSuccess && (track.Url.Contains("youtube.com") || track.Url.Contains("youtu.be")))
+                        {
+                            var videoId = YoutubeExplode.Videos.VideoId.TryParse(track.Url);
+                            if (videoId != null)
+                            {
+                                using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                                cts.CancelAfter(TimeSpan.FromSeconds(10)); // Timeout after 10s
+
+                                var videoInfo = await _youtubeClient.Videos.GetAsync(videoId.Value, cts.Token);
+                                if (videoInfo.Duration.HasValue)
+                                {
+                                    MainThread.BeginInvokeOnMainThread(() =>
+                                    {
+                                        double start = track.StartTime ?? 0;
+                                        double durationSecs = videoInfo.Duration.Value.TotalSeconds - start;
+                                        track.Duration = TimeSpan.FromSeconds(Math.Max(durationSecs, 0));
+                                    });
+                                    isSuccess = true;
+                                }
+                            }
+                        }
+                        else if (!isSuccess)
+                        {
+                            var media = new Media(_probeVlc, new Uri(track.Url));
+                            var parseTask = media.Parse(MediaParseOptions.ParseNetwork);
+
+                            using var delayCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                            var delayTask = Task.Delay(5000, delayCts.Token);
+
+                            var completedTask = await Task.WhenAny(parseTask, delayTask);
+
+                            if (completedTask == parseTask)
+                            {
+                                delayCts.Cancel();
+
+                                // CRITICAL FIX: Read the duration NOW, on this thread, before we dispose the media object
+                                long mediaDurationMs = media.Duration;
+
+                                if (mediaDurationMs > 0)
+                                {
+                                    MainThread.BeginInvokeOnMainThread(() =>
+                                    {
+                                        double start = track.StartTime ?? 0;
+                                        // Use the safely captured variable here instead of media.Duration!
+                                        double durationSecs = (mediaDurationMs / 1000.0) - start;
+                                        track.Duration = TimeSpan.FromSeconds(Math.Max(durationSecs, 0));
+                                    });
+                                    isSuccess = true;
+                                }
+
+                                // Now it is 100% safe to dispose, because the UI thread isn't trying to read it anymore.
+                                _ = Task.Run(() => { try { media.Dispose(); } catch { } });
+                            }
+                            else
+                            {
+                                // Timeout or Cancelled: safely dispose in background once parse finishes
+                                _ = parseTask.ContinueWith(_ =>
+                                {
+                                    _ = Task.Run(() => { try { media.Dispose(); } catch { } });
+                                }, TaskScheduler.Default);
+                            }
+                        }
+
+                        // ONLY mark as attempted (removing the +) if it successfully got the duration
+                        if (isSuccess)
+                        {
+                            track.IsResolutionAttempted = true;
+                            needsSave = true;
+                            playlist.RequestRecalculateDuration();
+                        }
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        // Cancelled, leave IsResolutionAttempted = false (Keep the +)
+                    }
+                    catch (Exception ex)
+                    {
+                        // HTTP/Network error, leave IsResolutionAttempted = false (Keep the +)
+                        Debug.WriteLine($"[Resolve] Error resolving duration for {track.Url}: {ex.Message}");
+                    }
+                    finally
+                    {
+                        concurrencyLimit.Release();
+                    }
+                });
+
+                // Wait for the batch of tasks to finish
+                await Task.WhenAll(tasks);
+
+                // Save the library to disk once everything is done
+                if (needsSave)
+                {
+                    RequestSaveLibrary();
+                }
+            }
+            finally
+            {
+                _vlcParseSemaphore.Release();
+            }
+        });
     }
 
     private static void CleanupCache()

@@ -305,13 +305,18 @@ public partial class MainViewModel
 
         AndroidMediaService.CurrentNotification = notification;
 
-        var serviceIntent = new Intent(context, typeof(AndroidMediaService));
-        if (Build.VERSION.SdkInt >= BuildVersionCodes.O)
-            context.StartForegroundService(serviceIntent);
-        else
-            context.StartService(serviceIntent);
+        // CRITICAL FIX: Only call StartForegroundService ONCE.
+        // If it's already running, we just update it using nm.Notify below.
+        if (!AndroidMediaService.IsRunning)
+        {
+            var serviceIntent = new Intent(context, typeof(AndroidMediaService));
+            if (Build.VERSION.SdkInt >= BuildVersionCodes.O)
+                context.StartForegroundService(serviceIntent);
+            else
+                context.StartService(serviceIntent);
+        }
 
-        // Force UI update immediately if service is already running
+        // Force UI update immediately whether it's a new service or already running
         nm.Notify(1, notification);
 #pragma warning restore CA1416
     }
@@ -369,29 +374,64 @@ public partial class MainViewModel
 [Service(ForegroundServiceType = global::Android.Content.PM.ForegroundService.TypeMediaPlayback, Exported = false)]
 public class AndroidMediaService : Service
 {
+    public static bool IsRunning { get; private set; }
     public static Android.App.Notification? CurrentNotification { get; set; }
 
     public override IBinder? OnBind(Intent? intent) => null;
+
+    public override void OnCreate()
+    {
+        base.OnCreate();
+        IsRunning = true;
+    }
 
     public override StartCommandResult OnStartCommand(Intent? intent, StartCommandFlags flags, int startId)
     {
         if (intent?.Action == "STOP")
         {
+            IsRunning = false;
             StopForeground(StopForegroundFlags.Remove);
             StopSelf();
             return StartCommandResult.NotSticky;
         }
 
-        if (CurrentNotification != null)
+        try
         {
+            // CRITICAL FIX: If Android resurrected the service from memory, CurrentNotification is null.
+            // We MUST create a fallback notification to satisfy Android's rules, otherwise it crashes.
+            if (CurrentNotification == null)
+            {
+                var nm = (global::Android.App.NotificationManager?)GetSystemService(global::Android.Content.Context.NotificationService);
+                if (global::Android.OS.Build.VERSION.SdkInt >= global::Android.OS.BuildVersionCodes.O)
+                {
+                    var channel = new global::Android.App.NotificationChannel("musicthingy_media", "Media Playback", global::Android.App.NotificationImportance.Low);
+                    nm?.CreateNotificationChannel(channel);
+                }
+                CurrentNotification = new global::Android.App.Notification.Builder(this, "musicthingy_media")
+                    .SetSmallIcon(global::Android.Resource.Drawable.IcMediaPlay)
+                    .SetContentTitle("Musicthingy")
+                    .Build();
+            }
+
 #pragma warning disable CA1416 
-            if (Build.VERSION.SdkInt >= BuildVersionCodes.Q)
+            if (global::Android.OS.Build.VERSION.SdkInt >= global::Android.OS.BuildVersionCodes.Q)
                 StartForeground(1, CurrentNotification, global::Android.Content.PM.ForegroundService.TypeMediaPlayback);
             else
                 StartForeground(1, CurrentNotification);
 #pragma warning restore CA1416
         }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"[AndroidMediaService] Failed to StartForeground: {ex}");
+        }
+
         return StartCommandResult.Sticky;
+    }
+
+    public override void OnDestroy()
+    {
+        IsRunning = false;
+        base.OnDestroy();
     }
 }
 

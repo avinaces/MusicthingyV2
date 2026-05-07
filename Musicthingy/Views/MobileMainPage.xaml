@@ -105,7 +105,7 @@
                                                     <HorizontalStackLayout Spacing="8">
                                                         <Label Text="{Binding ItemCount, StringFormat='{0} tracks'}" FontSize="12" TextColor="{DynamicResource MutedColor}" />
                                                         <Label Text="•" TextColor="{DynamicResource MutedColor}" FontSize="12" />
-                                                        <Label Text="2:10:01" FontSize="12" TextColor="{DynamicResource MutedColor}" />
+                                                        <Label Text="{Binding DisplayDuration}" FontSize="12" TextColor="{DynamicResource MutedColor}" />
                                                     </HorizontalStackLayout>
                                                     <Label Text="{Binding CreatedAt, StringFormat='CREATED {0:MMM dd, yyyy}'}" FontSize="10" TextColor="{DynamicResource MutedColor}" TextTransform="Uppercase" />
                                                 </VerticalStackLayout>
@@ -136,7 +136,7 @@
                             <Grid Grid.Row="0" Margin="12,12,12,12" ColumnDefinitions="*, Auto">
                                 <VerticalStackLayout Grid.Column="0" VerticalOptions="Center">
                                     <Label Text="{Binding SelectedPlaylist.ItemCount, StringFormat='{0} tracks'}" TextColor="{StaticResource MutedColor}" FontSize="13" />
-                                    <Label Text="00:00" TextColor="{StaticResource MutedColor}" FontSize="12" />
+                                    <Label Text="{Binding SelectedPlaylist.DisplayDuration}" TextColor="{StaticResource MutedColor}" FontSize="12" />
                                 </VerticalStackLayout>
                                 <HorizontalStackLayout Grid.Column="1" Spacing="8">
                                     <ImageButton Source="shuffle_icon.png" Command="{Binding ShufflePlaylistCommand}" Style="{StaticResource IconImageButton}" />

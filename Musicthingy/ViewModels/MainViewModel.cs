@@ -10,6 +10,8 @@ public partial class MainViewModel : ObservableObject
 {
     private static Action? _cleanupOldInstances;
 
+    private CancellationTokenSource? _playlistResolutionCts;
+
     private readonly PlaylistDataService _dataService;
 
     [ObservableProperty] public partial bool IsLoadingMedia { get; set; }
@@ -76,7 +78,13 @@ public partial class MainViewModel : ObservableObject
         }
 
         if (oldValue != null) oldValue.IsSelected = false;
-        if (newValue != null) newValue.IsSelected = true;
+        if (newValue != null)
+        {
+            newValue.IsSelected = true;
+
+            // Trigger fast-resolving missing tracks in the background
+            _ = ResolvePlaylistDurationsAsync(newValue);
+        }
     }
 
 

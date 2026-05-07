@@ -97,7 +97,7 @@
                                             <Border.StrokeShape>
                                                 <RoundRectangle CornerRadius="6" />
                                             </Border.StrokeShape>
-                                            <Label Text="2:10:01" TextColor="{StaticResource MutedColor}" FontSize="10" HorizontalOptions="Center" VerticalOptions="Center" LineBreakMode="NoWrap"/>
+                                            <Label Text="{Binding DisplayDuration}" TextColor="{StaticResource MutedColor}" FontSize="10" HorizontalOptions="Center" VerticalOptions="Center" LineBreakMode="NoWrap"/>
                                         </Border>
                                     </HorizontalStackLayout>
                                     <Label Grid.Row="3" Text="{Binding CreatedAt, StringFormat='CREATED {0:MMM dd, yyyy, hh:mm tt}'}" HorizontalTextAlignment="Center" TextColor="{StaticResource MutedColor}" FontSize="9" CharacterSpacing="0.5" TextTransform="Uppercase" Margin="0,4,0,0" />
@@ -165,7 +165,7 @@
                     <HorizontalStackLayout Grid.Column="1" Spacing="16" VerticalOptions="Center">
                         <VerticalStackLayout VerticalOptions="Center">
                             <Label Text="{Binding SelectedPlaylist.ItemCount, StringFormat='{0} items'}" TextColor="{StaticResource MutedColor}" FontSize="13" HorizontalOptions="End"/>
-                            <Label Text="00:00" TextColor="{StaticResource MutedColor}" FontSize="13" HorizontalOptions="End"/>
+                            <Label Text="{Binding SelectedPlaylist.DisplayDuration}" TextColor="{StaticResource MutedColor}" FontSize="13" HorizontalOptions="End"/>
                         </VerticalStackLayout>
                         <ImageButton Source="settings_icon.png" Style="{StaticResource IconImageButton}" />
                     </HorizontalStackLayout>

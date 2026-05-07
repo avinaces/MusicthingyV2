@@ -22,13 +22,59 @@ public partial class MainViewModel
         _saveLibraryCts = new CancellationTokenSource();
         var token = _saveLibraryCts.Token;
 
+        // CRITICAL FIX: Snapshot the ObservableCollections on the MainThread BEFORE jumping to the background.
+        // Otherwise, deleting a track via SwipeView while this is iterating triggers a fatal Native crash.
+        List<PlaylistDto> librarySnapshot = new();
+        try
+        {
+            librarySnapshot = Playlists.Select(p => new PlaylistDto
+            {
+                name = p.Name,
+                icon = p.IconUrl,
+                iconType = p.IconType,
+                source = p.Source,
+                createdAt = p.CreatedAt,
+                updatedAt = p.UpdatedAt,
+                duration = p.Duration,
+                tags = p.Tags.ToList(),
+                items = p.Items.Select(i => new PlaylistItemDto
+                {
+                    title = i.Title,
+                    url = i.Url,
+                    startTime = i.StartTime,
+                    endTime = i.EndTime,
+                    duration = i.Duration,
+                    icon = i.IconUrl,
+                    tags = i.Tags.ToList(),
+                    lyrics = i.Lyrics,
+                    lastPlayedAt = i.LastPlayedAt
+                }).ToList()
+            }).ToList();
+        }
+        catch { return; /* Ignore transient read errors during fast UI changes */ }
+
         Task.Delay(1000, token).ContinueWith(async t =>
         {
             if (!t.IsCanceled)
             {
-                await SaveLibraryAsync();
+                await SaveLibraryAsync(librarySnapshot);
             }
         }, TaskScheduler.Default);
+    }
+
+    private async Task SaveLibraryAsync(List<PlaylistDto> libraryData)
+    {
+        Debug.WriteLine("Saving Library...");
+        try
+        {
+            string path = Path.Combine(FileSystem.AppDataDirectory, LibraryFileName);
+            string json = JsonSerializer.Serialize(libraryData);
+            await File.WriteAllTextAsync(path, json);
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Failed to save library: {ex.Message}");
+        }
     }
 
     private async Task SaveLibraryAsync()
@@ -45,6 +91,7 @@ public partial class MainViewModel
                 source = p.Source,
                 createdAt = p.CreatedAt,
                 updatedAt = p.UpdatedAt,
+                duration = p.Duration,
                 tags = p.Tags.ToList(),
                 items = p.Items.Select(i => new PlaylistItemDto
                 {
@@ -52,6 +99,7 @@ public partial class MainViewModel
                     url = i.Url,
                     startTime = i.StartTime,
                     endTime = i.EndTime,
+                    duration = i.Duration,
                     icon = i.IconUrl,
                     tags = i.Tags.ToList(),
                     lyrics = i.Lyrics,
@@ -92,6 +140,7 @@ public partial class MainViewModel
                             Source = pDto.source ?? "",
                             CreatedAt = pDto.createdAt ?? DateTime.Now,
                             UpdatedAt = pDto.updatedAt ?? DateTime.Now,
+                            Duration = pDto.duration,
                             Tags = new System.Collections.ObjectModel.ObservableCollection<string>(pDto.tags ?? new List<string>())
                         };
 
@@ -103,6 +152,7 @@ public partial class MainViewModel
                                 Url = iDto.url ?? "",
                                 StartTime = iDto.startTime,
                                 EndTime = iDto.endTime,
+                                Duration = iDto.duration,
                                 IconUrl = iDto.icon ?? "",
                                 Tags = new System.Collections.ObjectModel.ObservableCollection<string>(iDto.tags ?? new List<string>()),
                                 Lyrics = iDto.lyrics ?? "",

@@ -20,10 +20,14 @@ public partial class PlaylistItem : ObservableObject
     [ObservableProperty] public partial bool IsSelected { get; set; }
     [ObservableProperty] public partial string Lyrics { get; set; } = string.Empty;
     [ObservableProperty] public partial DateTime? LastPlayedAt { get; set; }
+    [ObservableProperty] public partial TimeSpan Duration { get; set; }
 
     [ObservableProperty]
     [JsonIgnore]
     public partial Playlist? Playlist { get; set; }
+
+    [JsonIgnore]
+    public bool IsResolutionAttempted { get; set; }
 
     public bool HasTags => Tags.Count > 0;
     public string Tag1 => Tags.Count > 0 ? Tags[0] : "";
@@ -89,58 +93,98 @@ public partial class PlaylistItem : ObservableObject
         }
     }
 
+    [JsonIgnore]
+    public string DisplayDuration
+    {
+        get
+        {
+            if (Duration.TotalSeconds <= 0) return "--:--";
+
+            if (Duration.TotalHours >= 1)
+                return $"{(int)Duration.TotalHours}:{Duration.Minutes:D2}:{Duration.Seconds:D2}";
+            return $"{Duration.Minutes:D2}:{Duration.Seconds:D2}";
+        }
+    }
+
+    partial void OnDurationChanged(TimeSpan value)
+    {
+        OnPropertyChanged(nameof(DisplayDuration));
+        Playlist?.RequestRecalculateDuration();
+    }
+
     private void GenerateIconAsync(string cacheKey)
     {
         Task.Run(async () =>
         {
             try
             {
-                // Prevent ThreadPool explosion by limiting concurrent operations
                 await _itemIconSemaphore.WaitAsync();
 
-                // Double-check cache in case another task just finished it
                 if (_sharedItemIconCache.TryGetValue(cacheKey, out var cachedSource))
                 {
-                    _itemIconSource = cachedSource;
-                    MainThread.BeginInvokeOnMainThread(() => OnPropertyChanged(nameof(ItemIconSource)));
+                    MainThread.BeginInvokeOnMainThread(() => {
+                        _itemIconSource = cachedSource;
+                        OnPropertyChanged(nameof(ItemIconSource));
+                    });
                     return;
                 }
 
-                ImageSource? source = null;
+                byte[]? imageBytes = null;
+                bool isGenerator = false;
+                bool isFileFallback = false;
 
+                // Do the heavy lifting (file IO / decoding) safely on the background thread
                 if (string.IsNullOrEmpty(IconUrl))
                 {
-                    source = IconGenerator.GenerateIcon(Title, 8, 36);
+                    isGenerator = true;
                 }
                 else if (IconUrl.StartsWith("data:image"))
                 {
                     var base64Data = IconUrl.Substring(IconUrl.IndexOf(',') + 1);
-                    var imageBytes = Convert.FromBase64String(base64Data);
-                    source = await ImageScalingService.ScaleIfSmallAsync(imageBytes, 36)
-                             ?? ImageSource.FromStream(() => new MemoryStream(imageBytes));
+                    imageBytes = Convert.FromBase64String(base64Data);
                 }
                 else if (File.Exists(IconUrl))
                 {
-                    var imageBytes = await File.ReadAllBytesAsync(IconUrl);
-                    source = await ImageScalingService.ScaleIfSmallAsync(imageBytes, 36)
-                             ?? ImageSource.FromStream(() => new MemoryStream(imageBytes));
+                    imageBytes = await File.ReadAllBytesAsync(IconUrl);
                 }
                 else
                 {
-                    source = ImageSource.FromFile(IconUrl);
+                    isFileFallback = true;
                 }
 
-                if (source != null)
+                // CRITICAL FIX: ImageSource is a BindableObject. Creating it on a background 
+                // thread creates orphaned JNI references that crash the app. Pass it to the UI Thread!
+                MainThread.BeginInvokeOnMainThread(async () =>
                 {
-                    _sharedItemIconCache[cacheKey] = source;
-                    _itemIconSource = source;
-                    MainThread.BeginInvokeOnMainThread(() => OnPropertyChanged(nameof(ItemIconSource)));
-                }
+                    try
+                    {
+                        ImageSource? source = null;
+
+                        if (isGenerator)
+                        {
+                            source = IconGenerator.GenerateIcon(Title, 8, 36);
+                        }
+                        else if (imageBytes != null)
+                        {
+                            source = await ImageScalingService.ScaleIfSmallAsync(imageBytes, 36)
+                                     ?? ImageSource.FromStream(() => new MemoryStream(imageBytes));
+                        }
+                        else if (isFileFallback)
+                        {
+                            source = ImageSource.FromFile(IconUrl);
+                        }
+
+                        if (source != null)
+                        {
+                            _sharedItemIconCache[cacheKey] = source;
+                            _itemIconSource = source;
+                            OnPropertyChanged(nameof(ItemIconSource));
+                        }
+                    }
+                    catch { /* Ignore UI thread exceptions during fast scrolling */ }
+                });
             }
-            catch
-            {
-                // Ignore silent failures to prevent alert spam
-            }
+            catch { }
             finally
             {
                 _itemIconSemaphore.Release();

@@ -11,6 +11,7 @@ public class PlaylistDto
     public string source { get; set; } = string.Empty;
     public DateTime? createdAt { get; set; }
     public DateTime? updatedAt { get; set; }
+    public TimeSpan duration { get; set; }
     public List<PlaylistItemDto> items { get; set; } = new();
     public List<string> tags { get; set; } = new();
 }
@@ -21,6 +22,7 @@ public class PlaylistItemDto
     public string url { get; set; } = string.Empty;
     public int? startTime { get; set; }
     public int? endTime { get; set; }
+    public TimeSpan duration { get; set; }
     public string icon { get; set; } = string.Empty;
     public List<string> tags { get; set; } = new();
     public string lyrics { get; set; } = string.Empty;

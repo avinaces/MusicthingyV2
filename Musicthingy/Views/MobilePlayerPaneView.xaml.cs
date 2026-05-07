@@ -27,8 +27,8 @@ public partial class MobilePlayerPaneView : ContentView
             var parent = this.Parent as VisualElement;
             if (parent != null && parent.Height > 0)
                 return parent.Height;
-
-            return Application.Current?.MainPage?.Height ?? 800;
+            var activePage = Shell.Current ?? Application.Current?.Windows.FirstOrDefault()?.Page;
+            return activePage?.Height ?? 800;
         }
     }
 
