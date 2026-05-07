@@ -100,7 +100,7 @@
                     <!-- Expanded Header Controls (Visible when Expanded) -->
                     <HorizontalStackLayout x:Name="ExpandedHeaderControls" Grid.Column="2" Spacing="4" VerticalOptions="Center" IsVisible="False">
                         <ImageButton x:Name="AutoFollowBtn" 
-                            Source="locate_icon.png" 
+                            Source="{Binding AutoFollowIconSource}" 
                             Command="{Binding ToggleAutoFollowCommand}" 
                             WidthRequest="40" HeightRequest="40" BackgroundColor="Transparent" Padding="8" CornerRadius="20">
                             <ImageButton.Behaviors>
@@ -149,7 +149,7 @@
                     <HorizontalStackLayout HorizontalOptions="Center" Spacing="24" Margin="0,8,0,0">
 
                         <ImageButton x:Name="ShuffleBtn" 
-                            Source="shuffle_icon.png" 
+                            Source="{Binding ShuffleIconSource}" 
                             Command="{Binding ToggleShuffleCommand}" 
                             BackgroundColor="Transparent" 
                             CornerRadius="18" WidthRequest="36" HeightRequest="36" Padding="8">

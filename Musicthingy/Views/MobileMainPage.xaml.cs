@@ -32,7 +32,7 @@ public partial class MobileMainPage : FlyoutPage
                         // FIX: Changed animated from 'true' to 'false'.
                         // This prevents the virtualization engine from freezing the app 
                         // while trying to measure hundreds of items at 60fps.
-                        TracksListView?.ScrollToItem(m.Track, ScrollToPosition.Center, true);
+                        TracksListView?.ScrollToItem(m.Track, ScrollToPosition.Center, false);
                     }
                     catch { }
                 });

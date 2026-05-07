@@ -26,17 +26,29 @@ public partial class MainViewModel
     public partial bool IsPlaying { get; set; }
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(ShuffleIconColor))]
-    public partial bool IsShuffleEnabled { get; set; }
-
-    [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(RepeatIconSource))]
     [NotifyPropertyChangedFor(nameof(RepeatIconColor))]
     public partial RepeatMode RepeatState { get; set; } = RepeatMode.Off;
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShuffleIconColor))]
+    [NotifyPropertyChangedFor(nameof(ShuffleIconSource))]
+    public partial bool IsShuffleEnabled { get; set; }
+
+    [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(AutoFollowIconColor))]
+    [NotifyPropertyChangedFor(nameof(AutoFollowIconSource))]
     public partial bool IsAutoFollowEnabled { get; set; }
+
+    public string ShuffleIconSource =>
+    IsShuffleEnabled
+        ? "shuffle_icon.png"
+        : "shuffle_off_icon.png";
+
+    public string AutoFollowIconSource =>
+        IsAutoFollowEnabled
+            ? "locate_fixed_icon.png"
+            : "locate_icon.png";
 
     public Color AutoFollowIconColor => IsAutoFollowEnabled ? Color.FromArgb("#adcff0") : Color.FromArgb("#8b949e");
 
