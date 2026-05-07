@@ -18,65 +18,28 @@ public partial class MobileMainPage : FlyoutPage
         // Listen for requests to scroll to the playing track
         WeakReferenceMessenger.Default.Register<ScrollToTrackMessage>(this, (r, m) =>
         {
-            MainThread.BeginInvokeOnMainThread(async () =>
+            Task.Run(async () =>
             {
                 _isProgrammaticScroll = true;
 
-                // Give the UI thread a generous moment to tear down the old list 
-                // and render the new one if the playlist just switched.
-                await Task.Delay(300);
+                // Wait a fraction of a second for the list to render if the playlist just switched
+                await Task.Delay(150);
 
-                var vm = BindingContext as ViewModels.MainViewModel;
-                if (vm?.SelectedPlaylist == null)
+                MainThread.BeginInvokeOnMainThread(() =>
                 {
-                    _isProgrammaticScroll = false;
-                    return;
-                }
-
-                var items = vm.SelectedPlaylist.Items;
-                int targetIndex = items.IndexOf(m.Track);
-
-                if (targetIndex != -1)
-                {
-                    // Calculate our approximate current index using the known height of your Track rows (approx 62px)
-                    int currentIndex = (int)(Math.Max(0, _lastScrollY) / 62.0);
-
-                    // CRASH PREVENTION ALGORITHM:
-                    // If the distance is > 40 items, we act as an "elevator", chunking the jump into smaller blocks.
-                    // This prevents MAUI from inflating hundreds of SwipeViews synchronously and crashing the app.
-                    if (Math.Abs(targetIndex - currentIndex) > 40)
+                    try
                     {
-                        int step = targetIndex > currentIndex ? 40 : -40;
-                        int i = currentIndex + step;
-
-                        while ((step > 0 && i < targetIndex) || (step < 0 && i > targetIndex))
-                        {
-                            if (i >= 0 && i < items.Count)
-                            {
-                                var intermediateTrack = items[i];
-                                MainThread.BeginInvokeOnMainThread(() =>
-                                {
-                                    try { TracksListView?.ScrollToItem(intermediateTrack, ScrollToPosition.Center, false); }
-                                    catch { }
-                                });
-
-                                // Yield to the Garbage Collector & UI Thread so it doesn't freeze
-                                await Task.Delay(25);
-                            }
-                            i += step;
-                        }
+                        // FIX: Changed animated from 'true' to 'false'.
+                        // This prevents the virtualization engine from freezing the app 
+                        // while trying to measure hundreds of items at 60fps.
+                        TracksListView?.ScrollToItem(m.Track, ScrollToPosition.Center, true);
                     }
+                    catch { }
+                });
 
-                    // The final precise jump to the target
-                    MainThread.BeginInvokeOnMainThread(() =>
-                    {
-                        try { TracksListView?.ScrollToItem(m.Track, ScrollToPosition.Center, false); }
-                        catch { }
-                    });
-                }
-
-                // Wait for the final layout to settle before re-enabling manual scroll detection
-                await Task.Delay(300);
+                // Since the jump is now instant, we only need a tiny delay 
+                // to ignore the immediate scroll events fired by the jump.
+                await Task.Delay(200);
                 _isProgrammaticScroll = false;
             });
         });

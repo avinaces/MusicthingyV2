@@ -332,6 +332,8 @@ public partial class MainViewModel
         if (oldValue != null) oldValue.IsSelected = false;
         newValue.IsSelected = true;
 
+
+
         _ = ReloadMediaAsync(newValue);
     }
 

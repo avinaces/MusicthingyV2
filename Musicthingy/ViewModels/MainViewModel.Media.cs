@@ -191,6 +191,11 @@ public partial class MainViewModel
 
     private async Task ReloadMediaAsync(PlaylistItem newValue)
     {
+        if (IsAutoFollowEnabled)
+        {
+            TriggerAutoFollow();
+        }
+
         IsLoadingMedia = true; // Set this BEFORE Stop() is called
         AcquireTransientWakeLock(); // Keep CPU awake while fetching the youtube stream URL
 
