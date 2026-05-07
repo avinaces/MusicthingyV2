@@ -174,6 +174,11 @@ public partial class MainViewModel
     {
         if (PlaybackQueue == null || PlaybackQueue.Count == 0 || CurrentTrack == null) return;
 
+        // Wait before preloading! 
+        // This gives VLC time to build up a network buffer 
+        // before YoutubeExplode hogs the CPU/Network.
+        await Task.Delay(15000);
+
         int currentIndex = PlaybackQueue.IndexOf(CurrentTrack);
         if (currentIndex == -1) return;
 
@@ -243,8 +248,7 @@ public partial class MainViewModel
                 {
                     var videoId = YoutubeExplode.Videos.VideoId.Parse(track.Url);
 
-                    // Added 10s Timeout to prevent silent background thread locks
-                    using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+                    using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
                     var manifest = await _youtubeClient.Videos.Streams.GetManifestAsync(videoId, cts.Token);
                     return manifest.GetAudioOnlyStreams().GetWithHighestBitrate()?.Url;
                 });

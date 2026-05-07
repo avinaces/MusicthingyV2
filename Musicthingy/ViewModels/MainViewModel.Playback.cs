@@ -3,6 +3,7 @@ using CommunityToolkit.Mvvm.Input;
 using Musicthingy.Models;
 using System.Collections.ObjectModel;
 using System.Text.Json;
+using CommunityToolkit.Mvvm.Messaging;
 
 namespace Musicthingy.ViewModels;
 
@@ -32,6 +33,12 @@ public partial class MainViewModel
     [NotifyPropertyChangedFor(nameof(RepeatIconSource))]
     [NotifyPropertyChangedFor(nameof(RepeatIconColor))]
     public partial RepeatMode RepeatState { get; set; } = RepeatMode.Off;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(AutoFollowIconColor))]
+    public partial bool IsAutoFollowEnabled { get; set; }
+
+    public Color AutoFollowIconColor => IsAutoFollowEnabled ? Color.FromArgb("#adcff0") : Color.FromArgb("#8b949e");
 
     public string PlayPauseIcon => IsPlaying ? "pause_icon.png" : "play_icon.png";
 
@@ -326,5 +333,28 @@ public partial class MainViewModel
         newValue.IsSelected = true;
 
         _ = ReloadMediaAsync(newValue);
+    }
+
+    [RelayCommand]
+    private void ToggleAutoFollow()
+    {
+        IsAutoFollowEnabled = !IsAutoFollowEnabled;
+        if (IsAutoFollowEnabled)
+        {
+            TriggerAutoFollow();
+        }
+    }
+
+    public void TriggerAutoFollow()
+    {
+        if (CurrentTrack != null && CurrentTrack.Playlist != null)
+        {
+            if (SelectedPlaylist != CurrentTrack.Playlist)
+            {
+                SelectedPlaylist = CurrentTrack.Playlist;
+            }
+
+            CommunityToolkit.Mvvm.Messaging.WeakReferenceMessenger.Default.Send(new ScrollToTrackMessage(CurrentTrack));
+        }
     }
 }

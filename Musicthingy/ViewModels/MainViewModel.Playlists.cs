@@ -92,6 +92,7 @@ public partial class MainViewModel
         if (track.Playlist != null && track.Playlist.Items.Contains(track))
         {
             track.Playlist.Items.Remove(track);
+            PlaybackQueue.Remove(track);
             RequestSaveLibrary();
         }
     }

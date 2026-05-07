@@ -158,6 +158,8 @@ public partial class MobilePlayerPaneView : ContentView
 
     private async void ClosePlayer(bool isHorizontal)
     {
+
+
         uint length = 200;
 
         // Animate completely off-screen using explicit large coordinates

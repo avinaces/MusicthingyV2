@@ -15,7 +15,6 @@
             IsVisible="{Binding IsMediaSelected}">
 
         <Border.GestureRecognizers>
-            <!-- This empty gesture acts as a shield, stopping any stray taps from hitting the CollectionView underneath -->
             <TapGestureRecognizer />
         </Border.GestureRecognizers>
 
@@ -32,6 +31,7 @@
                         <Setter TargetName="TrackImageBorder" Property="WidthRequest" Value="44" />
                         <Setter TargetName="TrackImageBorder" Property="HeightRequest" Value="44" />
                         <Setter TargetName="MiniControls" Property="IsVisible" Value="True" />
+                        <Setter TargetName="ExpandedHeaderControls" Property="IsVisible" Value="False" />
                         <Setter TargetName="ExpandedContentZone" Property="IsVisible" Value="False" />
                         <Setter TargetName="HeaderDragZone" Property="Padding" Value="12" />
                     </VisualState.Setters>
@@ -43,6 +43,7 @@
                         <Setter TargetName="TrackImageBorder" Property="WidthRequest" Value="68" />
                         <Setter TargetName="TrackImageBorder" Property="HeightRequest" Value="68" />
                         <Setter TargetName="MiniControls" Property="IsVisible" Value="False" />
+                        <Setter TargetName="ExpandedHeaderControls" Property="IsVisible" Value="True" />
                         <Setter TargetName="ExpandedContentZone" Property="IsVisible" Value="True" />
                         <Setter TargetName="LyricsScrollView" Property="IsVisible" Value="True" />
                         <Setter TargetName="HeaderDragZone" Property="Padding" Value="16,10,16,8" />
@@ -55,6 +56,7 @@
                         <Setter TargetName="TrackImageBorder" Property="WidthRequest" Value="68" />
                         <Setter TargetName="TrackImageBorder" Property="HeightRequest" Value="68" />
                         <Setter TargetName="MiniControls" Property="IsVisible" Value="False" />
+                        <Setter TargetName="ExpandedHeaderControls" Property="IsVisible" Value="True" />
                         <Setter TargetName="ExpandedContentZone" Property="IsVisible" Value="True" />
                         <Setter TargetName="LyricsScrollView" Property="IsVisible" Value="True" />
                         <Setter TargetName="HeaderDragZone" Property="Padding" Value="16,10,16,8" />
@@ -71,22 +73,13 @@
             <!-- ========================================== -->
             <Grid x:Name="HeaderDragZone" Grid.Row="0" RowDefinitions="Auto, Auto" BackgroundColor="Transparent" Padding="12">
 
-                <!-- Drag Handle -->
                 <RoundRectangle x:Name="DragHandle" 
-                                Grid.Row="0"
-                                Fill="#484f58" 
-                                WidthRequest="36" 
-                                HeightRequest="5" 
-                                CornerRadius="2.5" 
-                                HorizontalOptions="Center" 
-                                Margin="0,0,0,12" 
-                                IsVisible="False" />
+                                Grid.Row="0" Fill="#484f58" WidthRequest="36" HeightRequest="5" 
+                                CornerRadius="2.5" HorizontalOptions="Center" Margin="0,0,0,12" IsVisible="False" />
 
-                <!-- Header Info -->
                 <Grid Grid.Row="1" ColumnDefinitions="Auto, *, Auto" ColumnSpacing="12">
 
-                    <Border x:Name="TrackImageBorder" 
-                            Grid.Column="0" WidthRequest="44" HeightRequest="44" StrokeThickness="0" VerticalOptions="Center">
+                    <Border x:Name="TrackImageBorder" Grid.Column="0" WidthRequest="44" HeightRequest="44" StrokeThickness="0" VerticalOptions="Center">
                         <Border.StrokeShape>
                             <RoundRectangle CornerRadius="8" />
                         </Border.StrokeShape>
@@ -98,10 +91,24 @@
                         <Label Text="{Binding CurrentTrack.Artist, FallbackValue='Unknown Artist'}" TextColor="#8b949e" FontSize="13" LineBreakMode="TailTruncation" />
                     </VerticalStackLayout>
 
-                    <!-- Mini Controls -->
+                    <!-- Mini Controls (Visible when Mini) -->
                     <HorizontalStackLayout x:Name="MiniControls" Grid.Column="2" Spacing="4" VerticalOptions="Center">
                         <ImageButton Source="{Binding PlayPauseIcon}" Command="{Binding TogglePlayCommand}" WidthRequest="40" HeightRequest="40" BackgroundColor="Transparent" Padding="8" CornerRadius="20"/>
                         <ImageButton Source="skip_forward_icon.png" Command="{Binding PlayNextCommand}" WidthRequest="40" HeightRequest="40" BackgroundColor="Transparent" Padding="8" CornerRadius="20"/>
+                    </HorizontalStackLayout>
+                    
+                    <!-- Expanded Header Controls (Visible when Expanded) -->
+                    <HorizontalStackLayout x:Name="ExpandedHeaderControls" Grid.Column="2" Spacing="4" VerticalOptions="Center" IsVisible="False">
+                        <ImageButton x:Name="AutoFollowBtn" 
+                            Source="locate_icon.png" 
+                            Command="{Binding ToggleAutoFollowCommand}" 
+                            WidthRequest="40" HeightRequest="40" BackgroundColor="Transparent" Padding="8" CornerRadius="20">
+                            <ImageButton.Behaviors>
+                                <toolkit:IconTintColorBehavior 
+                                    BindingContext="{Binding BindingContext, Source={x:Reference AutoFollowBtn}}" 
+                                    TintColor="{Binding AutoFollowIconColor}" />
+                            </ImageButton.Behaviors>
+                        </ImageButton>
                     </HorizontalStackLayout>
                 </Grid>
             </Grid>
@@ -141,17 +148,13 @@
                     <!-- Main Transport Controls -->
                     <HorizontalStackLayout HorizontalOptions="Center" Spacing="24" Margin="0,8,0,0">
 
-                        <!-- SHUFFLE BUTTON -->
                         <ImageButton x:Name="ShuffleBtn" 
                             Source="shuffle_icon.png" 
                             Command="{Binding ToggleShuffleCommand}" 
                             BackgroundColor="Transparent" 
                             CornerRadius="18" WidthRequest="36" HeightRequest="36" Padding="8">
                             <ImageButton.Behaviors>
-                                <!-- Manually pass the BindingContext to bypass the v10 Toolkit breaking change -->
-                                <toolkit:IconTintColorBehavior 
-                                BindingContext="{Binding BindingContext, Source={x:Reference ShuffleBtn}}" 
-                                TintColor="{Binding ShuffleIconColor}" />
+                                <toolkit:IconTintColorBehavior BindingContext="{Binding BindingContext, Source={x:Reference ShuffleBtn}}" TintColor="{Binding ShuffleIconColor}" />
                             </ImageButton.Behaviors>
                         </ImageButton>
 
@@ -166,17 +169,13 @@
 
                         <ImageButton Source="skip_forward_icon.png" Command="{Binding PlayNextCommand}" WidthRequest="44" HeightRequest="44" BackgroundColor="Transparent" Padding="10" CornerRadius="22"/>
 
-                        <!-- REPEAT BUTTON -->
                         <ImageButton x:Name="RepeatBtn" 
                             Source="{Binding RepeatIconSource}" 
                             Command="{Binding ToggleRepeatCommand}" 
                             BackgroundColor="Transparent" 
                             CornerRadius="18" WidthRequest="36" HeightRequest="36" Padding="8">
                             <ImageButton.Behaviors>
-                                <!-- Manually pass the BindingContext to bypass the v10 Toolkit breaking change -->
-                                <toolkit:IconTintColorBehavior 
-                                    BindingContext="{Binding BindingContext, Source={x:Reference RepeatBtn}}" 
-                                    TintColor="{Binding RepeatIconColor}" />
+                                <toolkit:IconTintColorBehavior BindingContext="{Binding BindingContext, Source={x:Reference RepeatBtn}}" TintColor="{Binding RepeatIconColor}" />
                             </ImageButton.Behaviors>
                         </ImageButton>
 

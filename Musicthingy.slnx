@@ -1,3 +1,6 @@
 <Solution>
-  <Project Path="Musicthingy/Musicthingy.csproj" />
+  <Project Path="../../VirualizeList/MPowerKit.VirtualizeListView/MPowerKit.VirtualizeListView.csproj" />
+  <Project Path="Musicthingy/Musicthingy.csproj">
+    <Deploy Solution="Debug|*" />
+  </Project>
 </Solution>
