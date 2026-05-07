@@ -12,6 +12,21 @@ public partial class MainViewModel
     private bool _isRestoringState = true;
     private double _initialRestorePosition = 0;
 
+    private static PlaylistIconType ParseIconType(string? raw)
+    {
+        if (string.IsNullOrEmpty(raw)) return PlaylistIconType.Playlist;
+        raw = raw.Trim();
+        // Accept older lowercase values like "playlist", "track", "youtube"
+        if (raw.Equals("playlist", StringComparison.OrdinalIgnoreCase)) return PlaylistIconType.Playlist;
+        if (raw.Equals("track", StringComparison.OrdinalIgnoreCase)) return PlaylistIconType.Track;
+        if (raw.Equals("youtube", StringComparison.OrdinalIgnoreCase)) return PlaylistIconType.YouTube;
+
+        // Try to parse enum names directly
+        if (Enum.TryParse<PlaylistIconType>(raw, true, out var parsed)) return parsed;
+
+        return PlaylistIconType.Playlist;
+    }
+
     /// <summary>
     /// Call this whenever Playlists or Tracks are added, edited, or removed.
     /// It waits 1 second before saving, preventing lag if multiple edits happen at once.
@@ -27,11 +42,11 @@ public partial class MainViewModel
         List<PlaylistDto> librarySnapshot = new();
         try
         {
-            librarySnapshot = Playlists.Select(p => new PlaylistDto
+                librarySnapshot = Playlists.Select(p => new PlaylistDto
             {
                 name = p.Name,
                 icon = p.IconUrl,
-                iconType = p.IconType,
+                    iconType = p.IconType.ToString().ToLowerInvariant(),
                 source = p.Source,
                 createdAt = p.CreatedAt,
                 updatedAt = p.UpdatedAt,
@@ -51,6 +66,8 @@ public partial class MainViewModel
                 }).ToList()
             }).ToList();
         }
+
+
         catch { return; /* Ignore transient read errors during fast UI changes */ }
 
         Task.Delay(1000, token).ContinueWith(async t =>
@@ -87,7 +104,7 @@ public partial class MainViewModel
             {
                 name = p.Name,
                 icon = p.IconUrl,
-                iconType = p.IconType,
+                iconType = p.IconType.ToString().ToLowerInvariant(),
                 source = p.Source,
                 createdAt = p.CreatedAt,
                 updatedAt = p.UpdatedAt,
@@ -136,7 +153,7 @@ public partial class MainViewModel
                         {
                             Name = pDto.name ?? "",
                             IconUrl = pDto.icon ?? "",
-                            IconType = pDto.iconType ?? "",
+                            IconType = ParseIconType(pDto.iconType),
                             Source = pDto.source ?? "",
                             CreatedAt = pDto.createdAt ?? DateTime.Now,
                             UpdatedAt = pDto.updatedAt ?? DateTime.Now,

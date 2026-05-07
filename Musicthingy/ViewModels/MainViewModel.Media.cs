@@ -80,11 +80,40 @@ public partial class MainViewModel
 
             if (CurrentTrack != null)
             {
-                string widgetIconUrl = !string.IsNullOrEmpty(CurrentTrack.Playlist?.IconUrl)
-                    ? CurrentTrack.Playlist.IconUrl
-                    : CurrentTrack.IconUrl;
+                // Decide which icon to use based on the playlist's IconType setting
+                string widgetIconUrl = string.Empty;
+                var pl = CurrentTrack.Playlist;
+                var iconType = pl?.IconType ?? PlaylistIconType.Playlist;
+                //iconType = PlaylistIconType.YouTube;
 
-                _ = UpdateOSMediaWidgetsAsync(CurrentTrack.Title, CurrentTrack.Playlist?.Name ?? "Musicthingy", widgetIconUrl);
+                if (iconType == PlaylistIconType.Track)
+                {
+                    // Prefer the track's icon, fallback to playlist icon
+                    widgetIconUrl = !string.IsNullOrEmpty(CurrentTrack.IconUrl) ? CurrentTrack.IconUrl : pl?.IconUrl ?? string.Empty;
+                }
+                else if (iconType == PlaylistIconType.YouTube)
+                {
+                    // If the track is a YouTube URL, use YouTube's thumbnail URL (hqdefault).
+                    // If we can't determine a thumbnail, fallback to the playlist icon, then the track icon.
+                    string? ytThumb = null;
+                    if (!string.IsNullOrEmpty(CurrentTrack.Url) && (CurrentTrack.Url.Contains("youtube.com") || CurrentTrack.Url.Contains("youtu.be")))
+                    {
+                        var videoId = YoutubeExplode.Videos.VideoId.TryParse(CurrentTrack.Url);
+                        if (videoId != null)
+                        {
+                            ytThumb = $"https://img.youtube.com/vi/{videoId.Value}/hqdefault.jpg";
+                        }
+                    }
+
+                    widgetIconUrl = !string.IsNullOrEmpty(ytThumb) ? ytThumb : pl?.IconUrl ?? CurrentTrack.IconUrl ?? string.Empty;
+                }
+                else
+                {
+                    // Default / Playlist: prefer playlist icon, fallback to track icon
+                    widgetIconUrl = !string.IsNullOrEmpty(pl?.IconUrl) ? pl.IconUrl : CurrentTrack.IconUrl ?? string.Empty;
+                }
+
+                _ = UpdateOSMediaWidgetsAsync(CurrentTrack.Title, pl?.Name ?? "Musicthingy", widgetIconUrl);
             }
         };
 

@@ -20,11 +20,22 @@ public class PlaylistDataService
             {
                 Name = dto.name,
                 IconUrl = dto.icon,
-                IconType = dto.iconType,
+                IconType = ParseIconType(dto.iconType),
                 Source = dto.source,
                 CreatedAt = dto.createdAt ?? DateTime.Now,
                 UpdatedAt = dto.updatedAt ?? DateTime.Now
             };
+
+            static PlaylistIconType ParseIconType(string? raw)
+            {
+                if (string.IsNullOrEmpty(raw)) return PlaylistIconType.Playlist;
+                raw = raw.Trim();
+                if (raw.Equals("playlist", StringComparison.OrdinalIgnoreCase)) return PlaylistIconType.Playlist;
+                if (raw.Equals("track", StringComparison.OrdinalIgnoreCase)) return PlaylistIconType.Track;
+                if (raw.Equals("youtube", StringComparison.OrdinalIgnoreCase)) return PlaylistIconType.YouTube;
+                if (Enum.TryParse<PlaylistIconType>(raw, true, out var parsed)) return parsed;
+                return PlaylistIconType.Playlist;
+            }
 
             foreach (var playlistTag in dto.tags)
             {

@@ -1,13 +1,20 @@
 ﻿using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Musicthingy.Services;
-using System.Collections.ObjectModel;
-using System.Text.Json.Serialization;
 using System.Collections.Concurrent;
-using System.Threading;
+using System.Collections.ObjectModel;
 using System.Collections.Specialized;
+using System.Text.Json.Serialization;
 
 namespace Musicthingy.Models;
+
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum PlaylistIconType
+{
+    Playlist,
+    Track,
+    YouTube
+}
 
 public partial class Playlist : ObservableObject
 {
@@ -33,9 +40,11 @@ public partial class Playlist : ObservableObject
 
     [ObservableProperty]
     [JsonPropertyName("items")]
-    public partial ObservableCollection<PlaylistItem> Items { get; set; } = new(); [ObservableProperty]
+    public partial ObservableCollection<PlaylistItem> Items { get; set; } = new();
+
+    [ObservableProperty]
     [JsonPropertyName("iconType")]
-    public partial string IconType { get; set; } = string.Empty;
+    public partial PlaylistIconType IconType { get; set; } = PlaylistIconType.Playlist;
 
     [ObservableProperty]
     [JsonPropertyName("source")]
@@ -103,6 +112,7 @@ public partial class Playlist : ObservableObject
 
     private void GenerateIconAsync(string cacheKey)
     {
+        IconType = PlaylistIconType.YouTube; // Temp override, delete later
         Task.Run(async () =>
         {
             try
@@ -111,7 +121,8 @@ public partial class Playlist : ObservableObject
 
                 if (_sharedPlaylistIconCache.TryGetValue(cacheKey, out var cachedSource))
                 {
-                    MainThread.BeginInvokeOnMainThread(() => {
+                    MainThread.BeginInvokeOnMainThread(() =>
+                    {
                         _iconImageSource = cachedSource;
                         OnPropertyChanged(nameof(IconImageSource));
                     });

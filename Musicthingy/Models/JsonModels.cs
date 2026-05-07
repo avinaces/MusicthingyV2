@@ -7,6 +7,7 @@ public class PlaylistDto
 {
     public string name { get; set; } = string.Empty;
     public string icon { get; set; } = string.Empty;
+    // Keep DTO using string to support older JSON files. We'll convert to enum when loading.
     public string iconType { get; set; } = string.Empty;
     public string source { get; set; } = string.Empty;
     public DateTime? createdAt { get; set; }
