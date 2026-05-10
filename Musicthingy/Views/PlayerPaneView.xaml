@@ -1,85 +1,84 @@
 <?xml version="1.0" encoding="utf-8" ?>
 <ContentView xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
-			 xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
-			 xmlns:toolkit="http://schemas.microsoft.com/dotnet/2022/maui/toolkit"
-			 x:Class="Musicthingy.Views.PlayerPaneView">
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             xmlns:toolkit="http://schemas.microsoft.com/dotnet/2022/maui/toolkit"
+             xmlns:models="clr-namespace:Musicthingy.Models"
+             x:Class="Musicthingy.Views.PlayerPaneView">
 
     <Border Background="#161b22" Stroke="#30363d" StrokeThickness="1" StrokeShape="RoundRectangle 12" Padding="16">
-        <Grid RowDefinitions="Auto, Auto, *">
+        <Grid RowDefinitions="Auto, Auto, Auto, *">
 
-            <!-- Row 0: Header Area (Title + Tags) -->
-            <VerticalStackLayout Grid.Row="0" Spacing="12" IsVisible="{Binding IsMediaSelected}">
+            <!-- Row 0: Header Area (Title, Artist, Auto-Follow) -->
+            <Grid Grid.Row="0" ColumnDefinitions="Auto, *, Auto" Margin="0,0,0,16" IsVisible="{Binding IsMediaSelected}">
 
-                <!-- Title -->
-                <Label Text="{Binding CurrentTrack.Title}" 
-                       TextColor="#adcff0" 
-                       FontSize="20" 
-                       FontAttributes="Bold" 
-                       HorizontalOptions="Center" 
-                       Margin="0,0,0,4" />
+                <Border Grid.Column="0" WidthRequest="36" HeightRequest="36" StrokeThickness="0" Margin="0,0,12,0" VerticalOptions="Center">
+                    <Border.StrokeShape>
+                        <RoundRectangle CornerRadius="6" />
+                    </Border.StrokeShape>
+                    <Image Source="{Binding CurrentTrack.ItemIconSource}" Aspect="AspectFill" />
+                </Border>
 
-                <!-- Tags Section -->
-                <Grid ColumnDefinitions="Auto, *" ColumnSpacing="8">
+                <VerticalStackLayout Grid.Column="1" VerticalOptions="Center" Spacing="2">
+                    <Label Text="{Binding CurrentTrack.Title}" TextColor="#adcff0" FontSize="18" FontAttributes="Bold" LineBreakMode="TailTruncation" />
+                    <Label Text="{Binding CurrentTrack.Artist, FallbackValue='Unknown Artist'}" TextColor="#8b949e" FontSize="13" LineBreakMode="TailTruncation" />
+                </VerticalStackLayout>
 
-                    <!-- Tag Button -->
-                    <ImageButton Grid.Column="0"
-                                 Source="tag_icon.png" 
-                                 Style="{StaticResource IconImageButton}" 
-                                 Padding="6" 
-                                 VerticalOptions="Start"
-                                 Margin="0,0,0,6"/>
+                <ImageButton x:Name="AutoFollowBtn" Grid.Column="2" 
+                             Source="{Binding AutoFollowIconSource}" 
+                             Command="{Binding ToggleAutoFollowCommand}" 
+                             VerticalOptions="Start" 
+                             WidthRequest="36" HeightRequest="36" BackgroundColor="Transparent" Padding="6" CornerRadius="8">
+                    <ImageButton.Behaviors>
+                        <toolkit:IconTintColorBehavior BindingContext="{Binding BindingContext, Source={x:Reference AutoFollowBtn}}" TintColor="{Binding AutoFollowIconColor}" />
+                    </ImageButton.Behaviors>
+                </ImageButton>
 
-                    <!-- Tags Area -->
-                    <VerticalStackLayout Grid.Column="1" Spacing="4">
-                        <Label Text="Tags:" Style="{StaticResource FormLabelStyle}" />
+            </Grid>
 
-                        <!-- Tags List (Changed to a single Horizontal scrolling line so it NEVER wraps and pushes the player down) -->
-                        <ScrollView Orientation="Horizontal" HorizontalScrollBarVisibility="Never">
-                            <HorizontalStackLayout BindableLayout.ItemsSource="{Binding CurrentTrack.Tags}">
-                                <BindableLayout.ItemTemplate>
-                                    <DataTemplate x:DataType="x:String">
-                                        <Border Background="{StaticResource TagBgColor}" 
-                                                Stroke="{StaticResource AccentColor}" 
-                                                StrokeThickness="1" 
-                                                Padding="6,2,6,4" 
-                                                Margin="0,0,2,4"
-                                                HorizontalOptions="Start"
-                                                VerticalOptions="Start">
-                                            <Border.StrokeShape>
-                                                <RoundRectangle CornerRadius="8"/>
-                                            </Border.StrokeShape>
+            <!-- Row 1: Tags Section -->
+            <Grid Grid.Row="1" ColumnDefinitions="Auto, *" ColumnSpacing="8" Margin="0,0,0,16" IsVisible="{Binding IsMediaSelected}">
 
-                                            <Label Text="{Binding .}" 
-                                                   TextColor="{StaticResource TitleColor}" 
-                                                   FontSize="12"
-                                                   HorizontalOptions="Center"
-                                                   VerticalOptions="Center"
-                                                   HorizontalTextAlignment="Center"
-                                                   VerticalTextAlignment="Center"
-                                                   LineBreakMode="NoWrap" />
-                                        </Border>
-                                    </DataTemplate>
-                                </BindableLayout.ItemTemplate>
-                            </HorizontalStackLayout>
-                        </ScrollView>
+                <!-- Tag Icon -->
+                <ImageButton Grid.Column="0"
+                             Source="tag_icon.png" 
+                             BackgroundColor="Transparent"
+                             WidthRequest="24" HeightRequest="24"
+                             Padding="2" 
+                             VerticalOptions="Start"
+                             Margin="0,0,0,6"/>
 
-                    </VerticalStackLayout>
-                </Grid>
-            </VerticalStackLayout>
+                <!-- Tags Area -->
+                <VerticalStackLayout Grid.Column="1" Spacing="4">
+                    <ScrollView Orientation="Horizontal" HorizontalScrollBarVisibility="Never">
+                        <HorizontalStackLayout BindableLayout.ItemsSource="{Binding CurrentTrack.Tags}" Spacing="4">
+                            <BindableLayout.ItemTemplate>
+                                <DataTemplate x:DataType="x:String">
+                                    <Border Background="#1c304a" Stroke="#58a6ff" StrokeThickness="1" Padding="6,2">
+                                        <Border.StrokeShape>
+                                            <RoundRectangle CornerRadius="6"/>
+                                        </Border.StrokeShape>
+                                        <Label Text="{Binding .}" TextColor="#d9edff" FontSize="11" />
+                                    </Border>
+                                </DataTemplate>
+                            </BindableLayout.ItemTemplate>
+                        </HorizontalStackLayout>
+                    </ScrollView>
+                </VerticalStackLayout>
+            </Grid>
 
-            <!-- Row 1: Custom Player Controls -->
-            <Grid Grid.Row="1" HeightRequest="150" VerticalOptions="Center" Margin="10,20,10,20">
+            <!-- Row 2: Custom Player Controls -->
+            <Grid Grid.Row="2" HeightRequest="150" VerticalOptions="Center" Margin="10,0,10,0">
                 <VerticalStackLayout Spacing="15" IsVisible="{Binding IsMediaSelected}">
 
                     <!-- Progress Bar -->
                     <Slider Minimum="0"
-                        Maximum="{Binding DurationSeconds}"
-                        Value="{Binding CurrentPositionSeconds, Mode=TwoWay}"
-                        DragStartedCommand="{Binding DragStartedCommand}"
-                        DragCompletedCommand="{Binding SeekCommand}"
-                        MinimumTrackColor="#58a6ff"
-                        MaximumTrackColor="#30363d"
-                        ThumbColor="#adcff0" />
+                            Maximum="{Binding DurationSeconds}"
+                            Value="{Binding CurrentPositionSeconds, Mode=TwoWay}"
+                            DragStartedCommand="{Binding DragStartedCommand}"
+                            DragCompletedCommand="{Binding SeekCommand}"
+                            MinimumTrackColor="#58a6ff"
+                            MaximumTrackColor="#30363d"
+                            ThumbColor="#adcff0" />
 
                     <!-- Timestamps -->
                     <Grid ColumnDefinitions="Auto, *, Auto" Margin="5,-10,5,0">
@@ -88,10 +87,31 @@
                     </Grid>
 
                     <!-- Transport Controls -->
-                    <HorizontalStackLayout HorizontalOptions="Center" Spacing="30">
-                        <ImageButton Style="{StaticResource IconImageButton}" Source="skip_back_icon.png" Command="{Binding PlayPreviousCommand}"/>
-                        <ImageButton Style="{StaticResource IconImageButton}" Source="{Binding PlayPauseIcon}" Command="{Binding TogglePlayCommand}" WidthRequest="55" HeightRequest="55" BackgroundColor="Transparent"/>
-                        <ImageButton Style="{StaticResource IconImageButton}" Source="skip_forward_icon.png" Command="{Binding PlayNextCommand}" />
+                    <HorizontalStackLayout HorizontalOptions="Center" Spacing="20">
+
+                        <ImageButton x:Name="ShuffleBtn" Source="{Binding ShuffleIconSource}" Command="{Binding ToggleShuffleCommand}" BackgroundColor="Transparent" CornerRadius="18" WidthRequest="36" HeightRequest="36" Padding="8">
+                            <ImageButton.Behaviors>
+                                <toolkit:IconTintColorBehavior BindingContext="{Binding BindingContext, Source={x:Reference ShuffleBtn}}" TintColor="{Binding ShuffleIconColor}" />
+                            </ImageButton.Behaviors>
+                        </ImageButton>
+
+                        <ImageButton Source="skip_back_icon.png" Command="{Binding PlayPreviousCommand}" WidthRequest="40" HeightRequest="40" BackgroundColor="Transparent" Padding="8" CornerRadius="20" />
+
+                        <Border Background="#1c2128" Stroke="#30363d" StrokeThickness="1" WidthRequest="52" HeightRequest="52">
+                            <Border.StrokeShape>
+                                <RoundRectangle CornerRadius="25" />
+                            </Border.StrokeShape>
+                            <ImageButton Source="{Binding PlayPauseIcon}" Command="{Binding TogglePlayCommand}" WidthRequest="50" HeightRequest="50" BackgroundColor="Transparent" Padding="12"/>
+                        </Border>
+
+                        <ImageButton Source="skip_forward_icon.png" Command="{Binding PlayNextCommand}" WidthRequest="40" HeightRequest="40" BackgroundColor="Transparent" Padding="8" CornerRadius="20" />
+
+                        <ImageButton x:Name="RepeatBtn" Source="{Binding RepeatIconSource}" Command="{Binding ToggleRepeatCommand}" BackgroundColor="Transparent" CornerRadius="18" WidthRequest="36" HeightRequest="36" Padding="8">
+                            <ImageButton.Behaviors>
+                                <toolkit:IconTintColorBehavior BindingContext="{Binding BindingContext, Source={x:Reference RepeatBtn}}" TintColor="{Binding RepeatIconColor}" />
+                            </ImageButton.Behaviors>
+                        </ImageButton>
+
                     </HorizontalStackLayout>
 
                 </VerticalStackLayout>
@@ -102,22 +122,70 @@
                         <RoundRectangle CornerRadius="8" />
                     </Border.StrokeShape>
                     <VerticalStackLayout HorizontalOptions="Center" VerticalOptions="Center" Spacing="10">
-                        <ActivityIndicator IsRunning="{Binding IsLoadingMedia}" Color="#adcff0" WidthRequest="35" HeightRequest="35"/>
+                        <ActivityIndicator IsRunning="{Binding IsLoadingMedia}" Color="#58a6ff" WidthRequest="35" HeightRequest="35"/>
                         <Label Text="Opening Stream..." TextColor="#adcff0" FontSize="12" HorizontalOptions="Center"/>
                     </VerticalStackLayout>
                 </Border>
             </Grid>
 
-            <!-- Row 2: Lyrics -->
-            <ScrollView Grid.Row="2" VerticalOptions="Fill">
-                <Label Text="{Binding CurrentTrack.Lyrics}"
-					   TextColor="#c9d1d9"
-					   HorizontalOptions="Center" 
-					   HorizontalTextAlignment="Center" 
-					   VerticalOptions="Start"
-					   Margin="10" 
-					   FontSize="20"/>
-            </ScrollView>
+            <!-- Row 3: Lyrics & No-Lyrics Zone -->
+            <Grid Grid.Row="3" Margin="0,15,0,0">
+
+                <!-- Automatically Scrolling CollectionView for Timed Lyrics -->
+                <CollectionView x:Name="LyricsCollectionView" ItemsSource="{Binding ActiveTimedLyrics}" SelectionMode="None" IsVisible="{Binding HasTimedLyrics}">
+                    <CollectionView.ItemTemplate>
+                        <DataTemplate x:DataType="models:TimedLyric">
+                            <!-- HorizontalOptions="Fill" forces Windows UI to span the full width, fixing the offset issue -->
+                            <Label Text="{Binding Text}" HorizontalOptions="Fill" HorizontalTextAlignment="Center" LineHeight="1.4" Margin="10,6,10,6">
+                                <Label.Triggers>
+                                    <DataTrigger TargetType="Label" Binding="{Binding IsActive}" Value="True">
+                                        <Setter Property="TextColor" Value="#ffffff" />
+                                        <Setter Property="FontAttributes" Value="Bold" />
+                                        <Setter Property="FontSize" Value="22" />
+                                    </DataTrigger>
+                                    <DataTrigger TargetType="Label" Binding="{Binding IsActive}" Value="False">
+                                        <Setter Property="TextColor" Value="#8b949e" />
+                                        <Setter Property="FontAttributes" Value="None" />
+                                        <Setter Property="FontSize" Value="18" />
+                                    </DataTrigger>
+                                </Label.Triggers>
+                            </Label>
+                        </DataTemplate>
+                    </CollectionView.ItemTemplate>
+                    <CollectionView.Footer>
+                        <BoxView HeightRequest="120" BackgroundColor="Transparent"/>
+                    </CollectionView.Footer>
+                </CollectionView>
+
+                <!-- ScrollView for standard Static text Lyrics -->
+                <ScrollView VerticalOptions="Fill" IsVisible="{Binding HasStaticLyrics}">
+                    <Label Text="{Binding CurrentTrack.Lyrics}" 
+                           TextColor="#c9d1d9" 
+                           HorizontalOptions="Center" 
+                           HorizontalTextAlignment="Center" 
+                           VerticalOptions="Start" 
+                           Margin="10,0,10,40" 
+                           FontSize="18" 
+                           LineHeight="1.4"/>
+                </ScrollView>
+
+                <!-- Prompt to Find Lyrics -->
+                <VerticalStackLayout VerticalOptions="Center" Spacing="16" IsVisible="{Binding HasNoLyrics}">
+                    <Label Text="No lyrics available for this track." TextColor="#8b949e" HorizontalOptions="Center" />
+
+                    <Button Text="Find Lyrics" Command="{Binding FindLyricsCommand}" 
+                            BackgroundColor="#21262d" TextColor="#58a6ff" CornerRadius="8" WidthRequest="160" HorizontalOptions="Center">
+                        <Button.Triggers>
+                            <DataTrigger TargetType="Button" Binding="{Binding IsFetchingLyrics}" Value="True">
+                                <Setter Property="IsEnabled" Value="False" />
+                                <Setter Property="Text" Value="Searching..." />
+                            </DataTrigger>
+                        </Button.Triggers>
+                    </Button>
+
+                    <ActivityIndicator IsRunning="True" Color="#58a6ff" WidthRequest="24" HeightRequest="24" IsVisible="{Binding IsFetchingLyrics}" />
+                </VerticalStackLayout>
+            </Grid>
 
         </Grid>
     </Border>

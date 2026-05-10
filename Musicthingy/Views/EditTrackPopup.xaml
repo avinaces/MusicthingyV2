@@ -95,19 +95,20 @@
                     <!-- Lyrics -->
                     <VerticalStackLayout Spacing="4">
                         <Label Text="Lyrics" Style="{StaticResource FormLabelStyle}" />
-                        <Button Text="Edit Lyrics" Style="{StaticResource PopupSecondaryButtonStyle}" HorizontalOptions="Start" />
+                        <Button Text="Edit Lyrics" Clicked="OnEditLyricsClicked" Style="{StaticResource PopupSecondaryButtonStyle}" HorizontalOptions="Start" />
                     </VerticalStackLayout>
 
                 </VerticalStackLayout>
                 
             </ScrollView>
 
-            <HorizontalStackLayout Grid.Row="1" 
+            <!-- Action Buttons -->
+            <HorizontalStackLayout Grid.Row="3" 
                                    HorizontalOptions="End" 
                                    Spacing="12" 
                                    Padding="20,16">
-                <Button Text="Cancel" Clicked="OnCancelClicked" Style="{StaticResource PopupSecondaryButtonStyle}" />
-                <Button Text="Save" Clicked="OnSaveClicked" Style="{StaticResource PopupPrimaryButtonStyle}" />
+                <Button Text="Cancel" Command="{Binding CancelCommand}" Style="{StaticResource PopupSecondaryButtonStyle}" />
+                <Button Text="Save" Command="{Binding SaveCommand}" Style="{StaticResource PopupPrimaryButtonStyle}" />
             </HorizontalStackLayout>
 
         </Grid>

@@ -197,10 +197,11 @@ public partial class Playlist : ObservableObject
     {
         if (e.NewItems != null)
         {
-            foreach (PlaylistItem item in e.NewItems)
-            {
-                item.Playlist = this;
-            }
+            foreach (PlaylistItem item in e.NewItems) item.Playlist = this;
+        }
+        if (e.OldItems != null)
+        {
+            foreach (PlaylistItem item in e.OldItems) item.Playlist = null;
         }
         RecalculateDuration();
     }

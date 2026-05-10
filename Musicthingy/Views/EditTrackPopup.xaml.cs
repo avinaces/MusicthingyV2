@@ -1,3 +1,4 @@
+using CommunityToolkit.Maui.Extensions;
 using CommunityToolkit.Maui.Views;
 using CommunityToolkit.Mvvm.ComponentModel;
 using Musicthingy.Models;
@@ -23,6 +24,7 @@ public partial class EditTrackPopup : Popup<bool>
             EditUrl = track.Url,
             EditStartTime = track.StartTime?.ToString() ?? "",
             EditEndTime = track.EndTime?.ToString() ?? "",
+            EditLyrics = track.Lyrics ?? "", // Buffer the lyrics
 
             ItemIconSource = track.ItemIconSource,
             LastPlayedText = track.LastPlayedAt?.ToString("M/dd/yyyy, h:mm:ss tt") ?? "",
@@ -44,6 +46,7 @@ public partial class EditTrackPopup : Popup<bool>
         // 2. Push changes to the live track
         _originalTrack.Title = _form.EditTitle ?? string.Empty;
         _originalTrack.Url = _form.EditUrl ?? string.Empty;
+        _originalTrack.Lyrics = _form.EditLyrics; // Push lyrics
 
         if (int.TryParse(_form.EditStartTime, out int start))
             _originalTrack.StartTime = start;
@@ -64,13 +67,33 @@ public partial class EditTrackPopup : Popup<bool>
 
         await CloseAsync(true);
     }
+
+    private async void OnEditLyricsClicked(object? sender, EventArgs e)
+    {
+        // Pass the lyrics, the current title, and the original artist
+        var lyricsPopup = new EditLyricsPopup(_form.EditLyrics, _form.EditTitle, _originalTrack.Artist ?? "");
+        var activePage = Shell.Current ?? Application.Current?.Windows.FirstOrDefault()?.Page;
+
+        if (activePage != null)
+        {
+            var popupResult = await activePage.ShowPopupAsync<string>(lyricsPopup);
+
+            if (popupResult != null && popupResult.Result != null)
+            {
+                _form.EditLyrics = popupResult.Result;
+            }
+        }
+    }
 }
 
 // 3. Buffer Model
 public partial class EditTrackForm : ObservableObject
 {
     [ObservableProperty] public partial string EditTitle { get; set; } = string.Empty;
-    [ObservableProperty] public partial string EditUrl { get; set; } = string.Empty; [ObservableProperty] public partial string EditStartTime { get; set; } = string.Empty; [ObservableProperty] public partial string EditEndTime { get; set; } = string.Empty;
+    [ObservableProperty] public partial string EditUrl { get; set; } = string.Empty;
+    [ObservableProperty] public partial string EditStartTime { get; set; } = string.Empty;
+    [ObservableProperty] public partial string EditEndTime { get; set; } = string.Empty; 
+    [ObservableProperty] public partial string EditLyrics { get; set; } = string.Empty; // Added Lyrics Property
 
     [ObservableProperty] public partial ImageSource? ItemIconSource { get; set; }
     [ObservableProperty] public partial string LastPlayedText { get; set; } = string.Empty;

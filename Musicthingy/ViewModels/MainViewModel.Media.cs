@@ -48,6 +48,9 @@ public partial class MainViewModel
                 {
                     CurrentPositionSeconds = CurrentPosition.TotalSeconds;
                 }
+
+                // Sync lyrics highlighting
+                SyncActiveLyric(CurrentPosition);
             });
         };
 
@@ -189,29 +192,40 @@ public partial class MainViewModel
         await ResolveMediaSourceAsync(nextTrack);
     }
 
+    private CancellationTokenSource? _mediaLoadCts;
     private async Task ReloadMediaAsync(PlaylistItem newValue)
     {
-        if (IsAutoFollowEnabled)
-        {
-            TriggerAutoFollow();
-        }
+        // 1. Cancel any currently loading media immediately
+        _mediaLoadCts?.Cancel();
+        _mediaLoadCts = new CancellationTokenSource();
+        var token = _mediaLoadCts.Token;
 
-        IsLoadingMedia = true; // Set this BEFORE Stop() is called
-        AcquireTransientWakeLock(); // Keep CPU awake while fetching the youtube stream URL
+        if (IsAutoFollowEnabled) TriggerAutoFollow();
+
+        IsLoadingMedia = true;
+        AcquireTransientWakeLock();
 
         InitializeVLCEngine();
-
         _player!.Stop();
 
         CurrentPosition = TimeSpan.Zero;
         CurrentPositionSeconds = 0;
         SyncOSPlaybackState();
 
+        // 2. Fetch the URL
         string? rawAudioUrl = await ResolveMediaSourceAsync(newValue);
+
+        // 3. Check if the user skipped this track while we were waiting!
+        if (token.IsCancellationRequested)
+        {
+            ReleaseTransientWakeLock();
+            return; // Abort silently!
+        }
+
         if (rawAudioUrl == null)
         {
             IsLoadingMedia = false;
-            ReleaseTransientWakeLock(); // Release lock if it failed
+            ReleaseTransientWakeLock();
             return;
         }
 

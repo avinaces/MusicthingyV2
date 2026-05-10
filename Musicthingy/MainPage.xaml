@@ -104,7 +104,7 @@
                                 </Grid>
 
                                 <!-- Layer 3: Desktop Hover Catcher & Action Buttons -->
-                                <Grid BackgroundColor="Transparent" IsVisible="{OnPlatform Default=False, WinUI=True, MacCatalyst=True}">
+                                <Grid BackgroundColor="Transparent">
                                     <Grid.GestureRecognizers>
                                         <PointerGestureRecognizer PointerEnteredCommand="{Binding PointerEnteredCommand}" PointerExitedCommand="{Binding PointerExitedCommand}" />
                                     </Grid.GestureRecognizers>
@@ -259,28 +259,10 @@
 
                                         </Grid>
                                     </VerticalStackLayout>
-
-                                    <!-- MOBILE ACTION BUTTONS with DataTrigger instead of VSM -->
-                                    <HorizontalStackLayout x:Name="MobileActionButtons" Grid.Column="2" Spacing="6" VerticalOptions="Center" HorizontalOptions="End" Opacity="0" IsVisible="{OnPlatform Default=True, WinUI=False, MacCatalyst=False}">
-                                        <HorizontalStackLayout.Triggers>
-                                            <DataTrigger TargetType="HorizontalStackLayout" Binding="{Binding IsSelected}" Value="True">
-                                                <Setter Property="Opacity" Value="1" />
-                                            </DataTrigger>
-                                        </HorizontalStackLayout.Triggers>
-
-                                        <ImageButton Source="edit_2_icon.png" Style="{StaticResource IconImageButton}"
-			 Command="{Binding BindingContext.EditTrackCommand, Source={RelativeSource AncestorType={x:Type ContentPage}}}" 
-			 CommandParameter="{Binding .}"/>
-
-                                        <ImageButton Source="trash_2_icon.png" Style="{StaticResource IconImageButton}" BackgroundColor="{StaticResource DangerColor}"
-			 Command="{Binding BindingContext.DeleteTrackCommand, Source={RelativeSource AncestorType={x:Type ContentPage}}}" 
-			 CommandParameter="{Binding .}"/>
-                                    </HorizontalStackLayout>
                                 </Grid>
 
                                 <!-- Layer 3: Desktop Hover & Interaction Overlay -->
-                                <!-- On Mobile this completely vanishes. No gestures block the CollectionView! -->
-                                <Grid BackgroundColor="Transparent" IsVisible="{OnPlatform Default=False, WinUI=True, MacCatalyst=True}">
+                                <Grid BackgroundColor="Transparent">
                                     <Grid.GestureRecognizers>
                                         <PointerGestureRecognizer PointerEnteredCommand="{Binding PointerEnteredCommand}" PointerExitedCommand="{Binding PointerExitedCommand}" />
                                     </Grid.GestureRecognizers>
@@ -333,8 +315,8 @@
 
             </Grid>
         </Border>
-        <views:PlayerPaneView Grid.Column="2" />
 
+        <views:PlayerPaneView Grid.Column="2" />
 
         <!-- MODAL OVERLAY -->
         <Grid Grid.ColumnSpan="3" IsVisible="{Binding IsModalVisible}" ZIndex="100">

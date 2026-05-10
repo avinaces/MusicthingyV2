@@ -224,6 +224,9 @@
                                 </mpowerkit:VirtualizeListView.ItemTemplate>
                             </mpowerkit:VirtualizeListView>
 
+                            <!-- Invisible spacer that pushes the bottom of the list up exactly 70px (Mini Player height) -->
+                            <ContentView Grid.Row="2" HeightRequest="70" BackgroundColor="{StaticResource BgColor}" IsVisible="{Binding IsMediaSelected}" />
+
                             <!-- ROW 2: The Player Pane -->
                             <views:MobilePlayerPaneView Grid.Row="0" Grid.RowSpan="3" VerticalOptions="End"/>
                         </Grid>

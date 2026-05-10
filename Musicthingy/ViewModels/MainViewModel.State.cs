@@ -85,8 +85,13 @@ public partial class MainViewModel
         try
         {
             string path = Path.Combine(FileSystem.AppDataDirectory, LibraryFileName);
+            string tempPath = path + ".tmp";
+
             string json = JsonSerializer.Serialize(libraryData);
-            await File.WriteAllTextAsync(path, json);
+            await File.WriteAllTextAsync(tempPath, json);
+
+            // Atomically move the file (overwrites the old one safely)
+            File.Move(tempPath, path, overwrite: true);
         }
         catch (Exception ex)
         {

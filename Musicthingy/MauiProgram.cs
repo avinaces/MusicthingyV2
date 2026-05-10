@@ -2,6 +2,7 @@
 using LibVLCSharp.Shared;
 using Microsoft.Extensions.Logging;
 using MPowerKit.VirtualizeListView;
+using Musicthingy.ViewModels;
 
 namespace Musicthingy
 {
@@ -14,6 +15,7 @@ namespace Musicthingy
             Core.Initialize();
 
             var builder = MauiApp.CreateBuilder();
+            builder.Services.AddSingleton<MainViewModel>();
             builder.UseMauiApp<App>()
                 .UseMauiCommunityToolkit()
                 .UseMPowerKitListView()
@@ -25,12 +27,6 @@ namespace Musicthingy
             });
 #if DEBUG
             builder.Logging.AddDebug();
-#endif
-#if ANDROID
-            Microsoft.Maui.Handlers.WebViewHandler.Mapper.AppendToMapping("AllowAutoplay", (handler, view) =>
-            {
-                handler.PlatformView.Settings.MediaPlaybackRequiresUserGesture = false;
-            });
 #endif
 
             return builder.Build();

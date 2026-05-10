@@ -2,7 +2,8 @@
 <ContentView xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
              xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
              x:Class="Musicthingy.Views.MobilePlayerPaneView"
-             xmlns:toolkit="http://schemas.microsoft.com/dotnet/2022/maui/toolkit">
+             xmlns:toolkit="http://schemas.microsoft.com/dotnet/2022/maui/toolkit"
+             xmlns:models="clr-namespace:Musicthingy.Models">
 
     <Border x:Name="PlayerRoot" 
             Background="#161b22" 
@@ -182,10 +183,63 @@
                     </HorizontalStackLayout>
                 </VerticalStackLayout>
 
-                <!-- Lyrics -->
-                <ScrollView x:Name="LyricsScrollView" Grid.Row="1" VerticalOptions="Fill" Margin="0,15,0,0" IsVisible="False">
-                    <Label Text="{Binding CurrentTrack.Lyrics}" TextColor="#c9d1d9" FontSize="18" HorizontalOptions="Center" HorizontalTextAlignment="Center" VerticalOptions="Start" LineHeight="1.4" Margin="10,0,10,40"/>
-                </ScrollView>
+                <!-- Lyrics & No-Lyrics Zone -->
+                <Grid x:Name="LyricsScrollView" Grid.Row="1" Margin="0,15,0,0" IsVisible="False">
+
+                    <!-- Automatically Scrolling CollectionView for Timed Lyrics -->
+                    <CollectionView x:Name="LyricsCollectionView" ItemsSource="{Binding ActiveTimedLyrics}" SelectionMode="None" IsVisible="{Binding HasTimedLyrics}">
+                        <CollectionView.ItemTemplate>
+                            <DataTemplate x:DataType="models:TimedLyric">
+                                <Label Text="{Binding Text}" HorizontalOptions="Fill" HorizontalTextAlignment="Center" LineHeight="1.4" Margin="10,6,10,6">
+                                    <Label.Triggers>
+                                        <DataTrigger TargetType="Label" Binding="{Binding IsActive}" Value="True">
+                                            <Setter Property="TextColor" Value="#ffffff" />
+                                            <Setter Property="FontAttributes" Value="Bold" />
+                                            <Setter Property="FontSize" Value="22" />
+                                        </DataTrigger>
+                                        <DataTrigger TargetType="Label" Binding="{Binding IsActive}" Value="False">
+                                            <Setter Property="TextColor" Value="#8b949e" />
+                                            <Setter Property="FontAttributes" Value="None" />
+                                            <Setter Property="FontSize" Value="18" />
+                                        </DataTrigger>
+                                    </Label.Triggers>
+                                </Label>
+                            </DataTemplate>
+                        </CollectionView.ItemTemplate>
+                        <CollectionView.Footer>
+                            <BoxView HeightRequest="120" BackgroundColor="Transparent"/>
+                        </CollectionView.Footer>
+                    </CollectionView>
+
+                    <!-- ScrollView for standard Static text Lyrics -->
+                    <ScrollView VerticalOptions="Fill" IsVisible="{Binding HasStaticLyrics}">
+                        <Label Text="{Binding CurrentTrack.Lyrics}" 
+                               TextColor="#c9d1d9" 
+                               HorizontalOptions="Center" 
+                               HorizontalTextAlignment="Center" 
+                               VerticalOptions="Start" 
+                               Margin="10,0,10,40" 
+                               FontSize="18" 
+                               LineHeight="1.4"/>
+                    </ScrollView>
+
+                    <!-- Prompt to Find Lyrics -->
+                    <VerticalStackLayout VerticalOptions="Center" Spacing="16" IsVisible="{Binding HasNoLyrics}">
+                        <Label Text="No lyrics available for this track." TextColor="#8b949e" HorizontalOptions="Center" />
+
+                        <Button Text="Find Lyrics" Command="{Binding FindLyricsCommand}" 
+                                BackgroundColor="#21262d" TextColor="#58a6ff" CornerRadius="8" WidthRequest="160" HorizontalOptions="Center">
+                            <Button.Triggers>
+                                <DataTrigger TargetType="Button" Binding="{Binding IsFetchingLyrics}" Value="True">
+                                    <Setter Property="IsEnabled" Value="False" />
+                                    <Setter Property="Text" Value="Searching..." />
+                                </DataTrigger>
+                            </Button.Triggers>
+                        </Button>
+
+                        <ActivityIndicator IsRunning="True" Color="#58a6ff" WidthRequest="24" HeightRequest="24" IsVisible="{Binding IsFetchingLyrics}"/>
+                    </VerticalStackLayout>
+                </Grid>
             </Grid>
 
             <!-- Loading Overlay -->

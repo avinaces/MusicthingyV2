@@ -1,4 +1,6 @@
+using CommunityToolkit.Mvvm.Messaging;
 using Microsoft.Maui.Controls;
+using Musicthingy.Models;
 using System;
 using System.Linq;
 
@@ -19,6 +21,26 @@ public partial class MobilePlayerPaneView : ContentView
     private const double MiniHeight = 72;
     private const double MediumHeight = 280;
 
+
+    public MobilePlayerPaneView()
+    {
+        InitializeComponent();
+        SetupGestures();
+
+        // Subscribe to Auto-scroll Lyrics
+        WeakReferenceMessenger.Default.Register<ActiveLyricChangedMessage>(this, (r, m) =>
+        {
+            MainThread.BeginInvokeOnMainThread(() =>
+            {
+                // Only scroll if Expanded!
+                if (_targetState != PlayerState.Mini && m.Lyric != null)
+                {
+                    LyricsCollectionView.ScrollTo(m.Lyric, position: ScrollToPosition.Center, animate: true);
+                }
+            });
+        });
+    }
+
     // Safely fetch the max screen height dynamically instead of relying on this.Height
     private double FullScreenHeight
     {
@@ -30,12 +52,6 @@ public partial class MobilePlayerPaneView : ContentView
             var activePage = Shell.Current ?? Application.Current?.Windows.FirstOrDefault()?.Page;
             return activePage?.Height ?? 800;
         }
-    }
-
-    public MobilePlayerPaneView()
-    {
-        InitializeComponent();
-        SetupGestures();
     }
 
     private void SetupGestures()
@@ -186,10 +202,6 @@ public partial class MobilePlayerPaneView : ContentView
 
             // 3. Clear the queue for a perfectly clean slate
             vm.PlaybackQueue?.Clear();
-
-            // 4. Wipe the saved state from Preferences so the closed track doesn't resume on the next app launch
-            Microsoft.Maui.Storage.Preferences.Default.Remove("CurrentTrackData");
-            Microsoft.Maui.Storage.Preferences.Default.Remove("PlaybackQueueData");
         }
 
         // Reset translation properties invisibly so it behaves normally the next time a track is clicked

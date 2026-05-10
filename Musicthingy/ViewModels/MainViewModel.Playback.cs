@@ -316,9 +316,15 @@ public partial class MainViewModel
 
         if (newValue == null)
         {
+            ActiveTimedLyrics.Clear();
+            HasNoLyrics = true;
             _player?.Stop();
             return;
         }
+
+
+        ParseLyrics(newValue.Lyrics);
+        
 
         if (newValue.Playlist != null && !PlaybackQueue.Contains(newValue))
         {
