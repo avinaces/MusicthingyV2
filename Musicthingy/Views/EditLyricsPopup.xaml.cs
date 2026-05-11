@@ -5,24 +5,45 @@ using Musicthingy.Services;
 
 namespace Musicthingy.Views;
 
-public partial class EditLyricsPopup : Popup<string>
+public partial class EditLyricsPopup : Popup<bool>
 {
+    public EditLyricsForm Form { get; }
+
     public EditLyricsPopup(string initialLyrics, string defaultTitle, string defaultArtist)
     {
         InitializeComponent();
 
-        BindingContext = new EditLyricsForm(this, initialLyrics, defaultTitle, defaultArtist);
+        Form = new EditLyricsForm(initialLyrics, defaultTitle, defaultArtist);
+        BindingContext = Form;
 
 #if WINDOWS
         LyricsEditor.FontFamily = "Consolas";
 #endif
+
+#if ANDROID || IOS
+        var displayInfo = Microsoft.Maui.Devices.DeviceDisplay.Current.MainDisplayInfo;
+        double logicalWidth = displayInfo.Width / displayInfo.Density;
+        double logicalHeight = displayInfo.Height / displayInfo.Density;
+
+        // Set to act as a large centered native dialog
+        RootBorder.WidthRequest = logicalWidth * 0.95;
+        RootBorder.MaximumHeightRequest = logicalHeight * 0.85;
+#endif
+    }
+
+    private async void OnCancelClicked(object? sender, EventArgs e)
+    {
+        await CloseAsync(false);
+    }
+
+    private async void OnSaveClicked(object? sender, EventArgs e)
+    {
+        await CloseAsync(true);
     }
 }
 
 public partial class EditLyricsForm : ObservableObject
 {
-    private readonly Popup<string> _popup;
-
     [ObservableProperty] public partial string LyricsText { get; set; } = string.Empty;
     [ObservableProperty] public partial string SearchTitle { get; set; } = string.Empty;
     [ObservableProperty] public partial string SearchArtist { get; set; } = string.Empty;
@@ -31,18 +52,14 @@ public partial class EditLyricsForm : ObservableObject
     [ObservableProperty] public partial bool IsAdvancedOpen { get; set; }
     [ObservableProperty] public partial bool IsSearching { get; set; }
 
-    public EditLyricsForm(Popup<string> popup, string initialLyrics, string defaultTitle, string defaultArtist)
+    public EditLyricsForm(string initialLyrics, string defaultTitle, string defaultArtist)
     {
-        _popup = popup;
         LyricsText = initialLyrics;
         SearchTitle = defaultTitle;
         SearchArtist = defaultArtist;
     }
-
     [RelayCommand]
-    private void ToggleAdvanced() => IsAdvancedOpen = !IsAdvancedOpen;
-
-    [RelayCommand]
+    private void ToggleAdvanced() => IsAdvancedOpen = !IsAdvancedOpen; [RelayCommand]
     private async Task SearchOnlineAsync()
     {
         if (string.IsNullOrWhiteSpace(SearchTitle)) return;
@@ -64,7 +81,7 @@ public partial class EditLyricsForm : ObservableObject
             {
                 var activePage = Shell.Current ?? Application.Current?.Windows.FirstOrDefault()?.Page;
                 if (activePage != null)
-                    await activePage.DisplayAlertAsync("Not Found", "Could not find lyrics matching these filters.", "OK");
+                    await activePage.DisplayAlertAsync("Not Found", "Could not find lyrics matching these exact filters.", "OK");
             }
         }
         catch (Exception ex)
@@ -78,10 +95,4 @@ public partial class EditLyricsForm : ObservableObject
             IsSearching = false;
         }
     }
-
-    [RelayCommand]
-    private async Task Cancel() => await _popup.CloseAsync(null!);
-
-    [RelayCommand]
-    private async Task Save() => await _popup.CloseAsync(LyricsText);
 }
