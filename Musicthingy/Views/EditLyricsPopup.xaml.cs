@@ -9,11 +9,11 @@ public partial class EditLyricsPopup : Popup<bool>
 {
     public EditLyricsForm Form { get; }
 
-    public EditLyricsPopup(string initialLyrics, string defaultTitle, string defaultArtist)
+    public EditLyricsPopup(string initialLyrics, string defaultTitle, string defaultArtist, string trackUrl = "")
     {
         InitializeComponent();
 
-        Form = new EditLyricsForm(initialLyrics, defaultTitle, defaultArtist);
+        Form = new EditLyricsForm(initialLyrics, defaultTitle, defaultArtist, trackUrl);
         BindingContext = Form;
 
 #if WINDOWS
@@ -48,18 +48,23 @@ public partial class EditLyricsForm : ObservableObject
     [ObservableProperty] public partial string SearchTitle { get; set; } = string.Empty;
     [ObservableProperty] public partial string SearchArtist { get; set; } = string.Empty;
     [ObservableProperty] public partial string SearchType { get; set; } = "Timed Lyrics (LRC)";
+    [ObservableProperty] public partial string TrackUrl { get; set; } = string.Empty;
 
     [ObservableProperty] public partial bool IsAdvancedOpen { get; set; }
     [ObservableProperty] public partial bool IsSearching { get; set; }
 
-    public EditLyricsForm(string initialLyrics, string defaultTitle, string defaultArtist)
+    public EditLyricsForm(string initialLyrics, string defaultTitle, string defaultArtist, string trackUrl = "")
     {
-        LyricsText = initialLyrics;
-        SearchTitle = defaultTitle;
-        SearchArtist = defaultArtist;
+        LyricsText = initialLyrics ?? string.Empty;
+        SearchTitle = defaultTitle ?? string.Empty;
+        SearchArtist = defaultArtist ?? string.Empty;
+        TrackUrl = trackUrl ?? string.Empty;
     }
+
     [RelayCommand]
-    private void ToggleAdvanced() => IsAdvancedOpen = !IsAdvancedOpen; [RelayCommand]
+    private void ToggleAdvanced() => IsAdvancedOpen = !IsAdvancedOpen;
+
+    [RelayCommand]
     private async Task SearchOnlineAsync()
     {
         if (string.IsNullOrWhiteSpace(SearchTitle)) return;
@@ -67,10 +72,10 @@ public partial class EditLyricsForm : ObservableObject
 
         try
         {
-            string query = string.IsNullOrWhiteSpace(SearchArtist) ? SearchTitle : $"{SearchTitle} {SearchArtist}";
             bool wantTimed = SearchType == "Timed Lyrics (LRC)";
 
-            string? foundLyrics = await LyricsClient.SearchManualAsync(query, wantTimed);
+            // Share the same robust finding algorithm 
+            string? foundLyrics = await LyricsClient.FetchLyricsAsync(TrackUrl, SearchTitle, SearchArtist, wantTimed);
 
             if (!string.IsNullOrWhiteSpace(foundLyrics))
             {

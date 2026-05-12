@@ -19,7 +19,7 @@ public partial class MainViewModel
     [ObservableProperty] public partial string ModalInputText { get; set; } = string.Empty;
     [ObservableProperty] public partial bool IsModalInputVisible { get; set; }
     [ObservableProperty] public partial string ModalConfirmText { get; set; } = "OK";
-    [ObservableProperty] public partial Color ModalConfirmColor { get; set; } = Color.FromArgb("#58a6ff"); // Default Accent
+    [ObservableProperty] public partial Color ModalConfirmColor { get; set; } = Color.FromArgb("#2d5b8c"); // Default Accent
 
     private ModalBackgroundTapBehavior _backgroundTapBehavior;
     private TaskCompletionSource<(bool IsConfirmed, string Input)>? _modalTcs;
@@ -62,7 +62,7 @@ public partial class MainViewModel
         IsModalMessageVisible = true;
         IsModalInputVisible = false;
         ModalConfirmText = confirmText;
-        ModalConfirmColor = isDanger ? Color.FromArgb("#d73a49") : Color.FromArgb("#58a6ff");
+        ModalConfirmColor = isDanger ? Color.FromArgb("#5c181f") : Color.FromArgb("#2d5b8c");
         _backgroundTapBehavior = bgBehavior;
 
         IsModalVisible = true;
@@ -78,7 +78,7 @@ public partial class MainViewModel
         IsModalMessageVisible = false;
         IsModalInputVisible = true;
         ModalConfirmText = confirmText;
-        ModalConfirmColor = Color.FromArgb("#58a6ff");
+        ModalConfirmColor = Color.FromArgb("#2d5b8c");
         _backgroundTapBehavior = bgBehavior;
 
         IsModalVisible = true;

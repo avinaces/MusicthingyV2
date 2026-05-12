@@ -30,12 +30,12 @@
                 <VerticalStackLayout Spacing="12">
 
                     <Grid ColumnDefinitions="*, Auto" ColumnSpacing="12">
-                        <Button Grid.Column="0" Text="Search Online (Auto)" Command="{Binding SearchOnlineCommand}" BackgroundColor="#58a6ff" TextColor="White" CornerRadius="8" HeightRequest="48"/>
+                        <Button Grid.Column="0" Text="Search Online (Auto)" Command="{Binding SearchOnlineCommand}" BackgroundColor="{DynamicResource SwipeEditColor}" TextColor="White" CornerRadius="8" HeightRequest="48"/>
 
                         <ImageButton Grid.Column="1" Source="settings_icon.png" Command="{Binding ToggleAdvancedCommand}" WidthRequest="48" HeightRequest="48" BackgroundColor="#30363d" CornerRadius="8" Padding="12">
                             <ImageButton.Triggers>
                                 <DataTrigger TargetType="ImageButton" Binding="{Binding IsAdvancedOpen}" Value="True">
-                                    <Setter Property="BackgroundColor" Value="#58a6ff"/>
+                                    <Setter Property="BackgroundColor" Value="{DynamicResource SwipeEditColor}"/>
                                 </DataTrigger>
                             </ImageButton.Triggers>
                         </ImageButton>
@@ -75,7 +75,7 @@
                         </VerticalStackLayout>
                     </VerticalStackLayout>
 
-                    <ActivityIndicator IsRunning="{Binding IsSearching}" Color="#58a6ff" HeightRequest="24" IsVisible="{Binding IsSearching}" Margin="0,4,0,0"/>
+                    <ActivityIndicator IsRunning="{Binding IsSearching}" Color="{DynamicResource AccentColor}" HeightRequest="24" IsVisible="{Binding IsSearching}" Margin="0,4,0,0"/>
 
                 </VerticalStackLayout>
             </Border>
@@ -88,7 +88,7 @@
             <!-- Actions -->
             <HorizontalStackLayout Grid.Row="3" HorizontalOptions="End" Spacing="12" Margin="0,16,0,0">
                 <Button Text="Cancel" Clicked="OnCancelClicked" BackgroundColor="#161b22" TextColor="White" BorderColor="#30363d" BorderWidth="1" CornerRadius="8" HeightRequest="44" Padding="16,0" />
-                <Button Text="Save" Clicked="OnSaveClicked" BackgroundColor="#58a6ff" TextColor="White" CornerRadius="8" HeightRequest="44" Padding="24,0" />
+                <Button Text="Save" Clicked="OnSaveClicked" BackgroundColor="{DynamicResource SwipeEditColor}" TextColor="White" CornerRadius="8" HeightRequest="44" Padding="24,0" />
             </HorizontalStackLayout>
 
         </Grid>

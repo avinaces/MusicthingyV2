@@ -54,4 +54,7 @@
     <Color x:Key="TextColor">#c9d1d9</Color>
     <Color x:Key="BorderColor">#30363d</Color>
     <Color x:Key="TagBgColor">#1c304a</Color>
+
+    <Color x:Key="SwipeEditColor">#2d5b8c</Color>
+    <Color x:Key="SwipeDeleteColor">#5c181f</Color>
 </ResourceDictionary>

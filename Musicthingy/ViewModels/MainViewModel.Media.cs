@@ -26,7 +26,8 @@ public partial class MainViewModel
     {
         if (_libVLC != null) return;
 
-        _libVLC = new LibVLC("--no-video");
+        // --http-reconnect so VLC automatically retries connections
+        _libVLC = new LibVLC("--no-video", "--http-reconnect");
         _player = new MediaPlayer(_libVLC);
 
         // Convert VLC's absolute time to relative time for sliced tracks
@@ -87,17 +88,13 @@ public partial class MainViewModel
                 string widgetIconUrl = string.Empty;
                 var pl = CurrentTrack.Playlist;
                 var iconType = pl?.IconType ?? PlaylistIconType.Playlist;
-                //iconType = PlaylistIconType.YouTube;
 
                 if (iconType == PlaylistIconType.Track)
                 {
-                    // Prefer the track's icon, fallback to playlist icon
                     widgetIconUrl = !string.IsNullOrEmpty(CurrentTrack.IconUrl) ? CurrentTrack.IconUrl : pl?.IconUrl ?? string.Empty;
                 }
                 else if (iconType == PlaylistIconType.YouTube)
                 {
-                    // If the track is a YouTube URL, use YouTube's thumbnail URL (hqdefault).
-                    // If we can't determine a thumbnail, fallback to the playlist icon, then the track icon.
                     string? ytThumb = null;
                     if (!string.IsNullOrEmpty(CurrentTrack.Url) && (CurrentTrack.Url.Contains("youtube.com") || CurrentTrack.Url.Contains("youtu.be")))
                     {
@@ -107,12 +104,10 @@ public partial class MainViewModel
                             ytThumb = $"https://img.youtube.com/vi/{videoId.Value}/hqdefault.jpg";
                         }
                     }
-
                     widgetIconUrl = !string.IsNullOrEmpty(ytThumb) ? ytThumb : pl?.IconUrl ?? CurrentTrack.IconUrl ?? string.Empty;
                 }
                 else
                 {
-                    // Default / Playlist: prefer playlist icon, fallback to track icon
                     widgetIconUrl = !string.IsNullOrEmpty(pl?.IconUrl) ? pl.IconUrl : CurrentTrack.IconUrl ?? string.Empty;
                 }
 
@@ -231,7 +226,17 @@ public partial class MainViewModel
 
         var media = new Media(_libVLC!, new Uri(rawAudioUrl));
 
-        media.AddOption(":network-caching=1000");
+        // --- FIX FOR BACKGROUND SKIPPING & AUDIO CUTOUTS ---
+
+        // 1. Increase network caching drastically to 3000ms (3 seconds)
+        // to survive OS background CPU/Network throttling cycles (Doze).
+        media.AddOption(":network-caching=3000");
+
+        // 2. Disable clock synchronization and jitter dropping entirely.
+        // This prevents VLC from dropping "late" packets and skipping multiple 
+        // seconds ahead when the OS momentarily starves the CPU in the background.
+        media.AddOption(":clock-jitter=0");
+        media.AddOption(":clock-synchro=0");
 
         if (newValue.StartTime.HasValue) media.AddOption($":start-time={newValue.StartTime.Value}");
         if (newValue.EndTime.HasValue) media.AddOption($":stop-time={newValue.EndTime.Value}");

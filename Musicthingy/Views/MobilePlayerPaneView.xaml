@@ -184,7 +184,7 @@
                 </VerticalStackLayout>
 
                 <!-- Lyrics & No-Lyrics Zone -->
-                <Grid x:Name="LyricsScrollView" Grid.Row="1" Margin="0,15,0,0" IsVisible="False">
+                <Grid x:Name="LyricsScrollView" Grid.Row="1" Margin="0,20,0,0" IsVisible="False">
 
                     <!-- Automatically Scrolling CollectionView for Timed Lyrics -->
                     <CollectionView x:Name="LyricsCollectionView" ItemsSource="{Binding ActiveTimedLyrics}" SelectionMode="None" IsVisible="{Binding HasTimedLyrics}">

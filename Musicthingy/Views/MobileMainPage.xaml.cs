@@ -10,6 +10,8 @@ public partial class MobileMainPage : FlyoutPage
     private bool _isProgrammaticScroll = false;
     private double _lastScrollY = 0;
 
+    private CancellationTokenSource? _scrollCts;
+
     public MobileMainPage()
     {
         InitializeComponent();
@@ -22,7 +24,7 @@ public partial class MobileMainPage : FlyoutPage
             {
                 _isProgrammaticScroll = true;
 
-                // Wait a fraction of a second for the list to render if the playlist just switched
+                // Allow UI to render if playlist changed
                 await Task.Delay(150);
 
                 MainThread.BeginInvokeOnMainThread(() =>
@@ -34,11 +36,31 @@ public partial class MobileMainPage : FlyoutPage
                     catch { }
                 });
 
-                // Since the jump is now instant, we only need a tiny delay 
-                // to ignore the immediate scroll events fired by the jump.
-                await Task.Delay(200);
-                _isProgrammaticScroll = false;
+                // Instead of fixed delay, wait for scroll to settle
+                ResetScrollDetection();
             });
+        });
+    }
+
+    private void ResetScrollDetection()
+    {
+        _scrollCts?.Cancel();
+        _scrollCts = new CancellationTokenSource();
+
+        var token = _scrollCts.Token;
+
+        Task.Run(async () =>
+        {
+            try
+            {
+                // Wait until no scroll events fire for 300ms
+                await Task.Delay(300, token);
+                _isProgrammaticScroll = false;
+            }
+            catch (TaskCanceledException)
+            {
+                // Expected when new scroll events occur
+            }
         });
     }
 
@@ -50,7 +72,7 @@ public partial class MobileMainPage : FlyoutPage
         {
             if (BindingContext is ViewModels.MainViewModel vm)
             {
-                vm.IsAutoFollowEnabled = false; // Disable on manual playlist change
+                vm.IsAutoFollowEnabled = false;
                 vm.SelectedPlaylist = playlist;
             }
             this.IsPresented = false;
@@ -65,7 +87,7 @@ public partial class MobileMainPage : FlyoutPage
         {
             if (BindingContext is ViewModels.MainViewModel vm)
             {
-                vm.IsAutoFollowEnabled = false; // Disable if user manually selects a track to play
+                vm.IsAutoFollowEnabled = false;
                 vm.CurrentTrack = track;
             }
         }
@@ -90,11 +112,13 @@ public partial class MobileMainPage : FlyoutPage
         if (_isProgrammaticScroll)
         {
             _lastScrollY = e.ScrollY;
+
+            // Extend debounce window while scrolling continues
+            ResetScrollDetection();
             return;
         }
 
-        // Only disable Auto-Follow if it's a real deliberate vertical movement > 5 pixels
-        // (This filters out random MAUI layout shifts so it doesn't accidentally turn off)
+        // Only disable Auto-Follow on real user movement
         if (Math.Abs(e.ScrollY - _lastScrollY) > 5)
         {
             if (BindingContext is ViewModels.MainViewModel vm)
