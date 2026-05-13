@@ -10,6 +10,11 @@ namespace Musicthingy.Models;
 
 public partial class PlaylistItem : ObservableObject
 {
+    public PlaylistItem()
+    {
+        Tags.CollectionChanged += (s, e) => NotifyTagChanges();
+    }
+
     [ObservableProperty] public partial string Title { get; set; } = string.Empty;
     [ObservableProperty] public partial string Url { get; set; } = string.Empty;
     [ObservableProperty] public partial int? StartTime { get; set; }
@@ -29,15 +34,41 @@ public partial class PlaylistItem : ObservableObject
     [JsonIgnore]
     public bool IsResolutionAttempted { get; set; }
 
-    public bool HasTags => Tags.Count > 0;
-    public string Tag1 => Tags.Count > 0 ? Tags[0] : "";
-    public bool HasTag1 => Tags.Count > 0;
-    public string Tag2 => Tags.Count > 1 ? Tags[1] : "";
-    public bool HasTag2 => Tags.Count > 1;
-    public string Tag3 => Tags.Count > 2 ? Tags[2] : "";
-    public bool HasTag3 => Tags.Count > 2;
-    public string Tag4 => Tags.Count > 3 ? Tags[3] : "";
-    public bool HasTag4 => Tags.Count > 3;
+    // Helper to combine Playlist tags and Item tags
+    private List<string> AllDisplayTags =>
+        (Playlist?.Tags ?? Enumerable.Empty<string>())
+        .Concat(Tags)
+        .ToList();
+
+    public bool HasTags => AllDisplayTags.Count > 0;
+
+    public string Tag1 => AllDisplayTags.Count > 0 ? AllDisplayTags[0] : "";
+    public bool HasTag1 => AllDisplayTags.Count > 0;
+
+    public string Tag2 => AllDisplayTags.Count > 1 ? AllDisplayTags[1] : "";
+    public bool HasTag2 => AllDisplayTags.Count > 1;
+
+    public string Tag3 => AllDisplayTags.Count > 2 ? AllDisplayTags[2] : "";
+    public bool HasTag3 => AllDisplayTags.Count > 2;
+
+    public string Tag4 => AllDisplayTags.Count > 3 ? AllDisplayTags[3] : "";
+    public bool HasTag4 => AllDisplayTags.Count > 3;
+
+    // Call this to refresh the UI tags
+    public void NotifyTagChanges()
+    {
+        OnPropertyChanged(nameof(Tag1));
+        OnPropertyChanged(nameof(HasTag1));
+        OnPropertyChanged(nameof(Tag2));
+        OnPropertyChanged(nameof(HasTag2));
+        OnPropertyChanged(nameof(Tag3));
+        OnPropertyChanged(nameof(HasTag3));
+        OnPropertyChanged(nameof(Tag4));
+        OnPropertyChanged(nameof(HasTag4));
+    }
+
+    // Ensure UI updates if the playlist reference is changed
+    partial void OnPlaylistChanged(Playlist? value) => NotifyTagChanges();
 
     public string DisplayUrl
     {

@@ -22,6 +22,9 @@ public partial class Playlist : ObservableObject
     public Playlist()
     {
         Items.CollectionChanged += Items_CollectionChanged;
+        Tags.CollectionChanged += (s, e) => {
+            foreach (var item in Items) item.NotifyTagChanges();
+        };
     }
 
     [ObservableProperty]
