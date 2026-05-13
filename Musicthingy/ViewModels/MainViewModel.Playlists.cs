@@ -53,7 +53,7 @@ public partial class MainViewModel
                     {
                         Playlists.Add(importedPlaylist);
                         SelectedPlaylist = importedPlaylist;
-                        
+
                         RequestSaveLibrary(); // Trigger library save
                     });
                 }
@@ -80,7 +80,7 @@ public partial class MainViewModel
         {
             Playlists.Remove(playlist);
             if (SelectedPlaylist == playlist) SelectedPlaylist = null;
-            
+
             RequestSaveLibrary(); // Trigger library save
         }
     }
@@ -97,19 +97,51 @@ public partial class MainViewModel
         }
     }
 
+    // NEW: Scrapes all current tags dynamically, mixed with cached ones
+    public List<string> GetAllKnownTags()
+    {
+        var tags = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        // Gather from Playlists
+        foreach (var p in Playlists)
+        {
+            if (p.Tags != null)
+                foreach (var t in p.Tags) tags.Add(t);
+
+            if (p.Items != null)
+                foreach (var i in p.Items)
+                    if (i.Tags != null)
+                        foreach (var t in i.Tags) tags.Add(t);
+        }
+
+        // Gather from Global Cache (for tags that were created but not assigned to anything yet)
+        var storedTagsJson = Preferences.Default.Get("AppGlobalTags", "[]");
+        try
+        {
+            var stored = System.Text.Json.JsonSerializer.Deserialize<List<string>>(storedTagsJson);
+            if (stored != null)
+            {
+                foreach (var t in stored) tags.Add(t);
+            }
+        }
+        catch { }
+
+        return tags.ToList();
+    }
+
     [RelayCommand]
     private async Task EditTrackAsync(PlaylistItem track)
     {
-        var popup = new Views.EditTrackPopup(track);
+        var allTags = GetAllKnownTags();
+        var popup = new Views.EditTrackPopup(track, allTags);
 
-        // --- Fix is here: Replaced .MainPage with .Windows.FirstOrDefault()?.Page ---
         var activePage = Shell.Current ?? Application.Current?.Windows.FirstOrDefault()?.Page;
 
         if (activePage != null)
         {
-            var popupResult = await activePage.ShowPopupAsync<bool>(popup);
+            var result = await activePage.ShowPopupAsync<bool>(popup);
 
-            if (popupResult?.Result is true)
+            if (result.Result == true)
             {
                 RequestSaveLibrary();
             }

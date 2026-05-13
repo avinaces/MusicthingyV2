@@ -11,12 +11,14 @@ public partial class EditTrackPopup : Popup<bool>
 {
     private readonly PlaylistItem _originalTrack;
     private readonly EditTrackForm _form;
+    private readonly List<string> _allTags; // Keep reference to tags
 
-    public EditTrackPopup(PlaylistItem track)
+    public EditTrackPopup(PlaylistItem track, List<string> allTags)
     {
         InitializeComponent();
 
         _originalTrack = track;
+        _allTags = allTags;
 
         _form = new EditTrackForm
         {
@@ -34,14 +36,13 @@ public partial class EditTrackPopup : Popup<bool>
 
         BindingContext = _form;
 
-#if ANDROID || IOS
-        var displayInfo = Microsoft.Maui.Devices.DeviceDisplay.Current.MainDisplayInfo;
+#if ANDROID
+        var displayInfo = DeviceDisplay.Current.MainDisplayInfo;
         double logicalWidth = displayInfo.Width / displayInfo.Density;
         double logicalHeight = displayInfo.Height / displayInfo.Density;
 
-        // Set to act as a large centered native dialog (avoids clipping into notches/safe areas entirely)
-        RootBorder.WidthRequest = logicalWidth * 0.92;
-        RootBorder.MaximumHeightRequest = logicalHeight * 0.85;
+        RootBorder.WidthRequest = logicalWidth * 0.949;
+        RootBorder.MaximumHeightRequest = logicalHeight * 0.899;
 #endif
     }
 
@@ -55,7 +56,7 @@ public partial class EditTrackPopup : Popup<bool>
         _originalTrack.Title = _form.EditTitle ?? string.Empty;
         _originalTrack.Url = _form.EditUrl ?? string.Empty;
         _originalTrack.Lyrics = _form.EditLyrics;
-        _originalTrack.IconUrl = _form.EditIconUrl; // Update Image 
+        _originalTrack.IconUrl = _form.EditIconUrl;
 
         if (int.TryParse(_form.EditStartTime, out int start)) _originalTrack.StartTime = start;
         else _originalTrack.StartTime = null;
@@ -80,6 +81,46 @@ public partial class EditTrackPopup : Popup<bool>
             if (popupResult != null && popupResult.Result)
             {
                 _form.EditLyrics = lyricsPopup.Form.LyricsText;
+            }
+        }
+    }
+
+    private async void OnEditTagsClicked(object? sender, EventArgs e)
+    {
+        var tagsPopup = new EditTagsPopup(_form.Tags.ToList(), _allTags);
+        var activePage = Shell.Current ?? Application.Current?.Windows.FirstOrDefault()?.Page;
+
+        if (activePage != null)
+        {
+            var rawResult = await activePage.ShowPopupAsync<object>(tagsPopup);
+
+            // 1. Check if the result is directly the list
+            List<string>? selectedTags = rawResult as List<string>;
+
+            // 2. Fallback: If it's wrapped (e.g., has a .Result property), safely extract it
+            if (selectedTags == null && rawResult != null)
+            {
+                var resultProp = rawResult.GetType().GetProperty("Result");
+                if (resultProp != null)
+                {
+                    selectedTags = resultProp.GetValue(rawResult) as List<string>;
+                }
+            }
+
+            // 3. If we successfully got our tags list back, apply them
+            if (selectedTags != null)
+            {
+                _form.Tags.Clear();
+                foreach (var tag in selectedTags)
+                {
+                    _form.Tags.Add(tag);
+
+                    // Add to the master list of all known tags if it's new
+                    if (!_allTags.Contains(tag, StringComparer.OrdinalIgnoreCase))
+                    {
+                        _allTags.Add(tag);
+                    }
+                }
             }
         }
     }

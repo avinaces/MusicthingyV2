@@ -230,22 +230,18 @@ public partial class MainViewModel
         int currentIndex = PlaybackQueue.IndexOf(CurrentTrack);
         if (currentIndex == -1) return;
 
-        if (CurrentPosition.TotalSeconds > 3)
-        {
-            CurrentPositionSeconds = 0;
-            SeekCommand.Execute(null);
-            return;
-        }
-
         int prevIndex = currentIndex - 1;
         if (prevIndex < 0)
         {
+            // If we are on the very first track in the queue
             if (RepeatState == RepeatMode.All || RepeatState == RepeatMode.One)
             {
+                // Wrap around to the end of the queue
                 prevIndex = PlaybackQueue.Count - 1;
             }
             else
             {
+                // Nowhere else to go, so just restart the current track
                 CurrentPositionSeconds = 0;
                 SeekCommand.Execute(null);
                 return;
@@ -254,6 +250,7 @@ public partial class MainViewModel
 
         CurrentTrack = PlaybackQueue[prevIndex];
     }
+
     [RelayCommand]
     private void TogglePlay()
     {

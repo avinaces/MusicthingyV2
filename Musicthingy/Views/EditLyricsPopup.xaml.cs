@@ -27,7 +27,7 @@ public partial class EditLyricsPopup : Popup<bool>
 
         // Set to act as a large centered native dialog
         RootBorder.WidthRequest = logicalWidth * 0.95;
-        RootBorder.MaximumHeightRequest = logicalHeight * 0.85;
+        RootBorder.MaximumHeightRequest = logicalHeight * 0.9;
 #endif
     }
 

@@ -89,7 +89,7 @@
                         <FlexLayout Direction="Row" Wrap="Wrap" BindableLayout.ItemsSource="{Binding Tags}">
                             <BindableLayout.ItemTemplate>
                                 <DataTemplate x:DataType="x:String">
-                                    <Border Background="#1c304a" Stroke="{DynamicResource SwipeEditColor}" StrokeThickness="1" Padding="8,4" Margin="0,0,6,6">
+                                    <Border Background="#1c304a" Stroke="{DynamicResource SwipeEditColor}" StrokeThickness="1" Padding="8,4" Margin="0,0,3,6">
                                         <Border.StrokeShape>
                                             <RoundRectangle CornerRadius="8"/>
                                         </Border.StrokeShape>
@@ -98,13 +98,13 @@
                                 </DataTemplate>
                             </BindableLayout.ItemTemplate>
                         </FlexLayout>
-                        <ImageButton Source="tag_icon.png" BackgroundColor="#161b22" BorderColor="#30363d" BorderWidth="1" CornerRadius="8" Padding="10" WidthRequest="44" HeightRequest="44" HorizontalOptions="Start" />
+                        <ImageButton Source="tag_icon.png" Clicked="OnEditTagsClicked" Style="{StaticResource IconImageButton}" WidthRequest="44" HeightRequest="44" HorizontalOptions="Start" />
                     </VerticalStackLayout>
 
                     <!-- Lyrics Button -->
-                    <VerticalStackLayout Spacing="6" Margin="0,8,0,0">
+                    <VerticalStackLayout Spacing="6">
                         <Label Text="Lyrics" TextColor="#c9d1d9" FontSize="14" />
-                        <Button Text="Edit Lyrics" Clicked="OnEditLyricsClicked" BackgroundColor="{DynamicResource SwipeEditColor}" TextColor="White" CornerRadius="8" HeightRequest="48" HorizontalOptions="Start" Padding="20,0"/>
+                        <ImageButton Source="scroll_text_icon.png" Clicked="OnEditLyricsClicked" Style="{StaticResource IconImageButton}" WidthRequest="44" HeightRequest="44" HorizontalOptions="Start" />
                     </VerticalStackLayout>
 
                     <!-- Last Played -->

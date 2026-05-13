@@ -197,17 +197,36 @@
 
                                                                 <Grid HeightRequest="24" IsClippedToBounds="True">
                                                                     <HorizontalStackLayout Spacing="0" VerticalOptions="Center">
+                                                                        <!-- Tag 1 -->
                                                                         <Border Background="#1c304a" Stroke="{DynamicResource AccentColor}" StrokeThickness="1" Padding="5,1" Margin="0,0,1,1" IsVisible="{Binding HasTag1}">
                                                                             <Border.StrokeShape>
                                                                                 <RoundRectangle CornerRadius="6"/>
                                                                             </Border.StrokeShape>
                                                                             <Label Text="{Binding Tag1}" TextColor="#d9edff" FontSize="11"/>
                                                                         </Border>
+
+                                                                        <!-- Tag 2 -->
                                                                         <Border Background="#1c304a" Stroke="{DynamicResource AccentColor}" StrokeThickness="1" Padding="5,1" Margin="0,0,1,1" IsVisible="{Binding HasTag2}">
                                                                             <Border.StrokeShape>
                                                                                 <RoundRectangle CornerRadius="6"/>
                                                                             </Border.StrokeShape>
                                                                             <Label Text="{Binding Tag2}" TextColor="#d9edff" FontSize="11"/>
+                                                                        </Border>
+
+                                                                        <!-- Tag 3 -->
+                                                                        <Border Background="#1c304a" Stroke="{DynamicResource AccentColor}" StrokeThickness="1" Padding="5,1" Margin="0,0,1,1" IsVisible="{Binding HasTag3}">
+                                                                            <Border.StrokeShape>
+                                                                                <RoundRectangle CornerRadius="6"/>
+                                                                            </Border.StrokeShape>
+                                                                            <Label Text="{Binding Tag3}" TextColor="#d9edff" FontSize="11"/>
+                                                                        </Border>
+
+                                                                        <!-- Tag 4 -->
+                                                                        <Border Background="#1c304a" Stroke="{DynamicResource AccentColor}" StrokeThickness="1" Padding="5,1" Margin="0,0,1,1" IsVisible="{Binding HasTag4}">
+                                                                            <Border.StrokeShape>
+                                                                                <RoundRectangle CornerRadius="6"/>
+                                                                            </Border.StrokeShape>
+                                                                            <Label Text="{Binding Tag4}" TextColor="#d9edff" FontSize="11"/>
                                                                         </Border>
                                                                     </HorizontalStackLayout>
                                                                 </Grid>

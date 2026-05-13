@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<toolkit:Popup xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+               xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+               xmlns:toolkit="http://schemas.microsoft.com/dotnet/2022/maui/toolkit"
+               xmlns:local="clr-namespace:Musicthingy.Views"
+               x:Class="Musicthingy.Views.EditTagsPopup"
+               x:TypeArguments="x:Object"
+               x:Name="TagsPopupRoot"
+               CanBeDismissedByTappingOutsideOfPopup="False"
+               BackgroundColor="Transparent"
+               Padding="0">
+
+    <Border x:Name="RootBorder" BackgroundColor="#0d1117" Stroke="#30363d" StrokeThickness="1" StrokeShape="RoundRectangle 12" WidthRequest="{OnIdiom Desktop=450}" MaximumHeightRequest="{OnIdiom Desktop=750}" HorizontalOptions="Center" VerticalOptions="Center" Margin="0" Padding="0">
+
+        <Grid RowDefinitions="Auto, Auto, *, Auto" Padding="20, 24, 20, 20">
+
+            <Label Grid.Row="0" Text="Edit Tags" TextColor="#adcff0" FontSize="22" FontAttributes="Bold" Margin="0,0,0,16" />
+
+            <!-- Search / Add New Tag -->
+            <Grid Grid.Row="1" ColumnDefinitions="*, Auto" ColumnSpacing="12" Margin="0,0,0,16">
+                <Border BackgroundColor="#161b22" Stroke="#30363d" StrokeThickness="1" StrokeShape="RoundRectangle 8" Padding="12,0">
+                    <Entry Text="{Binding SearchText}" Placeholder="Search or create tag..." TextColor="White" PlaceholderColor="#8b949e" BackgroundColor="Transparent" HeightRequest="48" />
+                </Border>
+                <Button Grid.Column="1" Text="Create" Command="{Binding CreateTagCommand}" IsVisible="{Binding CanCreateTag}" BackgroundColor="#2d5b8c" TextColor="White" CornerRadius="8" HeightRequest="48" />
+            </Grid>
+
+            <!-- Scrollable Flow/Flex List of tap-to-toggle tags -->
+            <ScrollView Grid.Row="2" VerticalScrollBarVisibility="Never" Margin="0,0,0,16">
+                <FlexLayout Direction="Row" Wrap="Wrap" AlignItems="Start" AlignContent="Start" BindableLayout.ItemsSource="{Binding DisplayTags}">
+                    <BindableLayout.ItemTemplate>
+                        <DataTemplate x:DataType="local:SelectableTag">
+                            <Border BackgroundColor="{Binding BackgroundColor}" Stroke="{Binding BorderColor}" StrokeThickness="1" HeightRequest="36" Padding="14,0" Margin="2,4">
+                                <Border.StrokeShape>
+                                    <RoundRectangle CornerRadius="9"/>
+                                </Border.StrokeShape>
+                                <Border.GestureRecognizers>
+                                    <TapGestureRecognizer 
+                                        Command="{Binding Form.ToggleTagCommand, Source={x:Reference TagsPopupRoot}, x:DataType='local:EditTagsPopup'}" 
+                                        CommandParameter="{Binding .}" 
+                                    />
+                                </Border.GestureRecognizers>
+                                <Label Text="{Binding Name}" TextColor="{Binding TextColor}" FontSize="14" FontAttributes="Bold" VerticalOptions="Center" VerticalTextAlignment="Center"/>
+                            </Border>
+                        </DataTemplate>
+                    </BindableLayout.ItemTemplate>
+                </FlexLayout>
+            </ScrollView>
+
+            <HorizontalStackLayout Grid.Row="3" HorizontalOptions="End" Spacing="12">
+                <Button Text="Cancel" Clicked="OnCancelClicked" BackgroundColor="#161b22" TextColor="White" BorderColor="#30363d" BorderWidth="1" CornerRadius="8" HeightRequest="44" Padding="16,0" />
+                <Button Text="Save" Clicked="OnSaveClicked" BackgroundColor="#2d5b8c" TextColor="White" CornerRadius="8" HeightRequest="44" Padding="24,0" />
+            </HorizontalStackLayout>
+
+        </Grid>
+    </Border>
+</toolkit:Popup>
