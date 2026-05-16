@@ -24,11 +24,31 @@ public partial class BottomSheetContainer : ContentView
             container.OnPropertyChanged(nameof(HasFooter));
     }
 
-    public BottomSheetContainer() { InitializeComponent(); }
+    public BottomSheetContainer()
+    {
+        InitializeComponent();
+    }
+
+    protected override void OnParentSet()
+    {
+        base.OnParentSet();
+        if (Parent != null)
+        {
+            // Smoothly fade the overlay in. Doesn't conflict with SlideUpSheetHost translating the wrapper.
+            OverlayBox.Opacity = 0;
+            _ = OverlayBox.FadeToAsync(1, 250, Easing.CubicOut);
+        }
+    }
+
+    private void OnOverlayTapped(object? sender, TappedEventArgs e)
+    {
+        // Simply requesting to close lets SlideUpSheetHost handle its clean, native exit animation.
+        CloseRequested?.Invoke(this, EventArgs.Empty);
+    }
 
     private void OnPanUpdated(object? sender, PanUpdatedEventArgs e)
     {
-        // Translate the parent wrapper (the active sheet) so SlideUpSheetHost handles the exit animation seamlessly
+        // V1 Restored: Translate the parent wrapper exactly as SlideUpSheetHost expects.
         var sheetParent = this.Parent as View ?? this;
 
         switch (e.StatusType)
@@ -38,6 +58,9 @@ public partial class BottomSheetContainer : ContentView
                 if (e.TotalY > 0)
                 {
                     sheetParent.TranslationY = e.TotalY;
+
+                    // Dim the dark background dynamically as you drag it down
+                    OverlayBox.Opacity = Math.Clamp(1 - (e.TotalY / 400), 0, 1);
                 }
                 break;
 
@@ -51,7 +74,8 @@ public partial class BottomSheetContainer : ContentView
                 else
                 {
                     // Otherwise, spring back into place
-                    sheetParent.TranslateToAsync(0, 0, 250, Easing.CubicOut);
+                    _ = sheetParent.TranslateToAsync(0, 0, 250, Easing.CubicOut);
+                    _ = OverlayBox.FadeToAsync(1, 250, Easing.CubicOut);
                 }
                 break;
         }

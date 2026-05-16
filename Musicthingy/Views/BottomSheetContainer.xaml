@@ -4,34 +4,50 @@
              x:Class="Musicthingy.Views.BottomSheetContainer"
              x:Name="Root">
 
-    <Border BackgroundColor="#161b22" Stroke="#30363d" StrokeThickness="1" 
-            Margin="-1,0,-1,-2" Padding="0" VerticalOptions="End">
+    <!-- Wrapping everything in a Grid to layer the background under the sheet -->
+    <Grid>
 
-        <Border.StrokeShape>
-            <RoundRectangle CornerRadius="16,16,0,0" />
-        </Border.StrokeShape>
+        <!-- 1. Dark Background Overlay -->
+        <!-- Massive negative margin safely bypasses safe areas and bounds. 
+             Blocks inputs to lower sheets and natively darkens everything behind it. -->
+        <BoxView x:Name="OverlayBox" BackgroundColor="#A6000000" Margin="-4000">
+            <BoxView.GestureRecognizers>
+                <TapGestureRecognizer Tapped="OnOverlayTapped" />
+            </BoxView.GestureRecognizers>
+        </BoxView>
 
-        <!-- Using Auto for all rows allows it to exactly wrap its content height up to the screen's edge -->
-        <Grid RowDefinitions="Auto, Auto, Auto" Padding="20, 16, 20, 32">
+        <!-- 2. The Sheet Content (Restored exact V1 sizing) -->
+        <Border x:Name="SheetContent" BackgroundColor="#161b22" Stroke="#30363d" StrokeThickness="1" 
+                Margin="-1,0,-1,-2" Padding="0" VerticalOptions="End">
 
-            <!-- Draggable Header -->
-            <Grid Grid.Row="0" BackgroundColor="Transparent" Padding="0,0,0,16" x:Name="DragZone">
-                <Grid.GestureRecognizers>
-                    <PanGestureRecognizer PanUpdated="OnPanUpdated" />
-                </Grid.GestureRecognizers>
+            <Border.StrokeShape>
+                <RoundRectangle CornerRadius="16,16,0,0" />
+            </Border.StrokeShape>
 
-                <VerticalStackLayout Spacing="16">
-                    <RoundRectangle WidthRequest="36" HeightRequest="5" CornerRadius="2.5" Fill="#484f58" HorizontalOptions="Center" />
-                    <Label Text="{Binding Title, Source={x:Reference Root}}" TextColor="#adcff0" FontSize="20" FontAttributes="Bold" />
-                </VerticalStackLayout>
+            <!-- Gesture moved to the Border to allow dragging from anywhere.
+                 Standard controls (Buttons, scrollable Editors) natively intercept their own touches. -->
+            <Border.GestureRecognizers>
+                <PanGestureRecognizer PanUpdated="OnPanUpdated" />
+            </Border.GestureRecognizers>
+
+            <!-- Auto for all rows exactly like V1, so it tightly hugs its contents (No full screen bug) -->
+            <Grid RowDefinitions="Auto, Auto, Auto" Padding="20, 16, 20, 32">
+
+                <!-- Draggable Header -->
+                <Grid Grid.Row="0" BackgroundColor="Transparent" Padding="0,0,0,16" InputTransparent="True">
+                    <VerticalStackLayout Spacing="16">
+                        <RoundRectangle WidthRequest="36" HeightRequest="5" CornerRadius="2.5" Fill="#484f58" HorizontalOptions="Center" />
+                        <Label Text="{Binding Title, Source={x:Reference Root}}" TextColor="#adcff0" FontSize="20" FontAttributes="Bold" />
+                    </VerticalStackLayout>
+                </Grid>
+
+                <!-- Body Zone -->
+                <ContentView Grid.Row="1" Content="{Binding Body, Source={x:Reference Root}}" />
+
+                <!-- Footer Zone -->
+                <ContentView Grid.Row="2" Content="{Binding Footer, Source={x:Reference Root}}" Margin="0,16,0,0" IsVisible="{Binding HasFooter, Source={x:Reference Root}}" />
+
             </Grid>
-
-            <!-- Body (Dynamic Size) -->
-            <ContentView Grid.Row="1" Content="{Binding Body, Source={x:Reference Root}}" />
-
-            <!-- Custom Footer -->
-            <ContentView Grid.Row="2" Content="{Binding Footer, Source={x:Reference Root}}" Margin="0,16,0,0" IsVisible="{Binding HasFooter, Source={x:Reference Root}}" />
-
-        </Grid>
-    </Border>
+        </Border>
+    </Grid>
 </ContentView>
