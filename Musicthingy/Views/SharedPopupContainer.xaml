@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentView xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             x:Class="Musicthingy.Views.SharedPopupContainer"
+             x:Name="Root">
+
+    <!-- 
+        Mobile: Full width, docked to bottom, rounded top corners
+        Desktop: Centered, fixed width, fully rounded
+    -->
+    <Border BackgroundColor="#0d1117"
+            Stroke="#30363d"
+            StrokeThickness="{OnIdiom Desktop=1, Phone=0}"
+            HorizontalOptions="{OnIdiom Desktop=Center, Phone=Fill}"
+            VerticalOptions="{OnIdiom Desktop=Center, Phone=End}"
+            WidthRequest="{OnIdiom Desktop={Binding DesktopWidth, Source={x:Reference Root}}, Phone=-1}"
+            MaximumHeightRequest="{OnIdiom Desktop=750, Phone=800}"
+            Margin="0"
+            Padding="0">
+
+        <Border.StrokeShape>
+            <RoundRectangle CornerRadius="{OnIdiom Desktop=12, Phone='24,24,0,0'}" />
+        </Border.StrokeShape>
+
+        <!-- Dynamic padding for mobile to account for the bottom home bar -->
+        <Grid RowDefinitions="Auto, *, Auto" Padding="{OnIdiom Desktop='20, 24, 20, 20', Phone='20, 16, 20, 32'}">
+
+            <!-- Visual Drag Handle (Visible only on mobile) -->
+            <RoundRectangle Grid.Row="0" WidthRequest="40" HeightRequest="4" CornerRadius="2" 
+                            Fill="#30363d" HorizontalOptions="Center" VerticalOptions="Start" 
+                            Margin="0,-4,0,12" IsVisible="{OnIdiom Desktop=False, Phone=True}" />
+
+            <!-- Title -->
+            <Label Grid.Row="0" Text="{Binding Title, Source={x:Reference Root}}" TextColor="#adcff0" 
+                   FontSize="22" FontAttributes="Bold" Margin="0,12,0,16" />
+
+            <!-- The dynamically injected Body content -->
+            <ContentView Grid.Row="1" Content="{Binding Body, Source={x:Reference Root}}" />
+
+            <!-- Action Buttons -->
+            <HorizontalStackLayout Grid.Row="2" HorizontalOptions="End" Spacing="12" Margin="0,16,0,0">
+                <Button Text="Cancel" Clicked="OnCancelClicked" BackgroundColor="#161b22" TextColor="White" 
+                        BorderColor="#30363d" BorderWidth="1" CornerRadius="8" HeightRequest="44" Padding="16,0" />
+                <Button Text="{Binding SaveText, Source={x:Reference Root}}" Clicked="OnSaveClicked" 
+                        BackgroundColor="{DynamicResource SwipeEditColor}" TextColor="White" 
+                        CornerRadius="8" HeightRequest="44" Padding="24,0" />
+            </HorizontalStackLayout>
+        </Grid>
+    </Border>
+</ContentView>

@@ -133,18 +133,16 @@ public partial class MainViewModel
     private async Task EditTrackAsync(PlaylistItem track)
     {
         var allTags = GetAllKnownTags();
-        var popup = new Views.EditTrackPopup(track, allTags);
 
-        var activePage = Shell.Current ?? Application.Current?.Windows.FirstOrDefault()?.Page;
+        // Create the View
+        var sheet = new Views.EditTrackSheet(track, allTags);
 
-        if (activePage != null)
+        // Await it native natively
+        var result = await Services.SheetManager.ShowAsync<bool>(sheet);
+
+        if (result)
         {
-            var result = await activePage.ShowPopupAsync<bool>(popup);
-
-            if (result.Result == true)
-            {
-                RequestSaveLibrary();
-            }
+            RequestSaveLibrary();
         }
     }
 

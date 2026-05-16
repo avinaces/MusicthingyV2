@@ -15,6 +15,9 @@ public partial class MobilePlayerPaneView : ContentView
     private GestureIntent _currentGesture = GestureIntent.None;
     private double _startPanHeight;
 
+    // Flag to pause layout-heavy actions (like ScrollTo) during 60fps animations
+    private bool _isAnimating;
+
     private const double MiniHeight = 72;
     private const double MediumHeight = 280;
 
@@ -27,6 +30,10 @@ public partial class MobilePlayerPaneView : ContentView
 
         WeakReferenceMessenger.Default.Register<ActiveLyricChangedMessage>(this, (r, m) =>
         {
+            // 🚀 CRITICAL OPTIMIZATION: Do not force layout scrolls while resizing/panning
+            if (_isAnimating || _currentGesture != GestureIntent.None)
+                return;
+
             MainThread.BeginInvokeOnMainThread(() =>
             {
                 if (_targetState != PlayerState.Mini && m.Lyric != null)
@@ -73,6 +80,9 @@ public partial class MobilePlayerPaneView : ContentView
             case GestureStatus.Started:
                 _startPanHeight = PlayerRoot.Height;
                 _currentGesture = GestureIntent.None;
+
+                // Force visible BEFORE layout changes to avoid layout stall stutter mid-drag
+                PrepareVisibilityForAnimation();
                 break;
 
             case GestureStatus.Running:
@@ -144,57 +154,84 @@ public partial class MobilePlayerPaneView : ContentView
         }
     }
 
+    private void PrepareVisibilityForAnimation()
+    {
+        _isAnimating = true;
+        MiniControls.IsVisible = true;
+        ExpandedHeaderControls.IsVisible = true;
+        DragHandle.IsVisible = true;
+        ExpandedContentZone.IsVisible = true;
+        if (NoLyricsPrompt != null) NoLyricsPrompt.IsVisible = true;
+    }
+
+    private void FinalizeVisibilityForState()
+    {
+        _isAnimating = false;
+
+        // Only safely update IsVisible when the animation has completely stopped
+        MiniControls.IsVisible = MiniControls.Opacity > 0.01;
+        ExpandedHeaderControls.IsVisible = ExpandedHeaderControls.Opacity > 0.01;
+        DragHandle.IsVisible = DragHandle.Opacity > 0.01;
+        ExpandedContentZone.IsVisible = PlayerRoot.HeightRequest > (MiniHeight + 5);
+
+        if (NoLyricsPrompt != null)
+            NoLyricsPrompt.IsVisible = NoLyricsPrompt.Opacity > 0.01;
+
+        // Re-sync lyrics to current position now that the animation has safely completed
+        if (_targetState != PlayerState.Mini)
+        {
+            var activeLyric = LyricsCollectionView.ItemsSource?.Cast<TimedLyric>().FirstOrDefault(l => l.IsActive);
+            if (activeLyric != null)
+                LyricsCollectionView.ScrollTo(activeLyric, position: ScrollToPosition.Center, animate: true);
+        }
+    }
+
     private void UpdateLayoutForHeight(double height)
     {
         double progressToMedium = Math.Clamp((height - MiniHeight) / (MediumHeight - MiniHeight), 0, 1);
+
+        // 🚀 CRITICAL OPTIMIZATION: Fix the ContentZone height so CollectionView never remeasures. 
+        // We let the parent Border's HeightRequest simply reveal the list via clipping.
+        if (ExpandedContentZone.HeightRequest < 0 || Math.Abs(ExpandedContentZone.HeightRequest - FullScreenHeight) > 1)
+        {
+            ExpandedContentZone.HeightRequest = FullScreenHeight;
+        }
 
         double imgSize = 44 + (24 * progressToMedium);
         TrackImageBorder.WidthRequest = imgSize;
         TrackImageBorder.HeightRequest = imgSize;
 
-        double miniOpacity = Math.Clamp(1.0 - (progressToMedium / 0.3), 0, 1);
-        MiniControls.Opacity = miniOpacity;
-        MiniControls.IsVisible = miniOpacity > 0.01;
+        MiniControls.Opacity = Math.Clamp(1.0 - (progressToMedium / 0.3), 0, 1);
 
         double expandedOpacity = Math.Clamp((progressToMedium - 0.3) / 0.7, 0, 1);
         ExpandedHeaderControls.Opacity = expandedOpacity;
-        ExpandedHeaderControls.IsVisible = expandedOpacity > 0.01;
-
         DragHandle.Opacity = expandedOpacity;
-        DragHandle.IsVisible = expandedOpacity > 0.01;
-
         ExpandedContentZone.Opacity = expandedOpacity;
-        ExpandedContentZone.IsVisible = height > (MiniHeight + 5);
 
-        // 5. Smoothly morphed MARGIN instead of Padding to prevent Grid snapping
-        double marginLr = 12 + (4 * progressToMedium);        // 12 -> 16
-        double marginTop = 14 + (12 * progressToMedium);      // 14 -> 26
-        double marginBot = 14 - (6 * progressToMedium);       // 14 -> 8
+        double marginLr = 12 + (4 * progressToMedium);
+        double marginTop = 14 + (12 * progressToMedium);
+        double marginBot = 14 - (6 * progressToMedium);
         HeaderContentGrid.Margin = new Thickness(marginLr, marginTop, marginLr, marginBot);
+
+        // 🚀 GPU Optimization: Pushing the content down using Transforms instead of Grid Rows
+        double headerHeight = 72 + (30 * progressToMedium); // Margins + image size diff equates to +30px height diff
+        ExpandedContentZone.TranslationY = headerHeight;
 
         double fullHeight = FullScreenHeight;
         if (fullHeight > MediumHeight && NoLyricsPrompt != null)
         {
             double progressToFull = Math.Clamp((height - MediumHeight) / (fullHeight - MediumHeight), 0, 1);
-            double promptOpacity = Math.Clamp(progressToFull * 2, 0, 1);
-
-            NoLyricsPrompt.Opacity = promptOpacity;
-            NoLyricsPrompt.IsVisible = promptOpacity > 0.01;
+            NoLyricsPrompt.Opacity = Math.Clamp(progressToFull * 2, 0, 1);
         }
     }
 
     private async void ClosePlayer(bool isHorizontal)
     {
+        _isAnimating = true;
         uint length = 200;
 
-        if (isHorizontal)
-        {
-            await PlayerRoot.TranslateToAsync(1000, 0, length, Easing.CubicIn);
-        }
-        else
-        {
-            await PlayerRoot.TranslateToAsync(0, MiniHeight + 100, length, Easing.CubicIn);
-        }
+        if (isHorizontal) await PlayerRoot.TranslateToAsync(1000, 0, length, Easing.CubicIn);
+        else await PlayerRoot.TranslateToAsync(0, MiniHeight + 100, length, Easing.CubicIn);
 
         if (this.BindingContext is Musicthingy.ViewModels.MainViewModel vm)
         {
@@ -209,12 +246,12 @@ public partial class MobilePlayerPaneView : ContentView
         _targetState = PlayerState.Mini;
 
         UpdateLayoutForHeight(MiniHeight);
+        FinalizeVisibilityForState();
     }
 
     private void SnapToBestState()
     {
         double currentHeight = PlayerRoot.Height;
-
         if (currentHeight > (FullScreenHeight * 0.6)) AnimateToState(PlayerState.FullScreen);
         else if (currentHeight > (MiniHeight + 80)) AnimateToState(PlayerState.Medium);
         else AnimateToState(PlayerState.Mini);
@@ -223,6 +260,8 @@ public partial class MobilePlayerPaneView : ContentView
     private void AnimateToState(PlayerState state)
     {
         _targetState = state;
+        PrepareVisibilityForAnimation();
+
         double targetHeight = state switch
         {
             PlayerState.FullScreen => FullScreenHeight,
@@ -240,6 +279,9 @@ public partial class MobilePlayerPaneView : ContentView
             end: targetHeight,
             easing: Easing.CubicOut);
 
-        heightAnimation.Commit(this, "PlayerResize", length: 250);
+        heightAnimation.Commit(this, "PlayerResize", length: 250, finished: (v, c) =>
+        {
+            FinalizeVisibilityForState();
+        });
     }
 }

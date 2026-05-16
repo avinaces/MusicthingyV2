@@ -17,6 +17,8 @@ public partial class MobileMainPage : FlyoutPage
         InitializeComponent();
         BindingContext = new ViewModels.MainViewModel();
 
+        Services.SheetManager.Host = GlobalSheetHost;
+
         // Listen for requests to scroll to the playing track
         WeakReferenceMessenger.Default.Register<ScrollToTrackMessage>(this, (r, m) =>
         {

@@ -1,5 +1,3 @@
-using CommunityToolkit.Maui.Extensions;
-using CommunityToolkit.Maui.Views;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Musicthingy.Models;
@@ -7,13 +5,15 @@ using System.Collections.ObjectModel;
 
 namespace Musicthingy.Views;
 
-public partial class EditTrackPopup : Popup<bool>
+public partial class EditTrackSheet : ContentView, IBottomSheet
 {
+    public Action<object?>? CloseAction { get; set; }
+
     private readonly PlaylistItem _originalTrack;
     private readonly EditTrackForm _form;
-    private readonly List<string> _allTags; // Keep reference to tags
+    private readonly List<string> _allTags;
 
-    public EditTrackPopup(PlaylistItem track, List<string> allTags)
+    public EditTrackSheet(PlaylistItem track, List<string> allTags)
     {
         InitializeComponent();
 
@@ -35,23 +35,12 @@ public partial class EditTrackPopup : Popup<bool>
         };
 
         BindingContext = _form;
-
-#if ANDROID
-        var displayInfo = DeviceDisplay.Current.MainDisplayInfo;
-        double logicalWidth = displayInfo.Width / displayInfo.Density;
-        double logicalHeight = displayInfo.Height / displayInfo.Density;
-
-        RootBorder.WidthRequest = logicalWidth * 0.949;
-        RootBorder.MaximumHeightRequest = logicalHeight * 0.899;
-#endif
     }
 
-    private async void OnCancelClicked(object? sender, EventArgs e)
-    {
-        await CloseAsync(false);
-    }
+    private void OnCloseRequested(object? sender, EventArgs e) => CloseAction?.Invoke(null);
+    private void OnCancelClicked(object? sender, EventArgs e) => CloseAction?.Invoke(false);
 
-    private async void OnSaveClicked(object? sender, EventArgs e)
+    private void OnSaveClicked(object? sender, EventArgs e)
     {
         _originalTrack.Title = _form.EditTitle ?? string.Empty;
         _originalTrack.Url = _form.EditUrl ?? string.Empty;
@@ -67,59 +56,29 @@ public partial class EditTrackPopup : Popup<bool>
         _originalTrack.Tags.Clear();
         foreach (var tag in _form.Tags) _originalTrack.Tags.Add(tag);
 
-        await CloseAsync(true);
+        CloseAction?.Invoke(true);
     }
 
     private async void OnEditLyricsClicked(object? sender, EventArgs e)
     {
-        var lyricsPopup = new EditLyricsPopup(_form.EditLyrics, _form.EditTitle, _originalTrack.Artist ?? "");
-        var activePage = Shell.Current ?? Application.Current?.Windows.FirstOrDefault()?.Page;
-
-        if (activePage != null)
-        {
-            var popupResult = await activePage.ShowPopupAsync<bool>(lyricsPopup);
-            if (popupResult != null && popupResult.Result)
-            {
-                _form.EditLyrics = lyricsPopup.Form.LyricsText;
-            }
-        }
+        var lyricsSheet = new EditLyricsSheet(_form.EditLyrics, _form.EditTitle, _originalTrack.Artist ?? "");
+        var result = await Services.SheetManager.ShowAsync<bool>(lyricsSheet);
+        if (result) _form.EditLyrics = lyricsSheet.Form.LyricsText;
     }
 
     private async void OnEditTagsClicked(object? sender, EventArgs e)
     {
-        var tagsPopup = new EditTagsPopup(_form.Tags.ToList(), _allTags);
-        var activePage = Shell.Current ?? Application.Current?.Windows.FirstOrDefault()?.Page;
-
-        if (activePage != null)
+        var tagsSheet = new EditTagsSheet(_form.Tags.ToList(), _allTags);
+        var selectedTags = await Services.SheetManager.ShowAsync<List<string>>(tagsSheet);
+        if (selectedTags != null)
         {
-            var rawResult = await activePage.ShowPopupAsync<object>(tagsPopup);
-
-            // 1. Check if the result is directly the list
-            List<string>? selectedTags = rawResult as List<string>;
-
-            // 2. Fallback: If it's wrapped (e.g., has a .Result property), safely extract it
-            if (selectedTags == null && rawResult != null)
+            _form.Tags.Clear();
+            foreach (var tag in selectedTags)
             {
-                var resultProp = rawResult.GetType().GetProperty("Result");
-                if (resultProp != null)
+                _form.Tags.Add(tag);
+                if (!_allTags.Contains(tag, StringComparer.OrdinalIgnoreCase))
                 {
-                    selectedTags = resultProp.GetValue(rawResult) as List<string>;
-                }
-            }
-
-            // 3. If we successfully got our tags list back, apply them
-            if (selectedTags != null)
-            {
-                _form.Tags.Clear();
-                foreach (var tag in selectedTags)
-                {
-                    _form.Tags.Add(tag);
-
-                    // Add to the master list of all known tags if it's new
-                    if (!_allTags.Contains(tag, StringComparer.OrdinalIgnoreCase))
-                    {
-                        _allTags.Add(tag);
-                    }
+                    _allTags.Add(tag);
                 }
             }
         }
@@ -145,14 +104,7 @@ public partial class EditTrackForm : ObservableObject
     {
         try
         {
-            // FIX: Using FilePicker instead of the obsolete MediaPicker.PickPhotoAsync
-            // This prevents System.ArgumentException and properly targets file browsing.
-            var result = await FilePicker.Default.PickAsync(new PickOptions
-            {
-                PickerTitle = "Select Track Icon",
-                FileTypes = FilePickerFileType.Images
-            });
-
+            var result = await FilePicker.Default.PickAsync(new PickOptions { PickerTitle = "Select Track Icon", FileTypes = FilePickerFileType.Images });
             if (result != null)
             {
                 using var stream = await result.OpenReadAsync();
@@ -181,9 +133,7 @@ public partial class EditTrackForm : ObservableObject
         }
         catch (Exception ex)
         {
-            var activePage = Shell.Current ?? Application.Current?.Windows.FirstOrDefault()?.Page;
-            if (activePage != null)
-                await activePage.DisplayAlertAsync("Error", $"Could not load image: {ex.Message}", "OK");
+            await Shell.Current.DisplayAlertAsync("Error", $"Could not load image: {ex.Message}", "OK");
         }
     }
 
@@ -191,8 +141,6 @@ public partial class EditTrackForm : ObservableObject
     private void ResetIcon()
     {
         EditIconUrl = string.Empty;
-
-        // Let the system generate a fresh placeholder immediately using the current title
         ItemIconSource = IconGenerator.GenerateIcon(string.IsNullOrEmpty(EditTitle) ? "?" : EditTitle, 8, 48);
     }
 
@@ -205,7 +153,7 @@ public partial class EditTrackForm : ObservableObject
             if (bitmap == null) return null;
 
             int minDim = Math.Min(bitmap.Width, bitmap.Height);
-            if (minDim <= 0) return null; // Safe check
+            if (minDim <= 0) return null;
 
             int x = (bitmap.Width - minDim) / 2;
             int y = (bitmap.Height - minDim) / 2;
@@ -214,8 +162,6 @@ public partial class EditTrackForm : ObservableObject
             var scaled = Android.Graphics.Bitmap.CreateScaledBitmap(cropped, targetSize, targetSize, true);
 
             using var ms = new MemoryStream();
-
-            // FIX: Added null-forgiving operator (!) to suppress the parameter format warning.
             await scaled!.CompressAsync(Android.Graphics.Bitmap.CompressFormat.Png!, 100, ms);
 
             bitmap.Recycle();
@@ -233,12 +179,10 @@ public partial class EditTrackForm : ObservableObject
     {
         try
         {
-            // Read the MAUI stream fully into a managed byte array
             using var memStream = new MemoryStream();
             await stream.CopyToAsync(memStream);
             byte[] imageBytes = memStream.ToArray();
 
-            // Write the bytes directly to a purely native WinRT stream
             using var ras = new Windows.Storage.Streams.InMemoryRandomAccessStream();
             using (var writer = new Windows.Storage.Streams.DataWriter(ras))
             {
@@ -256,13 +200,10 @@ public partial class EditTrackForm : ObservableObject
             uint minDim = Math.Min(w, h);
             if (minDim == 0) return null;
 
-            // FIX: WinRT applies Scaling BEFORE Cropping!
-            // 1. Scale the image down so the smallest side matches targetSize
             double scale = (double)targetSize / minDim;
             uint scaledW = Math.Max((uint)targetSize, (uint)Math.Round(w * scale));
             uint scaledH = Math.Max((uint)targetSize, (uint)Math.Round(h * scale));
 
-            // 2. Calculate the crop coordinates relative to the newly SCALED image
             uint cropX = (scaledW - (uint)targetSize) / 2;
             uint cropY = (scaledH - (uint)targetSize) / 2;
 
@@ -273,13 +214,7 @@ public partial class EditTrackForm : ObservableObject
             { 
                 ScaledWidth = scaledW, 
                 ScaledHeight = scaledH,
-                Bounds = new Windows.Graphics.Imaging.BitmapBounds 
-                { 
-                    X = cropX, 
-                    Y = cropY, 
-                    Width = (uint)targetSize, 
-                    Height = (uint)targetSize 
-                },
+                Bounds = new Windows.Graphics.Imaging.BitmapBounds { X = cropX, Y = cropY, Width = (uint)targetSize, Height = (uint)targetSize },
                 InterpolationMode = Windows.Graphics.Imaging.BitmapInterpolationMode.Fant
             };
 
@@ -290,20 +225,13 @@ public partial class EditTrackForm : ObservableObject
                 Windows.Graphics.Imaging.ExifOrientationMode.IgnoreExifOrientation,
                 Windows.Graphics.Imaging.ColorManagementMode.DoNotColorManage);
 
-            // Because we cropped a targetSize x targetSize area, 
-            // the pixel buffer strictly matches the target dimensions.
             encoder.SetPixelData(
                 Windows.Graphics.Imaging.BitmapPixelFormat.Bgra8,
                 Windows.Graphics.Imaging.BitmapAlphaMode.Premultiplied,
-                (uint)targetSize,
-                (uint)targetSize,
-                decoder.DpiX,
-                decoder.DpiY,
-                pixels.DetachPixelData());
+                (uint)targetSize, (uint)targetSize, decoder.DpiX, decoder.DpiY, pixels.DetachPixelData());
 
             await encoder.FlushAsync();
             
-            // Read the native outStream back to managed bytes
             var outBytes = new byte[outStream.Size];
             using var reader = new Windows.Storage.Streams.DataReader(outStream.GetInputStreamAt(0));
             await reader.LoadAsync((uint)outStream.Size);

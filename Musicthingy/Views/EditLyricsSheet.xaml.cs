@@ -1,15 +1,15 @@
-using CommunityToolkit.Maui.Views;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Musicthingy.Services;
 
 namespace Musicthingy.Views;
 
-public partial class EditLyricsPopup : Popup<bool>
+public partial class EditLyricsSheet : ContentView, IBottomSheet
 {
+    public Action<object?>? CloseAction { get; set; }
     public EditLyricsForm Form { get; }
 
-    public EditLyricsPopup(string initialLyrics, string defaultTitle, string defaultArtist, string trackUrl = "")
+    public EditLyricsSheet(string initialLyrics, string defaultTitle, string defaultArtist, string trackUrl = "")
     {
         InitializeComponent();
 
@@ -19,26 +19,16 @@ public partial class EditLyricsPopup : Popup<bool>
 #if WINDOWS
         LyricsEditor.FontFamily = "Consolas";
 #endif
-
-#if ANDROID || IOS
-        var displayInfo = Microsoft.Maui.Devices.DeviceDisplay.Current.MainDisplayInfo;
-        double logicalWidth = displayInfo.Width / displayInfo.Density;
-        double logicalHeight = displayInfo.Height / displayInfo.Density;
-
-        // Set to act as a large centered native dialog
-        RootBorder.WidthRequest = logicalWidth * 0.95;
-        RootBorder.MaximumHeightRequest = logicalHeight * 0.9;
-#endif
     }
 
-    private async void OnCancelClicked(object? sender, EventArgs e)
+    private void OnCancelClicked(object? sender, EventArgs e)
     {
-        await CloseAsync(false);
+        CloseAction?.Invoke(false);
     }
 
-    private async void OnSaveClicked(object? sender, EventArgs e)
+    private void OnSaveClicked(object? sender, EventArgs e)
     {
-        await CloseAsync(true);
+        CloseAction?.Invoke(true);
     }
 }
 
@@ -73,8 +63,6 @@ public partial class EditLyricsForm : ObservableObject
         try
         {
             bool wantTimed = SearchType == "Timed Lyrics (LRC)";
-
-            // Share the same robust finding algorithm 
             string? foundLyrics = await LyricsClient.FetchLyricsAsync(TrackUrl, SearchTitle, SearchArtist, wantTimed);
 
             if (!string.IsNullOrWhiteSpace(foundLyrics))
@@ -84,16 +72,12 @@ public partial class EditLyricsForm : ObservableObject
             }
             else
             {
-                var activePage = Shell.Current ?? Application.Current?.Windows.FirstOrDefault()?.Page;
-                if (activePage != null)
-                    await activePage.DisplayAlertAsync("Not Found", "Could not find lyrics matching these exact filters.", "OK");
+                await Shell.Current.DisplayAlertAsync("Not Found", "Could not find lyrics matching these exact filters.", "OK");
             }
         }
         catch (Exception ex)
         {
-            var activePage = Shell.Current ?? Application.Current?.Windows.FirstOrDefault()?.Page;
-            if (activePage != null)
-                await activePage.DisplayAlertAsync("Error", ex.Message, "OK");
+            await Shell.Current.DisplayAlertAsync("Error", ex.Message, "OK");
         }
         finally
         {

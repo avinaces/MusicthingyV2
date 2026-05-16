@@ -248,6 +248,9 @@
                             <views:MobilePlayerPaneView Grid.Row="0" Grid.RowSpan="3" VerticalOptions="End"/>
                         </Grid>
 
+                        <!-- NATIVE SLIDE-UP SHEET HOST -->
+                        <views:SlideUpSheetHost x:Name="GlobalSheetHost" ZIndex="101" />
+
                         <!-- MODAL OVERLAY -->
                         <Grid IsVisible="{Binding IsModalVisible}" ZIndex="100">
                             <!-- Dimmed Background -->

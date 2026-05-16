@@ -1,33 +1,14 @@
 <?xml version="1.0" encoding="utf-8" ?>
-<toolkit:Popup xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
-               xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
-               xmlns:toolkit="http://schemas.microsoft.com/dotnet/2022/maui/toolkit"
-               x:Class="Musicthingy.Views.EditTrackPopup"
-               x:TypeArguments="x:Boolean"
-               CanBeDismissedByTappingOutsideOfPopup="False"
-               BackgroundColor="Transparent"
-               Padding="0">
+<ContentView xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             xmlns:local="clr-namespace:Musicthingy.Views"
+             x:Class="Musicthingy.Views.EditTrackSheet"
+             BackgroundColor="Transparent">
 
-    <Border x:Name="RootBorder"
-            BackgroundColor="#0d1117" 
-            Stroke="#30363d" 
-            StrokeThickness="1" 
-            StrokeShape="RoundRectangle 12" 
-            WidthRequest="{OnIdiom Desktop=450}" 
-            MaximumHeightRequest="{OnIdiom Desktop=750}" 
-            HorizontalOptions="Center"
-            VerticalOptions="Center"
-            Margin="0"
-            Padding="0">
+    <local:BottomSheetContainer Title="Edit Track" CloseRequested="OnCloseRequested">
 
-        <!-- Grid to keep Header Top, Actions Bottom, Content Scrollable in between -->
-        <Grid RowDefinitions="Auto, *, Auto" Padding="20, 24, 20, 20">
-
-            <!-- Header -->
-            <Label Grid.Row="0" Text="Edit Track" TextColor="#adcff0" FontSize="22" FontAttributes="Bold" Margin="0,0,0,16" />
-
-            <!-- Scrollable Form Area -->
-            <ScrollView Grid.Row="1" VerticalScrollBarVisibility="Never">
+        <local:BottomSheetContainer.Body>
+            <ScrollView VerticalScrollBarVisibility="Never">
                 <VerticalStackLayout Spacing="16">
 
                     <!-- Title -->
@@ -67,7 +48,6 @@
                     <VerticalStackLayout Spacing="6">
                         <Label Text="Icon" TextColor="#c9d1d9" FontSize="14" />
                         <HorizontalStackLayout Spacing="12">
-                            <!-- Tap the Border/Image to pick -->
                             <Border Stroke="#30363d" StrokeThickness="1" StrokeShape="RoundRectangle 8" WidthRequest="48" HeightRequest="48" BackgroundColor="#161b22" Padding="0">
                                 <Border.GestureRecognizers>
                                     <TapGestureRecognizer Command="{Binding PickIconCommand}" />
@@ -78,7 +58,6 @@
                                     </Image.Clip>
                                 </Image>
                             </Border>
-
                             <Button Text="Reset" Command="{Binding ResetIconCommand}" BackgroundColor="#161b22" TextColor="White" BorderColor="#30363d" BorderWidth="1" CornerRadius="8" HeightRequest="48" Padding="16,0" VerticalOptions="Center"/>
                         </HorizontalStackLayout>
                     </VerticalStackLayout>
@@ -89,7 +68,7 @@
                         <FlexLayout Direction="Row" Wrap="Wrap" BindableLayout.ItemsSource="{Binding Tags}">
                             <BindableLayout.ItemTemplate>
                                 <DataTemplate x:DataType="x:String">
-                                    <Border Background="#1c304a" Stroke="{DynamicResource SwipeEditColor}" StrokeThickness="1" Padding="8,4" Margin="0,0,3,6">
+                                    <Border Background="#1c304a" Stroke="#2d5b8c" StrokeThickness="1" Padding="8,4" Margin="0,0,3,6">
                                         <Border.StrokeShape>
                                             <RoundRectangle CornerRadius="8"/>
                                         </Border.StrokeShape>
@@ -98,13 +77,13 @@
                                 </DataTemplate>
                             </BindableLayout.ItemTemplate>
                         </FlexLayout>
-                        <ImageButton Source="tag_icon.png" Clicked="OnEditTagsClicked" Style="{StaticResource IconImageButton}" WidthRequest="44" HeightRequest="44" HorizontalOptions="Start" />
+                        <ImageButton Source="tag_icon.png" Clicked="OnEditTagsClicked" BackgroundColor="#161b22" CornerRadius="8" WidthRequest="38" HeightRequest="38" Padding="6" BorderColor="#30363d" BorderWidth="1" HorizontalOptions="Start" />
                     </VerticalStackLayout>
 
                     <!-- Lyrics Button -->
                     <VerticalStackLayout Spacing="6">
                         <Label Text="Lyrics" TextColor="#c9d1d9" FontSize="14" />
-                        <ImageButton Source="scroll_text_icon.png" Clicked="OnEditLyricsClicked" Style="{StaticResource IconImageButton}" WidthRequest="44" HeightRequest="44" HorizontalOptions="Start" />
+                        <ImageButton Source="scroll_text_icon.png" Clicked="OnEditLyricsClicked" BackgroundColor="#161b22" CornerRadius="8" WidthRequest="38" HeightRequest="38" Padding="6" BorderColor="#30363d" BorderWidth="1" HorizontalOptions="Start" />
                     </VerticalStackLayout>
 
                     <!-- Last Played -->
@@ -112,13 +91,15 @@
 
                 </VerticalStackLayout>
             </ScrollView>
+        </local:BottomSheetContainer.Body>
 
-            <!-- Action Buttons matching MobileMainPage -->
-            <HorizontalStackLayout Grid.Row="2" HorizontalOptions="End" Spacing="12" Margin="0,16,0,0">
-                <Button Text="Cancel" Clicked="OnCancelClicked" BackgroundColor="#161b22" TextColor="White" BorderColor="#30363d" BorderWidth="1" CornerRadius="8" HeightRequest="44" Padding="16,0" />
-                <Button Text="Save" Clicked="OnSaveClicked" BackgroundColor="{DynamicResource SwipeEditColor}" TextColor="White" CornerRadius="8" HeightRequest="44" Padding="24,0" />
+        <local:BottomSheetContainer.Footer>
+            <HorizontalStackLayout HorizontalOptions="End" Spacing="12">
+                <Button Text="Cancel" Clicked="OnCancelClicked" BackgroundColor="#21262d" TextColor="White" BorderColor="#30363d" BorderWidth="1" CornerRadius="8" HeightRequest="44" Padding="16,0" />
+                <Button Text="Save" Clicked="OnSaveClicked" BackgroundColor="#2d5b8c" TextColor="White" CornerRadius="8" HeightRequest="44" Padding="24,0" />
             </HorizontalStackLayout>
+        </local:BottomSheetContainer.Footer>
 
-        </Grid>
-    </Border>
-</toolkit:Popup>
+    </local:BottomSheetContainer>
+
+</ContentView>
