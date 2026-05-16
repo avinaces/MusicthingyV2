@@ -51,7 +51,7 @@ public partial class BottomSheetContainer : ContentView
                 else
                 {
                     // Otherwise, spring back into place
-                    sheetParent.TranslateTo(0, 0, 250, Easing.CubicOut);
+                    sheetParent.TranslateToAsync(0, 0, 250, Easing.CubicOut);
                 }
                 break;
         }

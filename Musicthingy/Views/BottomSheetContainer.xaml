@@ -4,17 +4,15 @@
              x:Class="Musicthingy.Views.BottomSheetContainer"
              x:Name="Root">
 
-    <!-- VerticalOptions="End" forces the sheet to hug the bottom.
-         RowDefinitions="Auto, *, Auto" allows the middle row to expand 
-         up to MaximumHeightRequest, at which point it will scroll. -->
     <Border BackgroundColor="#161b22" Stroke="#30363d" StrokeThickness="1" 
-            Margin="-1,0,-1,-2" Padding="0" VerticalOptions="End" MaximumHeightRequest="750">
+            Margin="-1,0,-1,-2" Padding="0" VerticalOptions="End">
 
         <Border.StrokeShape>
             <RoundRectangle CornerRadius="16,16,0,0" />
         </Border.StrokeShape>
 
-        <Grid RowDefinitions="Auto, *, Auto" Padding="20, 16, 20, 32">
+        <!-- Using Auto for all rows allows it to exactly wrap its content height up to the screen's edge -->
+        <Grid RowDefinitions="Auto, Auto, Auto" Padding="20, 16, 20, 32">
 
             <!-- Draggable Header -->
             <Grid Grid.Row="0" BackgroundColor="Transparent" Padding="0,0,0,16" x:Name="DragZone">

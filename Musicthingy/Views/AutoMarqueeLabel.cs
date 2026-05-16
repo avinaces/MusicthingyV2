@@ -17,7 +17,7 @@ public class AutoMarqueeLabel : ContentView
     private double _lastHeight;
 
     private const double ScrollSpeed = 35.0;
-    private const double GapWidth = 100.0;
+    private const double GapWidth = 60.0;
     private const uint PauseDurationMs = 3500u;
 
     // rate: 16 = ~60fps | rate: 8 = ~120fps

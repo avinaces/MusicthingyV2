@@ -30,6 +30,12 @@ public partial class EditLyricsSheet : ContentView, IBottomSheet
     {
         CloseAction?.Invoke(true);
     }
+
+    private void OnCloseRequested(object? sender, EventArgs e)
+    {
+        // Treat close request as a cancel by default
+        CloseAction?.Invoke(false);
+    }
 }
 
 public partial class EditLyricsForm : ObservableObject

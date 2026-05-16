@@ -1,18 +1,16 @@
 <?xml version="1.0" encoding="utf-8" ?>
-<FlyoutPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
-            xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
-            xmlns:models="clr-namespace:Musicthingy.Models"
-            xmlns:views="clr-namespace:Musicthingy.Views"
-            xmlns:android="clr-namespace:Microsoft.Maui.Controls.PlatformConfiguration.AndroidSpecific;assembly=Microsoft.Maui.Controls"
-            xmlns:ios="clr-namespace:Microsoft.Maui.Controls.PlatformConfiguration.iOSSpecific;assembly=Microsoft.Maui.Controls"
-            xmlns:mpowerkit="clr-namespace:MPowerKit.VirtualizeListView;assembly=MPowerKit.VirtualizeListView"
-            x:Class="Musicthingy.Views.MobileMainPage"
-            x:Name="RootPage"
-            BackgroundColor="#0d1117"
-            FlyoutLayoutBehavior="Popover">
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             xmlns:models="clr-namespace:Musicthingy.Models"
+             xmlns:views="clr-namespace:Musicthingy.Views"
+             xmlns:android="clr-namespace:Microsoft.Maui.Controls.PlatformConfiguration.AndroidSpecific;assembly=Microsoft.Maui.Controls"
+             xmlns:ios="clr-namespace:Microsoft.Maui.Controls.PlatformConfiguration.iOSSpecific;assembly=Microsoft.Maui.Controls"
+             xmlns:mpowerkit="clr-namespace:MPowerKit.VirtualizeListView;assembly=MPowerKit.VirtualizeListView"
+             x:Class="Musicthingy.Views.MobileMainPage"
+             x:Name="RootPage"
+             BackgroundColor="#0d1117">
 
-    <!-- DESKTOP RESOURCES -->
-    <FlyoutPage.Resources>
+    <ContentPage.Resources>
         <Color x:Key="BgColor">#0d1117</Color>
         <Color x:Key="CardColor">#161b22</Color>
         <Color x:Key="CardHoverColor">#1c2128</Color>
@@ -37,16 +35,173 @@
             <Setter Property="BorderColor" Value="{StaticResource BorderColor}" />
             <Setter Property="BorderWidth" Value="1" />
         </Style>
-    </FlyoutPage.Resources>
+    </ContentPage.Resources>
 
-    <!-- ========================================== -->
-    <!-- 1. LEFT DRAWER (Playlists)                 -->
-    <!-- ========================================== -->
-    <FlyoutPage.Flyout>
-        <ContentPage x:Name="FlyoutRoot" Title="Library" BackgroundColor="{StaticResource BgColor}">
+    <Grid>
+
+        <!-- ========================================== -->
+        <!-- 1. MAIN CONTENT AREA                       -->
+        <!-- ========================================== -->
+        <Grid RowDefinitions="Auto, *">
+            <!-- Custom Navigation Bar -->
+            <Grid Grid.Row="0" HeightRequest="56" BackgroundColor="{StaticResource BgColor}">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="56" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+
+                <!-- Hamburger Menu Button -->
+                <ContentView Grid.Column="0" VerticalOptions="Fill" HorizontalOptions="Fill">
+                    <ContentView.GestureRecognizers>
+                        <TapGestureRecognizer Tapped="OnHamburgerTapped" />
+                    </ContentView.GestureRecognizers>
+                    <Path Data="M3,6H21V8H3V6M3,11H21V13H3V11M3,16H21V18H3V16Z" Fill="{StaticResource TitleColor}" HorizontalOptions="Center" VerticalOptions="Center" WidthRequest="24" HeightRequest="24" />
+                </ContentView>
+
+                <Label Grid.Column="1" Text="{Binding SelectedPlaylist.Name}" TextColor="{StaticResource TitleColor}" FontSize="20" FontAttributes="Bold" VerticalOptions="Center" />
+            </Grid>
+
+            <!-- Detail Grid (Tracks + Bottom Player) -->
+            <Grid Grid.Row="1">
+                <Grid RowDefinitions="Auto, *, Auto">
+                    <Grid Grid.Row="0" Margin="12,12,12,12" ColumnDefinitions="*, Auto">
+                        <VerticalStackLayout Grid.Column="0" VerticalOptions="Center">
+                            <Label Text="{Binding SelectedPlaylist.ItemCount, StringFormat='{0} tracks'}" TextColor="{StaticResource MutedColor}" FontSize="13" />
+                            <Label Text="{Binding SelectedPlaylist.DisplayDuration}" TextColor="{StaticResource MutedColor}" FontSize="12" />
+                        </VerticalStackLayout>
+                        <HorizontalStackLayout Grid.Column="1" Spacing="8">
+                            <ImageButton Source="shuffle_icon.png" Command="{Binding ShufflePlaylistCommand}" Style="{StaticResource IconImageButton}" />
+                            <ImageButton Source="play_icon.png" Command="{Binding PlayPlaylistCommand}" Style="{StaticResource IconImageButton}"/>
+                        </HorizontalStackLayout>
+                    </Grid>
+
+                    <mpowerkit:VirtualizeListView x:Name="TracksListView" Grid.Row="1" ItemsSource="{Binding SelectedPlaylist.Items}" Scrolled="OnListScrolled">
+                        <mpowerkit:VirtualizeListView.ItemTemplate>
+                            <DataTemplate x:DataType="models:PlaylistItem">
+                                <mpowerkit:VirtualizeListViewCell>
+                                    <Grid Margin="12,0,12,4" HeightRequest="58">
+                                        <Border StrokeShape="RoundRectangle 8" Padding="0" Background="{DynamicResource CardColor}" Stroke="{DynamicResource BorderColor}">
+                                            <Border.Triggers>
+                                                <DataTrigger TargetType="Border" Binding="{Binding IsSelected}" Value="True">
+                                                    <Setter Property="Background" Value="#253549" />
+                                                    <Setter Property="Stroke" Value="{DynamicResource AccentColor}" />
+                                                </DataTrigger>
+                                            </Border.Triggers>
+
+                                            <SwipeView android:SwipeView.SwipeTransitionMode="Drag" Threshold="100" SwipeStarted="OnSwipeStarted">
+                                                <SwipeView.RightItems>
+                                                    <SwipeItems Mode="Reveal">
+                                                        <SwipeItemView WidthRequest="140" HeightRequest="58">
+                                                            <Grid WidthRequest="140" HeightRequest="58" ColumnDefinitions="70, 70" ColumnSpacing="0" RowSpacing="0" Margin="0" Padding="0">
+                                                                <ContentView Grid.Column="0" WidthRequest="70" HeightRequest="58" BackgroundColor="{DynamicResource SwipeEditColor}">
+                                                                    <ContentView.GestureRecognizers>
+                                                                        <TapGestureRecognizer Command="{Binding BindingContext.EditTrackCommand, Source={x:Reference RootPage}}" CommandParameter="{Binding .}" Tapped="OnTrackActionTapped" />
+                                                                    </ContentView.GestureRecognizers>
+                                                                    <Image Source="pencil_icon.png" WidthRequest="20" HeightRequest="20" HorizontalOptions="Center" VerticalOptions="Center" InputTransparent="True" />
+                                                                </ContentView>
+
+                                                                <ContentView Grid.Column="1" WidthRequest="70" HeightRequest="58" BackgroundColor="{DynamicResource SwipeDeleteColor}">
+                                                                    <ContentView.GestureRecognizers>
+                                                                        <TapGestureRecognizer Command="{Binding BindingContext.DeleteTrackCommand, Source={x:Reference RootPage}}" CommandParameter="{Binding .}" Tapped="OnTrackActionTapped" />
+                                                                    </ContentView.GestureRecognizers>
+                                                                    <Image Source="trash_2_icon.png" WidthRequest="20" HeightRequest="20" HorizontalOptions="Center" VerticalOptions="Center" InputTransparent="True" />
+                                                                </ContentView>
+                                                            </Grid>
+                                                        </SwipeItemView>
+                                                    </SwipeItems>
+                                                </SwipeView.RightItems>
+
+                                                <Grid ColumnDefinitions="Auto, *" ColumnSpacing="10" Padding="10" BackgroundColor="Transparent">
+                                                    <Grid.GestureRecognizers>
+                                                        <TapGestureRecognizer Tapped="OnTrackTapped" />
+                                                    </Grid.GestureRecognizers>
+
+                                                    <Grid Grid.Column="0" WidthRequest="36" HeightRequest="36" VerticalOptions="Center">
+                                                        <Image Source="{Binding ItemIconSource}" Aspect="AspectFill">
+                                                            <Image.Clip>
+                                                                <RoundRectangleGeometry CornerRadius="6" Rect="0,0,36,36" />
+                                                            </Image.Clip>
+                                                        </Image>
+                                                    </Grid>
+
+                                                    <VerticalStackLayout Grid.Column="1" VerticalOptions="Center">
+                                                        <Label Text="{Binding Title}" FontSize="15" FontAttributes="Bold" LineBreakMode="TailTruncation" />
+                                                        <Grid HeightRequest="24" IsClippedToBounds="True">
+                                                            <HorizontalStackLayout Spacing="0" VerticalOptions="Center">
+                                                                <Border Background="#1c304a" Stroke="{DynamicResource AccentColor}" StrokeThickness="1" Padding="5,1" Margin="0,0,1,1" IsVisible="{Binding HasTag1}">
+                                                                    <Border.StrokeShape>
+                                                                        <RoundRectangle CornerRadius="6"/>
+                                                                    </Border.StrokeShape>
+                                                                    <Label Text="{Binding Tag1}" TextColor="#d9edff" FontSize="11"/>
+                                                                </Border>
+                                                                <Border Background="#1c304a" Stroke="{DynamicResource AccentColor}" StrokeThickness="1" Padding="5,1" Margin="0,0,1,1" IsVisible="{Binding HasTag2}">
+                                                                    <Border.StrokeShape>
+                                                                        <RoundRectangle CornerRadius="6"/>
+                                                                    </Border.StrokeShape>
+                                                                    <Label Text="{Binding Tag2}" TextColor="#d9edff" FontSize="11"/>
+                                                                </Border>
+                                                                <Border Background="#1c304a" Stroke="{DynamicResource AccentColor}" StrokeThickness="1" Padding="5,1" Margin="0,0,1,1" IsVisible="{Binding HasTag3}">
+                                                                    <Border.StrokeShape>
+                                                                        <RoundRectangle CornerRadius="6"/>
+                                                                    </Border.StrokeShape>
+                                                                    <Label Text="{Binding Tag3}" TextColor="#d9edff" FontSize="11"/>
+                                                                </Border>
+                                                                <Border Background="#1c304a" Stroke="{DynamicResource AccentColor}" StrokeThickness="1" Padding="5,1" Margin="0,0,1,1" IsVisible="{Binding HasTag4}">
+                                                                    <Border.StrokeShape>
+                                                                        <RoundRectangle CornerRadius="6"/>
+                                                                    </Border.StrokeShape>
+                                                                    <Label Text="{Binding Tag4}" TextColor="#d9edff" FontSize="11"/>
+                                                                </Border>
+                                                            </HorizontalStackLayout>
+                                                        </Grid>
+                                                    </VerticalStackLayout>
+                                                </Grid>
+                                            </SwipeView>
+                                        </Border>
+                                    </Grid>
+                                </mpowerkit:VirtualizeListViewCell>
+                            </DataTemplate>
+                        </mpowerkit:VirtualizeListView.ItemTemplate>
+                    </mpowerkit:VirtualizeListView>
+
+                    <!-- Invisible spacer that pushes the bottom of the list up exactly 70px -->
+                    <ContentView Grid.Row="2" HeightRequest="70" BackgroundColor="{StaticResource BgColor}" IsVisible="{Binding IsMediaSelected}" />
+
+                    <!-- ROW 2: The Player Pane -->
+                    <views:MobilePlayerPaneView Grid.Row="0" Grid.RowSpan="3" VerticalOptions="End"/>
+                </Grid>
+            </Grid>
+        </Grid>
+
+        <!-- ========================================== -->
+        <!-- 1.5. EDGE SWIPE ZONE (To drag-open)        -->
+        <!-- ========================================== -->
+        <ContentView x:Name="EdgeSwipeZone" WidthRequest="25" HorizontalOptions="Start" VerticalOptions="Fill" BackgroundColor="Transparent" ZIndex="49">
+            <ContentView.GestureRecognizers>
+                <PanGestureRecognizer PanUpdated="OnEdgePanUpdated" />
+            </ContentView.GestureRecognizers>
+        </ContentView>
+
+        <!-- ========================================== -->
+        <!-- 2. SIDEBAR DIMMING OVERLAY                 -->
+        <!-- ========================================== -->
+        <BoxView x:Name="SidebarDarken" BackgroundColor="#A6000000" Opacity="0" IsVisible="False" ZIndex="50">
+            <BoxView.GestureRecognizers>
+                <TapGestureRecognizer Tapped="OnSidebarOverlayTapped" />
+                <PanGestureRecognizer PanUpdated="OnSidebarPanUpdated" />
+            </BoxView.GestureRecognizers>
+        </BoxView>
+
+        <!-- ========================================== -->
+        <!-- 3. CUSTOM LEFT DRAWER (Playlists)          -->
+        <!-- ========================================== -->
+        <!-- WidthRequest increased to 375 -->
+        <Grid x:Name="SidebarGrid" WidthRequest="360" HorizontalOptions="Start" TranslationX="-360" BackgroundColor="{StaticResource BgColor}" ZIndex="51">
+            <Grid.GestureRecognizers>
+                <PanGestureRecognizer PanUpdated="OnSidebarPanUpdated" />
+            </Grid.GestureRecognizers>
+
             <Grid RowDefinitions="Auto, *">
-
-                <!-- Drawer Header -->
                 <Grid Grid.Row="0" Padding="16,30,16,16" ColumnDefinitions="*, Auto">
                     <Label Grid.Column="0" Text="Playlists" TextColor="{StaticResource TitleColor}" FontSize="24" FontAttributes="Bold" VerticalOptions="Center" />
                     <HorizontalStackLayout Grid.Column="1" Spacing="8" VerticalOptions="Center">
@@ -55,11 +210,9 @@
                     </HorizontalStackLayout>
                 </Grid>
 
-                <!-- MPowerKit Playlists List -->
                 <mpowerkit:VirtualizeListView Grid.Row="1" ItemsSource="{Binding Playlists}" Scrolled="OnListScrolled">
                     <mpowerkit:VirtualizeListView.ItemTemplate>
                         <DataTemplate x:DataType="models:Playlist">
-
                             <mpowerkit:VirtualizeListViewCell>
                                 <Grid Padding="12,4">
                                     <Border StrokeShape="RoundRectangle 12" Padding="0" Background="{DynamicResource CardColor}" Stroke="{DynamicResource BorderColor}">
@@ -76,7 +229,7 @@
                                                     <SwipeItemView WidthRequest="75" MinimumWidthRequest="75" HeightRequest="84">
                                                         <ContentView WidthRequest="75" HeightRequest="84" BackgroundColor="{DynamicResource SwipeDeleteColor}">
                                                             <ContentView.GestureRecognizers>
-                                                                <TapGestureRecognizer Command="{Binding BindingContext.DeletePlaylistCommand, Source={x:Reference FlyoutRoot}}" CommandParameter="{Binding .}" Tapped="OnDeletePlaylistTapped" />
+                                                                <TapGestureRecognizer Command="{Binding BindingContext.DeletePlaylistCommand, Source={x:Reference RootPage}}" CommandParameter="{Binding .}" Tapped="OnDeletePlaylistTapped" />
                                                             </ContentView.GestureRecognizers>
                                                             <Image Source="trash_2_icon.png" WidthRequest="22" HeightRequest="22" HorizontalOptions="Center" VerticalOptions="Center" InputTransparent="True" />
                                                         </ContentView>
@@ -109,175 +262,41 @@
                                     </Border>
                                 </Grid>
                             </mpowerkit:VirtualizeListViewCell>
-
                         </DataTemplate>
                     </mpowerkit:VirtualizeListView.ItemTemplate>
                 </mpowerkit:VirtualizeListView>
             </Grid>
-        </ContentPage>
-    </FlyoutPage.Flyout>
+        </Grid>
 
-    <!-- ========================================== -->
-    <!-- 2. MAIN VIEW (Tracks + Bottom Player)      -->
-    <!-- ========================================== -->
-    <FlyoutPage.Detail>
-        <NavigationPage BarBackgroundColor="{StaticResource BgColor}" BarTextColor="{StaticResource TitleColor}">
-            <x:Arguments>
-                <ContentPage x:Name="DetailRoot" Title="{Binding SelectedPlaylist.Name}" BackgroundColor="{StaticResource BgColor}">
+        <!-- ========================================== -->
+        <!-- 4. MODAL OVERLAY (ZIndex=100)              -->
+        <!-- ========================================== -->
+        <Grid IsVisible="{Binding IsModalVisible}" ZIndex="100">
+            <BoxView BackgroundColor="#A6000000">
+                <BoxView.GestureRecognizers>
+                    <TapGestureRecognizer Command="{Binding ModalBackgroundTappedCommand}" />
+                </BoxView.GestureRecognizers>
+            </BoxView>
 
-                    <Grid>
-                        <Grid RowDefinitions="Auto, *, Auto">
+            <Border Background="{StaticResource CardColor}" Stroke="{StaticResource BorderColor}" StrokeThickness="1" StrokeShape="RoundRectangle 12" HorizontalOptions="Center" VerticalOptions="Center" WidthRequest="320" Padding="20">
+                <VerticalStackLayout Spacing="16">
+                    <Label Text="{Binding ModalTitle}" TextColor="{StaticResource TitleColor}" FontSize="20" FontAttributes="Bold" />
+                    <Label Text="{Binding ModalMessage}" TextColor="{StaticResource TextColor}" IsVisible="{Binding IsModalMessageVisible}" />
+                    <Entry Text="{Binding ModalInputText}" IsVisible="{Binding IsModalInputVisible}" Placeholder="Type here..." BackgroundColor="{StaticResource BgColor}" TextColor="White" />
 
-                            <Grid Grid.Row="0" Margin="12,12,12,12" ColumnDefinitions="*, Auto">
-                                <VerticalStackLayout Grid.Column="0" VerticalOptions="Center">
-                                    <Label Text="{Binding SelectedPlaylist.ItemCount, StringFormat='{0} tracks'}" TextColor="{StaticResource MutedColor}" FontSize="13" />
-                                    <Label Text="{Binding SelectedPlaylist.DisplayDuration}" TextColor="{StaticResource MutedColor}" FontSize="12" />
-                                </VerticalStackLayout>
-                                <HorizontalStackLayout Grid.Column="1" Spacing="8">
-                                    <ImageButton Source="shuffle_icon.png" Command="{Binding ShufflePlaylistCommand}" Style="{StaticResource IconImageButton}" />
-                                    <ImageButton Source="play_icon.png" Command="{Binding PlayPlaylistCommand}" Style="{StaticResource IconImageButton}"/>
-                                </HorizontalStackLayout>
-                            </Grid>
+                    <HorizontalStackLayout HorizontalOptions="End" Spacing="12" Margin="0,8,0,0">
+                        <Button Text="Cancel" Command="{Binding ModalCancelCommand}" BackgroundColor="{StaticResource CardColor}" TextColor="White" BorderColor="{StaticResource BorderColor}" BorderWidth="1" CornerRadius="8" />
+                        <Button Text="{Binding ModalConfirmText}" Command="{Binding ModalConfirmCommand}" BackgroundColor="{Binding ModalConfirmColor}" TextColor="White" CornerRadius="8" />
+                    </HorizontalStackLayout>
+                </VerticalStackLayout>
+            </Border>
+        </Grid>
 
-                            <!-- NEW: Added x:Name="TracksListView" to access scrolling -->
-                            <mpowerkit:VirtualizeListView x:Name="TracksListView" Grid.Row="1" ItemsSource="{Binding SelectedPlaylist.Items}" Scrolled="OnListScrolled">
-                                <mpowerkit:VirtualizeListView.ItemTemplate>
-                                    <DataTemplate x:DataType="models:PlaylistItem">
+        <!-- ========================================== -->
+        <!-- 5. NATIVE SLIDE-UP SHEET (ZIndex=101)      -->
+        <!-- ========================================== -->
+        <views:SlideUpSheetHost x:Name="GlobalSheetHost" ZIndex="101" />
 
-                                        <mpowerkit:VirtualizeListViewCell>
-                                            <Grid Margin="12,0,12,4" HeightRequest="58">
-                                                <Border StrokeShape="RoundRectangle 8" Padding="0" Background="{DynamicResource CardColor}" Stroke="{DynamicResource BorderColor}">
-                                                    <Border.Triggers>
-                                                        <DataTrigger TargetType="Border" Binding="{Binding IsSelected}" Value="True">
-                                                            <Setter Property="Background" Value="#253549" />
-                                                            <Setter Property="Stroke" Value="{DynamicResource AccentColor}" />
-                                                        </DataTrigger>
-                                                    </Border.Triggers>
+    </Grid>
 
-                                                    <SwipeView android:SwipeView.SwipeTransitionMode="Drag" Threshold="100" SwipeStarted="OnSwipeStarted">
-                                                        <SwipeView.RightItems>
-                                                            <SwipeItems Mode="Reveal">
-                                                                <SwipeItemView WidthRequest="140" HeightRequest="58">
-                                                                    <Grid WidthRequest="140" HeightRequest="58" ColumnDefinitions="70, 70" ColumnSpacing="0" RowSpacing="0" Margin="0" Padding="0">
-
-                                                                        <ContentView Grid.Column="0" WidthRequest="70" HeightRequest="58" BackgroundColor="{DynamicResource SwipeEditColor}">
-                                                                            <ContentView.GestureRecognizers>
-                                                                                <TapGestureRecognizer Command="{Binding BindingContext.EditTrackCommand, Source={x:Reference DetailRoot}}" CommandParameter="{Binding .}" Tapped="OnTrackActionTapped" />
-                                                                            </ContentView.GestureRecognizers>
-                                                                            <Image Source="pencil_icon.png" WidthRequest="20" HeightRequest="20" HorizontalOptions="Center" VerticalOptions="Center" InputTransparent="True" />
-                                                                        </ContentView>
-
-                                                                        <ContentView Grid.Column="1" WidthRequest="70" HeightRequest="58" BackgroundColor="{DynamicResource SwipeDeleteColor}">
-                                                                            <ContentView.GestureRecognizers>
-                                                                                <TapGestureRecognizer Command="{Binding BindingContext.DeleteTrackCommand, Source={x:Reference DetailRoot}}" CommandParameter="{Binding .}" Tapped="OnTrackActionTapped" />
-                                                                            </ContentView.GestureRecognizers>
-                                                                            <Image Source="trash_2_icon.png" WidthRequest="20" HeightRequest="20" HorizontalOptions="Center" VerticalOptions="Center" InputTransparent="True" />
-                                                                        </ContentView>
-
-                                                                    </Grid>
-                                                                </SwipeItemView>
-                                                            </SwipeItems>
-                                                        </SwipeView.RightItems>
-
-                                                        <Grid ColumnDefinitions="Auto, *" ColumnSpacing="10" Padding="10" BackgroundColor="Transparent">
-                                                            <Grid.GestureRecognizers>
-                                                                <TapGestureRecognizer Tapped="OnTrackTapped" />
-                                                            </Grid.GestureRecognizers>
-
-                                                            <Grid Grid.Column="0" WidthRequest="36" HeightRequest="36" VerticalOptions="Center">
-                                                                <Image Source="{Binding ItemIconSource}" Aspect="AspectFill">
-                                                                    <Image.Clip>
-                                                                        <RoundRectangleGeometry CornerRadius="6" Rect="0,0,36,36" />
-                                                                    </Image.Clip>
-                                                                </Image>
-                                                            </Grid>
-
-                                                            <VerticalStackLayout Grid.Column="1" VerticalOptions="Center">
-                                                                <Label Text="{Binding Title}" FontSize="15" FontAttributes="Bold" LineBreakMode="TailTruncation" />
-
-                                                                <Grid HeightRequest="24" IsClippedToBounds="True">
-                                                                    <HorizontalStackLayout Spacing="0" VerticalOptions="Center">
-                                                                        <!-- Tag 1 -->
-                                                                        <Border Background="#1c304a" Stroke="{DynamicResource AccentColor}" StrokeThickness="1" Padding="5,1" Margin="0,0,1,1" IsVisible="{Binding HasTag1}">
-                                                                            <Border.StrokeShape>
-                                                                                <RoundRectangle CornerRadius="6"/>
-                                                                            </Border.StrokeShape>
-                                                                            <Label Text="{Binding Tag1}" TextColor="#d9edff" FontSize="11"/>
-                                                                        </Border>
-
-                                                                        <!-- Tag 2 -->
-                                                                        <Border Background="#1c304a" Stroke="{DynamicResource AccentColor}" StrokeThickness="1" Padding="5,1" Margin="0,0,1,1" IsVisible="{Binding HasTag2}">
-                                                                            <Border.StrokeShape>
-                                                                                <RoundRectangle CornerRadius="6"/>
-                                                                            </Border.StrokeShape>
-                                                                            <Label Text="{Binding Tag2}" TextColor="#d9edff" FontSize="11"/>
-                                                                        </Border>
-
-                                                                        <!-- Tag 3 -->
-                                                                        <Border Background="#1c304a" Stroke="{DynamicResource AccentColor}" StrokeThickness="1" Padding="5,1" Margin="0,0,1,1" IsVisible="{Binding HasTag3}">
-                                                                            <Border.StrokeShape>
-                                                                                <RoundRectangle CornerRadius="6"/>
-                                                                            </Border.StrokeShape>
-                                                                            <Label Text="{Binding Tag3}" TextColor="#d9edff" FontSize="11"/>
-                                                                        </Border>
-
-                                                                        <!-- Tag 4 -->
-                                                                        <Border Background="#1c304a" Stroke="{DynamicResource AccentColor}" StrokeThickness="1" Padding="5,1" Margin="0,0,1,1" IsVisible="{Binding HasTag4}">
-                                                                            <Border.StrokeShape>
-                                                                                <RoundRectangle CornerRadius="6"/>
-                                                                            </Border.StrokeShape>
-                                                                            <Label Text="{Binding Tag4}" TextColor="#d9edff" FontSize="11"/>
-                                                                        </Border>
-                                                                    </HorizontalStackLayout>
-                                                                </Grid>
-                                                            </VerticalStackLayout>
-                                                        </Grid>
-                                                    </SwipeView>
-                                                </Border>
-                                            </Grid>
-                                        </mpowerkit:VirtualizeListViewCell>
-
-                                    </DataTemplate>
-                                </mpowerkit:VirtualizeListView.ItemTemplate>
-                            </mpowerkit:VirtualizeListView>
-
-                            <!-- Invisible spacer that pushes the bottom of the list up exactly 70px (Mini Player height) -->
-                            <ContentView Grid.Row="2" HeightRequest="70" BackgroundColor="{StaticResource BgColor}" IsVisible="{Binding IsMediaSelected}" />
-
-                            <!-- ROW 2: The Player Pane -->
-                            <views:MobilePlayerPaneView Grid.Row="0" Grid.RowSpan="3" VerticalOptions="End"/>
-                        </Grid>
-
-                        <!-- NATIVE SLIDE-UP SHEET HOST -->
-                        <views:SlideUpSheetHost x:Name="GlobalSheetHost" ZIndex="101" />
-
-                        <!-- MODAL OVERLAY -->
-                        <Grid IsVisible="{Binding IsModalVisible}" ZIndex="100">
-                            <!-- Dimmed Background -->
-                            <BoxView BackgroundColor="#A6000000">
-                                <BoxView.GestureRecognizers>
-                                    <TapGestureRecognizer Command="{Binding ModalBackgroundTappedCommand}" />
-                                </BoxView.GestureRecognizers>
-                            </BoxView>
-
-                            <Border Background="{StaticResource CardColor}" Stroke="{StaticResource BorderColor}" StrokeThickness="1" StrokeShape="RoundRectangle 12" HorizontalOptions="Center" VerticalOptions="Center" WidthRequest="320" Padding="20">
-                                <VerticalStackLayout Spacing="16">
-                                    <Label Text="{Binding ModalTitle}" TextColor="{StaticResource TitleColor}" FontSize="20" FontAttributes="Bold" />
-                                    <Label Text="{Binding ModalMessage}" TextColor="{StaticResource TextColor}" IsVisible="{Binding IsModalMessageVisible}" />
-                                    <Entry Text="{Binding ModalInputText}" IsVisible="{Binding IsModalInputVisible}" Placeholder="Type here..." BackgroundColor="{StaticResource BgColor}" TextColor="White" />
-
-                                    <HorizontalStackLayout HorizontalOptions="End" Spacing="12" Margin="0,8,0,0">
-                                        <Button Text="Cancel" Command="{Binding ModalCancelCommand}" BackgroundColor="{StaticResource CardColor}" TextColor="White" BorderColor="{StaticResource BorderColor}" BorderWidth="1" CornerRadius="8" />
-                                        <Button Text="{Binding ModalConfirmText}" Command="{Binding ModalConfirmCommand}" BackgroundColor="{Binding ModalConfirmColor}" TextColor="White" CornerRadius="8" />
-                                    </HorizontalStackLayout>
-                                </VerticalStackLayout>
-                            </Border>
-                        </Grid>
-
-                    </Grid>
-                </ContentPage>
-            </x:Arguments>
-        </NavigationPage>
-    </FlyoutPage.Detail>
-
-</FlyoutPage>
+</ContentPage>

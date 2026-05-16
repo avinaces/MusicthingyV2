@@ -1,16 +1,21 @@
 using CommunityToolkit.Mvvm.Messaging;
 using Musicthingy.Models;
 using MPowerKit.VirtualizeListView;
+using Microsoft.Maui.Controls;
 
 namespace Musicthingy.Views;
 
-public partial class MobileMainPage : FlyoutPage
+public partial class MobileMainPage : ContentPage
 {
     private SwipeView? _openedSwipeView;
     private bool _isProgrammaticScroll = false;
     private double _lastScrollY = 0;
-
     private CancellationTokenSource? _scrollCts;
+
+    // Custom Sidebar Panning variables
+    private double _panStartX = 0;
+    private bool _isSidebarPanning = false;
+    private readonly double _sidebarWidth = 360;
 
     public MobileMainPage()
     {
@@ -26,7 +31,6 @@ public partial class MobileMainPage : FlyoutPage
             {
                 _isProgrammaticScroll = true;
 
-                // Allow UI to render if playlist changed
                 await Task.Delay(150);
 
                 MainThread.BeginInvokeOnMainThread(() =>
@@ -38,7 +42,6 @@ public partial class MobileMainPage : FlyoutPage
                     catch { }
                 });
 
-                // Instead of fixed delay, wait for scroll to settle
                 ResetScrollDetection();
             });
         });
@@ -55,18 +58,101 @@ public partial class MobileMainPage : FlyoutPage
         {
             try
             {
-                // Wait until no scroll events fire for 300ms
                 await Task.Delay(300, token);
                 _isProgrammaticScroll = false;
             }
             catch (TaskCanceledException)
             {
-                // Expected when new scroll events occur
             }
         });
     }
 
-    private void OnPlaylistTapped(object sender, TappedEventArgs e)
+    // --- Custom Sidebar Pan & Interaction Logic ---
+
+    private void OnEdgePanUpdated(object? sender, PanUpdatedEventArgs e) => HandleSidebarPan(e);
+    private void OnSidebarPanUpdated(object? sender, PanUpdatedEventArgs e) => HandleSidebarPan(e);
+
+    private void HandleSidebarPan(PanUpdatedEventArgs e)
+    {
+        switch (e.StatusType)
+        {
+            case GestureStatus.Started:
+                _isSidebarPanning = true;
+                SidebarDarken.IsVisible = true;
+                EdgeSwipeZone.IsVisible = false; // Hide Edge Zone to avoid touch conflicts while open
+                _panStartX = SidebarGrid.TranslationX;
+                break;
+
+            case GestureStatus.Running:
+                if (!_isSidebarPanning) return;
+
+                double newTx = _panStartX + e.TotalX;
+
+                // Clamp drawer between completely closed (-_sidebarWidth) and completely open (0)
+                if (newTx > 0) newTx = 0;
+                if (newTx < -_sidebarWidth) newTx = -_sidebarWidth;
+
+                SidebarGrid.TranslationX = newTx;
+
+                // Adjust opacity perfectly synced with translation distance
+                SidebarDarken.Opacity = (newTx + _sidebarWidth) / _sidebarWidth;
+                break;
+
+            case GestureStatus.Completed:
+            case GestureStatus.Canceled:
+                _isSidebarPanning = false;
+
+                // If they've dragged it past the halfway point, snap it open. Otherwise snap closed.
+                if (SidebarGrid.TranslationX > -(_sidebarWidth * 0.5))
+                {
+                    _ = OpenSidebarInternalAsync();
+                }
+                else
+                {
+                    _ = CloseSidebarInternalAsync();
+                }
+                break;
+        }
+    }
+
+    private async Task OpenSidebarInternalAsync()
+    {
+        SidebarDarken.IsVisible = true;
+        EdgeSwipeZone.IsVisible = false;
+        _ = SidebarDarken.FadeToAsync(1, 250, Easing.CubicOut);
+        await SidebarGrid.TranslateToAsync(0, 0, 250, Easing.CubicOut);
+    }
+
+    private async Task CloseSidebarInternalAsync()
+    {
+        _ = SidebarDarken.FadeToAsync(0, 250, Easing.CubicIn);
+        await SidebarGrid.TranslateToAsync(-_sidebarWidth, 0, 250, Easing.CubicIn);
+        SidebarDarken.IsVisible = false;
+        EdgeSwipeZone.IsVisible = true;
+    }
+
+    private void OnHamburgerTapped(object? sender, TappedEventArgs e)
+    {
+        _ = OpenSidebarInternalAsync();
+    }
+
+    private void OnSidebarOverlayTapped(object? sender, TappedEventArgs e)
+    {
+        _ = CloseSidebarInternalAsync();
+    }
+
+    protected override bool OnBackButtonPressed()
+    {
+        if (SidebarDarken.IsVisible)
+        {
+            _ = CloseSidebarInternalAsync();
+            return true;
+        }
+        return base.OnBackButtonPressed();
+    }
+    // ----------------------------------------------
+
+    private async void OnPlaylistTapped(object? sender, TappedEventArgs e)
     {
         CloseSwipeView();
 
@@ -77,11 +163,11 @@ public partial class MobileMainPage : FlyoutPage
                 vm.IsAutoFollowEnabled = false;
                 vm.SelectedPlaylist = playlist;
             }
-            this.IsPresented = false;
+            await CloseSidebarInternalAsync();
         }
     }
 
-    private void OnTrackTapped(object sender, TappedEventArgs e)
+    private void OnTrackTapped(object? sender, TappedEventArgs e)
     {
         CloseSwipeView();
 
@@ -95,7 +181,7 @@ public partial class MobileMainPage : FlyoutPage
         }
     }
 
-    private void OnSwipeStarted(object sender, SwipeStartedEventArgs e)
+    private void OnSwipeStarted(object? sender, SwipeStartedEventArgs e)
     {
         if (sender is SwipeView currentSwipeView)
         {
@@ -107,20 +193,17 @@ public partial class MobileMainPage : FlyoutPage
         }
     }
 
-    private void OnListScrolled(object sender, ScrolledEventArgs e)
+    private void OnListScrolled(object? sender, ScrolledEventArgs e)
     {
         CloseSwipeView();
 
         if (_isProgrammaticScroll)
         {
             _lastScrollY = e.ScrollY;
-
-            // Extend debounce window while scrolling continues
             ResetScrollDetection();
             return;
         }
 
-        // Only disable Auto-Follow on real user movement
         if (Math.Abs(e.ScrollY - _lastScrollY) > 5)
         {
             if (BindingContext is ViewModels.MainViewModel vm)
@@ -141,13 +224,13 @@ public partial class MobileMainPage : FlyoutPage
         }
     }
 
-    private void OnDeletePlaylistTapped(object sender, TappedEventArgs e)
+    private async void OnDeletePlaylistTapped(object? sender, TappedEventArgs e)
     {
         CloseSwipeView();
-        this.IsPresented = false;
+        await CloseSidebarInternalAsync();
     }
 
-    private void OnTrackActionTapped(object sender, TappedEventArgs e)
+    private void OnTrackActionTapped(object? sender, TappedEventArgs e)
     {
         CloseSwipeView();
     }

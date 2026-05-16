@@ -63,8 +63,24 @@
                 </Border>
 
                 <!-- This row naturally expands to fill the leftover vertical space -->
-                <Border Grid.Row="1" BackgroundColor="#161b22" Stroke="#30363d" StrokeThickness="1" StrokeShape="RoundRectangle 8" Padding="0">
-                    <Editor x:Name="LyricsEditor" Text="{Binding LyricsText}" TextColor="White" BackgroundColor="Transparent" VerticalOptions="Fill" HorizontalOptions="Fill" Margin="12" FontSize="14" IsTextPredictionEnabled="False" IsSpellCheckEnabled="False"/>
+                <Border Grid.Row="1"
+                        BackgroundColor="#161b22"
+                        Stroke="#30363d"
+                        StrokeThickness="1"
+                        StrokeShape="RoundRectangle 8"
+                        Padding="0"
+                        MinimumHeightRequest="500">
+                    <Editor x:Name="LyricsEditor"
+                            Text="{Binding LyricsText}"
+                            TextColor="White"
+                            BackgroundColor="Transparent"
+                            VerticalOptions="Fill"
+                            HorizontalOptions="Fill"
+                            Margin="12"
+                            FontSize="14"
+                            MinimumHeightRequest="460"
+                            IsTextPredictionEnabled="False"
+                            IsSpellCheckEnabled="False"/>
                 </Border>
             </Grid>
 
