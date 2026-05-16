@@ -1,5 +1,4 @@
 ﻿using Microsoft.Maui.Controls;
-using Microsoft.Maui.Controls.Shapes;
 using Microsoft.Maui.Graphics;
 using Microsoft.Maui.Layouts;
 
@@ -7,14 +6,9 @@ namespace Musicthingy.Views;
 
 public class AutoMarqueeLabel : ContentView
 {
-    private readonly Grid _viewport;
-
+    private readonly AbsoluteLayout _canvas;
     private readonly Label _label1;
     private readonly Label _label2;
-
-    private readonly AbsoluteLayout _canvas;
-
-    private readonly RectangleGeometry _clip = new();
 
     private double _textWidth;
     private double _cycleWidth;
@@ -22,53 +16,28 @@ public class AutoMarqueeLabel : ContentView
     private double _lastWidth;
     private double _lastHeight;
 
-    private const double ScrollSpeed = 40.0;
-    private const double GapWidth = 75.0;
-    private const uint PauseDurationMs = 1200u;
+    private const double ScrollSpeed = 35.0;
+    private const double GapWidth = 100.0;
+    private const uint PauseDurationMs = 3500u;
+
+    // rate: 16 = ~60fps | rate: 8 = ~120fps
+    private const uint AnimationFrameRateMs = 16u;
 
     public static readonly BindableProperty TextProperty =
-        BindableProperty.Create(
-            nameof(Text),
-            typeof(string),
-            typeof(AutoMarqueeLabel),
-            string.Empty,
-            propertyChanged: (b, o, n) =>
-            {
-                ((AutoMarqueeLabel)b).Restart();
-            });
+        BindableProperty.Create(nameof(Text), typeof(string), typeof(AutoMarqueeLabel), string.Empty,
+            propertyChanged: (b, o, n) => ((AutoMarqueeLabel)b).Restart());
 
     public static readonly BindableProperty TextColorProperty =
-        BindableProperty.Create(
-            nameof(TextColor),
-            typeof(Color),
-            typeof(AutoMarqueeLabel),
-            Colors.White,
-            propertyChanged: (b, o, n) =>
-            {
-                ((AutoMarqueeLabel)b).ApplyStyles();
-            });
+        BindableProperty.Create(nameof(TextColor), typeof(Color), typeof(AutoMarqueeLabel), Colors.White,
+            propertyChanged: (b, o, n) => ((AutoMarqueeLabel)b).ApplyStyles());
 
     public static readonly BindableProperty FontSizeProperty =
-        BindableProperty.Create(
-            nameof(FontSize),
-            typeof(double),
-            typeof(AutoMarqueeLabel),
-            14.0,
-            propertyChanged: (b, o, n) =>
-            {
-                ((AutoMarqueeLabel)b).Restart();
-            });
+        BindableProperty.Create(nameof(FontSize), typeof(double), typeof(AutoMarqueeLabel), 14.0,
+            propertyChanged: (b, o, n) => ((AutoMarqueeLabel)b).Restart());
 
     public static readonly BindableProperty FontAttributesProperty =
-        BindableProperty.Create(
-            nameof(FontAttributes),
-            typeof(FontAttributes),
-            typeof(AutoMarqueeLabel),
-            FontAttributes.None,
-            propertyChanged: (b, o, n) =>
-            {
-                ((AutoMarqueeLabel)b).Restart();
-            });
+        BindableProperty.Create(nameof(FontAttributes), typeof(FontAttributes), typeof(AutoMarqueeLabel), FontAttributes.None,
+            propertyChanged: (b, o, n) => ((AutoMarqueeLabel)b).Restart());
 
     public string Text
     {
@@ -110,31 +79,34 @@ public class AutoMarqueeLabel : ContentView
         _canvas.Children.Add(_label1);
         _canvas.Children.Add(_label2);
 
-        _viewport = new Grid
+        // Grid's native clipping is heavily optimized compared to calculating custom Geometry clips
+        var viewport = new Grid
         {
-            Clip = _clip
+            IsClippedToBounds = true,
+            Children = { _canvas }
         };
 
-        _viewport.Children.Add(_canvas);
+        Content = viewport;
 
-        Content = _viewport;
-
-        SizeChanged += OnSizeChanged;
-        Loaded += (_, _) => Restart();
+        // Use Loaded/Unloaded to save battery when the user navigates away
+        Loaded += OnLoaded;
+        Unloaded += OnUnloaded;
     }
 
-    private void OnSizeChanged(object? sender, EventArgs e)
+    private void OnLoaded(object? sender, EventArgs e) => Restart();
+
+    private void OnUnloaded(object? sender, EventArgs e) => this.AbortAnimation("Marquee");
+
+    // Replaces SizeChanged event - safer for memory management and avoids delegate allocations
+    protected override void OnSizeAllocated(double width, double height)
     {
-        if (Math.Abs(_lastWidth - Width) < 0.5 &&
-            Math.Abs(_lastHeight - Height) < 0.5)
-        {
+        base.OnSizeAllocated(width, height);
+
+        if (Math.Abs(_lastWidth - width) < 0.5 && Math.Abs(_lastHeight - height) < 0.5)
             return;
-        }
 
-        _lastWidth = Width;
-        _lastHeight = Height;
-
-        UpdateClip();
+        _lastWidth = width;
+        _lastHeight = height;
 
         Restart();
     }
@@ -152,20 +124,13 @@ public class AutoMarqueeLabel : ContentView
 
     private void ApplyStyles()
     {
-        foreach (var label in new[] { _label1, _label2 })
-        {
-            label.TextColor = TextColor;
-            label.FontSize = FontSize;
-            label.FontAttributes = FontAttributes;
-        }
-    }
+        _label1.TextColor = TextColor;
+        _label1.FontSize = FontSize;
+        _label1.FontAttributes = FontAttributes;
 
-    private void UpdateClip()
-    {
-        if (Width <= 0 || Height <= 0)
-            return;
-
-        _clip.Rect = new Rect(0, 0, Width, Height);
+        _label2.TextColor = TextColor;
+        _label2.FontSize = FontSize;
+        _label2.FontAttributes = FontAttributes;
     }
 
     private void Restart()
@@ -185,37 +150,23 @@ public class AutoMarqueeLabel : ContentView
             return;
         }
 
-        var measure = _label1.Measure(
-            double.PositiveInfinity,
-            double.PositiveInfinity);
-
+        var measure = _label1.Measure(double.PositiveInfinity, double.PositiveInfinity);
         _textWidth = measure.Width;
 
         // Text fits, disable marquee completely
         if (_textWidth <= Width)
         {
             _label2.IsVisible = false;
-
-            AbsoluteLayout.SetLayoutBounds(
-                _label1,
-                new Rect(0, 0, _textWidth, Height));
-
+            AbsoluteLayout.SetLayoutBounds(_label1, new Rect(0, 0, _textWidth, Height));
             _canvas.TranslationX = 0;
-
             return;
         }
 
         _label2.IsVisible = true;
-
         _cycleWidth = _textWidth + GapWidth;
 
-        AbsoluteLayout.SetLayoutBounds(
-            _label1,
-            new Rect(0, 0, _textWidth, Height));
-
-        AbsoluteLayout.SetLayoutBounds(
-            _label2,
-            new Rect(_cycleWidth, 0, _textWidth, Height));
+        AbsoluteLayout.SetLayoutBounds(_label1, new Rect(0, 0, _textWidth, Height));
+        AbsoluteLayout.SetLayoutBounds(_label2, new Rect(_cycleWidth, 0, _textWidth, Height));
 
         _canvas.TranslationX = 0;
 
@@ -224,58 +175,35 @@ public class AutoMarqueeLabel : ContentView
 
     private void StartAnimation()
     {
-        uint scrollDuration =
-            (uint)((_cycleWidth / ScrollSpeed) * 1000.0);
+        double distance1 = _textWidth - Width;
+        double distance2 = Width + GapWidth;
+
+        double duration1 = (distance1 / ScrollSpeed) * 1000.0;
+        double duration2 = (distance2 / ScrollSpeed) * 1000.0;
+
+        double totalDuration = duration1 + duration2 + PauseDurationMs * 2;
+
+        double p1 = PauseDurationMs / totalDuration;
+        double p2 = (PauseDurationMs + duration1) / totalDuration;
+        double p3 = (PauseDurationMs * 2 + duration1) / totalDuration;
 
         var animation = new Animation();
 
-        // Pause at start
-        animation.Add(
-            0.0,
-            0.15,
-            new Animation(v =>
-            {
-                _canvas.TranslationX = v;
-            }, 0, 0));
-
-        // Scroll
-        animation.Add(
-            0.15,
-            0.85,
-            new Animation(v =>
-            {
-                _canvas.TranslationX = v;
-            }, 0, -_cycleWidth));
-
-        // Pause at end
-        animation.Add(
-            0.85,
-            1.0,
-            new Animation(v =>
-            {
-                _canvas.TranslationX = v;
-            }, -_cycleWidth, -_cycleWidth));
+        animation.Add(0.0, p1, new Animation(v => _canvas.TranslationX = v, 0, 0));
+        animation.Add(p1, p2, new Animation(v => _canvas.TranslationX = v, 0, -distance1));
+        animation.Add(p2, p3, new Animation(v => _canvas.TranslationX = v, -distance1, -distance1));
+        animation.Add(p3, 1.0, new Animation(v => _canvas.TranslationX = v, -distance1, -_cycleWidth));
 
         animation.Commit(
-            this,
-            "Marquee",
-            rate: 16,
-            length: scrollDuration + PauseDurationMs * 2u,
+            owner: this,
+            name: "Marquee",
+            rate: AnimationFrameRateMs, // Using 8ms for 120Hz support
+            length: (uint)totalDuration,
             easing: Easing.Linear,
             repeat: () =>
             {
                 _canvas.TranslationX = 0;
                 return true;
             });
-    }
-
-    protected override void OnParentSet()
-    {
-        base.OnParentSet();
-
-        if (Parent == null)
-        {
-            this.AbortAnimation("Marquee");
-        }
     }
 }
