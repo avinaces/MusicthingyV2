@@ -9,30 +9,26 @@ namespace Musicthingy.Views;
 public partial class MobilePlayerPaneView : ContentView
 {
     private enum PlayerState { Mini, Medium, FullScreen }
-
-    // Tracks the exact intended action so gestures don't conflict midway through a swipe
     private enum GestureIntent { None, Resizing, ClosingRight, ClosingDown }
 
     private PlayerState _targetState = PlayerState.Mini;
     private GestureIntent _currentGesture = GestureIntent.None;
     private double _startPanHeight;
 
-    // Fixed Height Constants
     private const double MiniHeight = 72;
     private const double MediumHeight = 280;
-
 
     public MobilePlayerPaneView()
     {
         InitializeComponent();
         SetupGestures();
 
-        // Subscribe to Auto-scroll Lyrics
+        UpdateLayoutForHeight(MiniHeight);
+
         WeakReferenceMessenger.Default.Register<ActiveLyricChangedMessage>(this, (r, m) =>
         {
             MainThread.BeginInvokeOnMainThread(() =>
             {
-                // Only scroll if Expanded!
                 if (_targetState != PlayerState.Mini && m.Lyric != null)
                 {
                     LyricsCollectionView.ScrollTo(m.Lyric, position: ScrollToPosition.Center, animate: true);
@@ -41,7 +37,6 @@ public partial class MobilePlayerPaneView : ContentView
         });
     }
 
-    // Safely fetch the max screen height dynamically instead of relying on this.Height
     private double FullScreenHeight
     {
         get
@@ -56,11 +51,9 @@ public partial class MobilePlayerPaneView : ContentView
 
     private void SetupGestures()
     {
-        // Smooth Dragging Pan Gesture
         var pan = new PanGestureRecognizer();
         pan.PanUpdated += OnPanUpdated;
 
-        // Tap Header to Expand
         var tap = new TapGestureRecognizer();
         tap.Tapped += (s, e) =>
         {
@@ -68,14 +61,12 @@ public partial class MobilePlayerPaneView : ContentView
                 AnimateToState(PlayerState.Medium);
         };
 
-        // Important: Attach the gestures ONLY to the header zone, 
-        // preventing conflicts with the Lyrics ScrollView and Sliders!
         HeaderDragZone.GestureRecognizers.Clear();
         HeaderDragZone.GestureRecognizers.Add(pan);
         HeaderDragZone.GestureRecognizers.Add(tap);
     }
 
-    private void OnPanUpdated(object ?sender, PanUpdatedEventArgs e)
+    private void OnPanUpdated(object? sender, PanUpdatedEventArgs e)
     {
         switch (e.StatusType)
         {
@@ -85,66 +76,49 @@ public partial class MobilePlayerPaneView : ContentView
                 break;
 
             case GestureStatus.Running:
-
                 if (_currentGesture == GestureIntent.None)
                 {
-                    // Require a minimum threshold to determine gesture direction
                     if (Math.Abs(e.TotalX) > 15 || Math.Abs(e.TotalY) > 15)
                     {
                         if (_startPanHeight <= MiniHeight + 1)
                         {
-                            // 1. Prioritize Resizing Upwards (Prevents accidental closes when swiping up diagonally)
                             if (e.TotalY < -10 && Math.Abs(e.TotalY) > Math.Abs(e.TotalX) * 0.5)
-                            {
                                 _currentGesture = GestureIntent.Resizing;
-                            }
-                            // 2. Closing Right
                             else if (e.TotalX > 20 && Math.Abs(e.TotalX) > Math.Abs(e.TotalY))
-                            {
                                 _currentGesture = GestureIntent.ClosingRight;
-                            }
-                            // 3. Closing Down
                             else if (e.TotalY > 20 && Math.Abs(e.TotalY) > Math.Abs(e.TotalX))
-                            {
                                 _currentGesture = GestureIntent.ClosingDown;
-                            }
                         }
                         else
                         {
-                            // If we are already expanded, any significant movement is resizing. We block closing.
                             _currentGesture = GestureIntent.Resizing;
                         }
                     }
                 }
 
-                // Apply layout updates based exclusively on the locked intent
                 if (_currentGesture == GestureIntent.ClosingRight)
                 {
-                    if (e.TotalX > 0)
-                        PlayerRoot.TranslationX = e.TotalX;
+                    if (e.TotalX > 0) PlayerRoot.TranslationX = e.TotalX;
                 }
                 else if (_currentGesture == GestureIntent.ClosingDown)
                 {
-                    if (e.TotalY > 0)
-                        PlayerRoot.TranslationY = e.TotalY;
+                    if (e.TotalY > 0) PlayerRoot.TranslationY = e.TotalY;
                 }
                 else if (_currentGesture == GestureIntent.Resizing)
                 {
                     double newHeight = _startPanHeight - e.TotalY;
                     newHeight = Math.Clamp(newHeight, MiniHeight, FullScreenHeight);
+
                     PlayerRoot.HeightRequest = newHeight;
-                    UpdateVisualStateForHeight(newHeight);
+                    UpdateLayoutForHeight(newHeight);
                 }
                 break;
 
             case GestureStatus.Completed:
             case GestureStatus.Canceled:
-
                 if (_currentGesture == GestureIntent.ClosingRight)
                 {
-                    // Require a deliberate swipe distance to commit to closing
-                    if (PlayerRoot.TranslationX > 120)
-                        ClosePlayer(true);
+                    if (PlayerRoot.TranslationX > 120) ClosePlayer(true);
                     else
                     {
                         PlayerRoot.TranslateToAsync(0, 0, 250, Easing.CubicOut);
@@ -153,8 +127,7 @@ public partial class MobilePlayerPaneView : ContentView
                 }
                 else if (_currentGesture == GestureIntent.ClosingDown)
                 {
-                    if (PlayerRoot.TranslationY > 50)
-                        ClosePlayer(false);
+                    if (PlayerRoot.TranslationY > 50) ClosePlayer(false);
                     else
                     {
                         PlayerRoot.TranslateToAsync(0, 0, 250, Easing.CubicOut);
@@ -166,19 +139,54 @@ public partial class MobilePlayerPaneView : ContentView
                     SnapToBestState();
                 }
 
-                // Reset intent for the next swipe
                 _currentGesture = GestureIntent.None;
                 break;
         }
     }
 
+    private void UpdateLayoutForHeight(double height)
+    {
+        double progressToMedium = Math.Clamp((height - MiniHeight) / (MediumHeight - MiniHeight), 0, 1);
+
+        double imgSize = 44 + (24 * progressToMedium);
+        TrackImageBorder.WidthRequest = imgSize;
+        TrackImageBorder.HeightRequest = imgSize;
+
+        double miniOpacity = Math.Clamp(1.0 - (progressToMedium / 0.3), 0, 1);
+        MiniControls.Opacity = miniOpacity;
+        MiniControls.IsVisible = miniOpacity > 0.01;
+
+        double expandedOpacity = Math.Clamp((progressToMedium - 0.3) / 0.7, 0, 1);
+        ExpandedHeaderControls.Opacity = expandedOpacity;
+        ExpandedHeaderControls.IsVisible = expandedOpacity > 0.01;
+
+        DragHandle.Opacity = expandedOpacity;
+        DragHandle.IsVisible = expandedOpacity > 0.01;
+
+        ExpandedContentZone.Opacity = expandedOpacity;
+        ExpandedContentZone.IsVisible = height > (MiniHeight + 5);
+
+        // 5. Smoothly morphed MARGIN instead of Padding to prevent Grid snapping
+        double marginLr = 12 + (4 * progressToMedium);        // 12 -> 16
+        double marginTop = 14 + (12 * progressToMedium);      // 14 -> 26
+        double marginBot = 14 - (6 * progressToMedium);       // 14 -> 8
+        HeaderContentGrid.Margin = new Thickness(marginLr, marginTop, marginLr, marginBot);
+
+        double fullHeight = FullScreenHeight;
+        if (fullHeight > MediumHeight && NoLyricsPrompt != null)
+        {
+            double progressToFull = Math.Clamp((height - MediumHeight) / (fullHeight - MediumHeight), 0, 1);
+            double promptOpacity = Math.Clamp(progressToFull * 2, 0, 1);
+
+            NoLyricsPrompt.Opacity = promptOpacity;
+            NoLyricsPrompt.IsVisible = promptOpacity > 0.01;
+        }
+    }
+
     private async void ClosePlayer(bool isHorizontal)
     {
-
-
         uint length = 200;
 
-        // Animate completely off-screen using explicit large coordinates
         if (isHorizontal)
         {
             await PlayerRoot.TranslateToAsync(1000, 0, length, Easing.CubicIn);
@@ -188,54 +196,28 @@ public partial class MobilePlayerPaneView : ContentView
             await PlayerRoot.TranslateToAsync(0, MiniHeight + 100, length, Easing.CubicIn);
         }
 
-        // Stop playback, hide pane, clear queue, and deselect the track
         if (this.BindingContext is Musicthingy.ViewModels.MainViewModel vm)
         {
-            // 1. Manually deselect the track so it doesn't stay visually highlighted in the list
-            if (vm.CurrentTrack != null)
-            {
-                vm.CurrentTrack.IsSelected = false;
-            }
-
-            // 2. Set to null to stop VLC and hide the UI pane
+            if (vm.CurrentTrack != null) vm.CurrentTrack.IsSelected = false;
             vm.CurrentTrack = null;
-
-            // 3. Clear the queue for a perfectly clean slate
             vm.PlaybackQueue?.Clear();
         }
 
-        // Reset translation properties invisibly so it behaves normally the next time a track is clicked
         PlayerRoot.TranslationX = 0;
         PlayerRoot.TranslationY = 0;
         PlayerRoot.HeightRequest = MiniHeight;
         _targetState = PlayerState.Mini;
-        UpdateVisualStateForHeight(MiniHeight);
-    }
 
-    private void UpdateVisualStateForHeight(double height)
-    {
-        string stateName;
-        if (height < (MiniHeight + 50))
-            stateName = "Mini";
-        else if (height < (FullScreenHeight * 0.75))
-            stateName = "Medium";
-        else
-            stateName = "FullScreen";
-
-        VisualStateManager.GoToState(PlayerRoot, stateName);
+        UpdateLayoutForHeight(MiniHeight);
     }
 
     private void SnapToBestState()
     {
         double currentHeight = PlayerRoot.Height;
 
-        // Determine which state is closest to where the user let go
-        if (currentHeight > (FullScreenHeight * 0.6))
-            AnimateToState(PlayerState.FullScreen);
-        else if (currentHeight > (MiniHeight + 80))
-            AnimateToState(PlayerState.Medium);
-        else
-            AnimateToState(PlayerState.Mini);
+        if (currentHeight > (FullScreenHeight * 0.6)) AnimateToState(PlayerState.FullScreen);
+        else if (currentHeight > (MiniHeight + 80)) AnimateToState(PlayerState.Medium);
+        else AnimateToState(PlayerState.Mini);
     }
 
     private void AnimateToState(PlayerState state)
@@ -248,16 +230,16 @@ public partial class MobilePlayerPaneView : ContentView
             _ => MiniHeight
         };
 
-        // Animate the layout change smoothly
         Animation heightAnimation = new Animation(
-            callback: h => PlayerRoot.HeightRequest = h,
+            callback: h =>
+            {
+                PlayerRoot.HeightRequest = h;
+                UpdateLayoutForHeight(h);
+            },
             start: PlayerRoot.Height,
             end: targetHeight,
             easing: Easing.CubicOut);
 
-        heightAnimation.Commit(this, "PlayerResize", length: 250, finished: (v, c) =>
-        {
-            UpdateVisualStateForHeight(targetHeight);
-        });
+        heightAnimation.Commit(this, "PlayerResize", length: 250);
     }
 }
