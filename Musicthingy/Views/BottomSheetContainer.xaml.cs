@@ -40,16 +40,24 @@ public partial class BottomSheetContainer : ContentView
         }
     }
 
+    /// <summary>
+    /// Invokes the CloseRequested event to signal the host to natively close the bottom sheet.
+    /// </summary>
+    public void Close()
+    {
+        CloseRequested?.Invoke(this, EventArgs.Empty);
+    }
+
     private void OnOverlayTapped(object? sender, TappedEventArgs e)
     {
         // Simply requesting to close lets SlideUpSheetHost handle its clean, native exit animation.
-        CloseRequested?.Invoke(this, EventArgs.Empty);
+        Close();
     }
 
     private void OnPanUpdated(object? sender, PanUpdatedEventArgs e)
     {
         // V1 Restored: Translate the parent wrapper exactly as SlideUpSheetHost expects.
-        var sheetParent = this.Parent as View ?? this;
+        View sheetParent = this.Parent as View ?? this;
 
         switch (e.StatusType)
         {
@@ -69,7 +77,7 @@ public partial class BottomSheetContainer : ContentView
                 // If dragged down more than 100px, close it
                 if (sheetParent.TranslationY > 100)
                 {
-                    CloseRequested?.Invoke(this, EventArgs.Empty);
+                    Close();
                 }
                 else
                 {

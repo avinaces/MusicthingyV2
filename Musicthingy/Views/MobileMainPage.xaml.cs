@@ -7,7 +7,6 @@ namespace Musicthingy.Views;
 
 public partial class MobileMainPage : ContentPage
 {
-    private SwipeView? _openedSwipeView;
     private bool _isProgrammaticScroll = false;
     private double _lastScrollY = 0;
     private CancellationTokenSource? _scrollCts;
@@ -52,7 +51,7 @@ public partial class MobileMainPage : ContentPage
         _scrollCts?.Cancel();
         _scrollCts = new CancellationTokenSource();
 
-        var token = _scrollCts.Token;
+        CancellationToken token = _scrollCts.Token;
 
         Task.Run(async () =>
         {
@@ -154,8 +153,6 @@ public partial class MobileMainPage : ContentPage
 
     private async void OnPlaylistTapped(object? sender, TappedEventArgs e)
     {
-        CloseSwipeView();
-
         if (sender is BindableObject bindable && bindable.BindingContext is Playlist playlist)
         {
             if (BindingContext is ViewModels.MainViewModel vm)
@@ -169,8 +166,6 @@ public partial class MobileMainPage : ContentPage
 
     private void OnTrackTapped(object? sender, TappedEventArgs e)
     {
-        CloseSwipeView();
-
         if (sender is BindableObject bindable && bindable.BindingContext is PlaylistItem track)
         {
             if (BindingContext is ViewModels.MainViewModel vm)
@@ -181,22 +176,8 @@ public partial class MobileMainPage : ContentPage
         }
     }
 
-    private void OnSwipeStarted(object? sender, SwipeStartedEventArgs e)
-    {
-        if (sender is SwipeView currentSwipeView)
-        {
-            if (_openedSwipeView != null && _openedSwipeView != currentSwipeView)
-            {
-                _openedSwipeView.Close();
-            }
-            _openedSwipeView = currentSwipeView;
-        }
-    }
-
     private void OnListScrolled(object? sender, ScrolledEventArgs e)
     {
-        CloseSwipeView();
-
         if (_isProgrammaticScroll)
         {
             _lastScrollY = e.ScrollY;
@@ -215,23 +196,56 @@ public partial class MobileMainPage : ContentPage
         _lastScrollY = e.ScrollY;
     }
 
-    private void CloseSwipeView()
+    /// <summary>
+    /// Event handler to open the Bottom Sheet Context Menu for a track when the 3-dots are tapped.
+    /// </summary>
+    private async void OnTrackOptionsTapped(object? sender, TappedEventArgs e)
     {
-        if (_openedSwipeView != null)
+        if (sender is BindableObject bindable && bindable.BindingContext is PlaylistItem track)
         {
-            _openedSwipeView.Close();
-            _openedSwipeView = null;
+            if (BindingContext is ViewModels.MainViewModel vm)
+            {
+                ContextMenuSheet menuSheet = new ContextMenuSheet
+                {
+                    MenuTitle = track.Title,
+                    MenuItems = new List<ContextMenuItem>
+                    {
+                        new ContextMenuItem { Title = "Edit Track", IconSource = "pencil_icon.png", Action = () => vm.EditTrackCommand.Execute(track) },
+                        new ContextMenuItem { Title = "Delete from Playlist", IconSource = "trash_2_icon.png", IsDestructive = true, Action = () => vm.DeleteTrackCommand.Execute(track) }
+                    }
+                };
+
+                if (Services.SheetManager.Host != null)
+                {
+                    await Services.SheetManager.Host.ShowAsync(menuSheet);
+                }
+            }
         }
     }
 
-    private async void OnDeletePlaylistTapped(object? sender, TappedEventArgs e)
+    /// <summary>
+    /// Event handler to open the Bottom Sheet Context Menu for a playlist when the 3-dots are tapped.
+    /// </summary>
+    private async void OnPlaylistOptionsTapped(object? sender, TappedEventArgs e)
     {
-        CloseSwipeView();
-        await CloseSidebarInternalAsync();
-    }
+        if (sender is BindableObject bindable && bindable.BindingContext is Playlist playlist)
+        {
+            if (BindingContext is ViewModels.MainViewModel vm)
+            {
+                ContextMenuSheet menuSheet = new ContextMenuSheet
+                {
+                    MenuTitle = playlist.Name,
+                    MenuItems = new List<ContextMenuItem>
+                    {
+                        new ContextMenuItem { Title = "Delete Playlist", IconSource = "trash_2_icon.png", IsDestructive = true, Action = () => vm.DeletePlaylistCommand.Execute(playlist) }
+                    }
+                };
 
-    private void OnTrackActionTapped(object? sender, TappedEventArgs e)
-    {
-        CloseSwipeView();
+                if (Services.SheetManager.Host != null)
+                {
+                    await Services.SheetManager.Host.ShowAsync(menuSheet);
+                }
+            }
+        }
     }
 }

@@ -3,8 +3,6 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
              xmlns:models="clr-namespace:Musicthingy.Models"
              xmlns:views="clr-namespace:Musicthingy.Views"
-             xmlns:android="clr-namespace:Microsoft.Maui.Controls.PlatformConfiguration.AndroidSpecific;assembly=Microsoft.Maui.Controls"
-             xmlns:ios="clr-namespace:Microsoft.Maui.Controls.PlatformConfiguration.iOSSpecific;assembly=Microsoft.Maui.Controls"
              xmlns:mpowerkit="clr-namespace:MPowerKit.VirtualizeListView;assembly=MPowerKit.VirtualizeListView"
              x:Class="Musicthingy.Views.MobileMainPage"
              x:Name="RootPage"
@@ -88,75 +86,60 @@
                                                 </DataTrigger>
                                             </Border.Triggers>
 
-                                            <SwipeView android:SwipeView.SwipeTransitionMode="Drag" Threshold="100" SwipeStarted="OnSwipeStarted">
-                                                <SwipeView.RightItems>
-                                                    <SwipeItems Mode="Reveal">
-                                                        <SwipeItemView WidthRequest="140" HeightRequest="58">
-                                                            <Grid WidthRequest="140" HeightRequest="58" ColumnDefinitions="70, 70" ColumnSpacing="0" RowSpacing="0" Margin="0" Padding="0">
-                                                                <ContentView Grid.Column="0" WidthRequest="70" HeightRequest="58" BackgroundColor="{DynamicResource SwipeEditColor}">
-                                                                    <ContentView.GestureRecognizers>
-                                                                        <TapGestureRecognizer Command="{Binding BindingContext.EditTrackCommand, Source={x:Reference RootPage}}" CommandParameter="{Binding .}" Tapped="OnTrackActionTapped" />
-                                                                    </ContentView.GestureRecognizers>
-                                                                    <Image Source="pencil_icon.png" WidthRequest="20" HeightRequest="20" HorizontalOptions="Center" VerticalOptions="Center" InputTransparent="True" />
-                                                                </ContentView>
+                                            <!-- Restructured for simple Tap and Options button -->
+                                            <Grid ColumnDefinitions="Auto, *, Auto" ColumnSpacing="10" Padding="10" BackgroundColor="Transparent">
+                                                <Grid.GestureRecognizers>
+                                                    <TapGestureRecognizer Tapped="OnTrackTapped" />
+                                                </Grid.GestureRecognizers>
 
-                                                                <ContentView Grid.Column="1" WidthRequest="70" HeightRequest="58" BackgroundColor="{DynamicResource SwipeDeleteColor}">
-                                                                    <ContentView.GestureRecognizers>
-                                                                        <TapGestureRecognizer Command="{Binding BindingContext.DeleteTrackCommand, Source={x:Reference RootPage}}" CommandParameter="{Binding .}" Tapped="OnTrackActionTapped" />
-                                                                    </ContentView.GestureRecognizers>
-                                                                    <Image Source="trash_2_icon.png" WidthRequest="20" HeightRequest="20" HorizontalOptions="Center" VerticalOptions="Center" InputTransparent="True" />
-                                                                </ContentView>
-                                                            </Grid>
-                                                        </SwipeItemView>
-                                                    </SwipeItems>
-                                                </SwipeView.RightItems>
-
-                                                <Grid ColumnDefinitions="Auto, *" ColumnSpacing="10" Padding="10" BackgroundColor="Transparent">
-                                                    <Grid.GestureRecognizers>
-                                                        <TapGestureRecognizer Tapped="OnTrackTapped" />
-                                                    </Grid.GestureRecognizers>
-
-                                                    <Grid Grid.Column="0" WidthRequest="36" HeightRequest="36" VerticalOptions="Center">
-                                                        <Image Source="{Binding ItemIconSource}" Aspect="AspectFill">
-                                                            <Image.Clip>
-                                                                <RoundRectangleGeometry CornerRadius="6" Rect="0,0,36,36" />
-                                                            </Image.Clip>
-                                                        </Image>
-                                                    </Grid>
-
-                                                    <VerticalStackLayout Grid.Column="1" VerticalOptions="Center">
-                                                        <Label Text="{Binding Title}" FontSize="15" FontAttributes="Bold" LineBreakMode="TailTruncation" />
-                                                        <Grid HeightRequest="24" IsClippedToBounds="True">
-                                                            <HorizontalStackLayout Spacing="0" VerticalOptions="Center">
-                                                                <Border Background="#1c304a" Stroke="{DynamicResource AccentColor}" StrokeThickness="1" Padding="5,1" Margin="0,0,1,1" IsVisible="{Binding HasTag1}">
-                                                                    <Border.StrokeShape>
-                                                                        <RoundRectangle CornerRadius="6"/>
-                                                                    </Border.StrokeShape>
-                                                                    <Label Text="{Binding Tag1}" TextColor="#d9edff" FontSize="11"/>
-                                                                </Border>
-                                                                <Border Background="#1c304a" Stroke="{DynamicResource AccentColor}" StrokeThickness="1" Padding="5,1" Margin="0,0,1,1" IsVisible="{Binding HasTag2}">
-                                                                    <Border.StrokeShape>
-                                                                        <RoundRectangle CornerRadius="6"/>
-                                                                    </Border.StrokeShape>
-                                                                    <Label Text="{Binding Tag2}" TextColor="#d9edff" FontSize="11"/>
-                                                                </Border>
-                                                                <Border Background="#1c304a" Stroke="{DynamicResource AccentColor}" StrokeThickness="1" Padding="5,1" Margin="0,0,1,1" IsVisible="{Binding HasTag3}">
-                                                                    <Border.StrokeShape>
-                                                                        <RoundRectangle CornerRadius="6"/>
-                                                                    </Border.StrokeShape>
-                                                                    <Label Text="{Binding Tag3}" TextColor="#d9edff" FontSize="11"/>
-                                                                </Border>
-                                                                <Border Background="#1c304a" Stroke="{DynamicResource AccentColor}" StrokeThickness="1" Padding="5,1" Margin="0,0,1,1" IsVisible="{Binding HasTag4}">
-                                                                    <Border.StrokeShape>
-                                                                        <RoundRectangle CornerRadius="6"/>
-                                                                    </Border.StrokeShape>
-                                                                    <Label Text="{Binding Tag4}" TextColor="#d9edff" FontSize="11"/>
-                                                                </Border>
-                                                            </HorizontalStackLayout>
-                                                        </Grid>
-                                                    </VerticalStackLayout>
+                                                <Grid Grid.Column="0" WidthRequest="36" HeightRequest="36" VerticalOptions="Center">
+                                                    <Image Source="{Binding ItemIconSource}" Aspect="AspectFill">
+                                                        <Image.Clip>
+                                                            <RoundRectangleGeometry CornerRadius="6" Rect="0,0,36,36" />
+                                                        </Image.Clip>
+                                                    </Image>
                                                 </Grid>
-                                            </SwipeView>
+
+                                                <VerticalStackLayout Grid.Column="1" VerticalOptions="Center">
+                                                    <Label Text="{Binding Title}" FontSize="15" FontAttributes="Bold" LineBreakMode="TailTruncation" />
+                                                    <Grid HeightRequest="24" IsClippedToBounds="True">
+                                                        <HorizontalStackLayout Spacing="0" VerticalOptions="Center">
+                                                            <Border Background="#1c304a" Stroke="{DynamicResource AccentColor}" StrokeThickness="1" Padding="5,1" Margin="0,0,1,1" IsVisible="{Binding HasTag1}">
+                                                                <Border.StrokeShape>
+                                                                    <RoundRectangle CornerRadius="6"/>
+                                                                </Border.StrokeShape>
+                                                                <Label Text="{Binding Tag1}" TextColor="#d9edff" FontSize="11"/>
+                                                            </Border>
+                                                            <Border Background="#1c304a" Stroke="{DynamicResource AccentColor}" StrokeThickness="1" Padding="5,1" Margin="0,0,1,1" IsVisible="{Binding HasTag2}">
+                                                                <Border.StrokeShape>
+                                                                    <RoundRectangle CornerRadius="6"/>
+                                                                </Border.StrokeShape>
+                                                                <Label Text="{Binding Tag2}" TextColor="#d9edff" FontSize="11"/>
+                                                            </Border>
+                                                            <Border Background="#1c304a" Stroke="{DynamicResource AccentColor}" StrokeThickness="1" Padding="5,1" Margin="0,0,1,1" IsVisible="{Binding HasTag3}">
+                                                                <Border.StrokeShape>
+                                                                    <RoundRectangle CornerRadius="6"/>
+                                                                </Border.StrokeShape>
+                                                                <Label Text="{Binding Tag3}" TextColor="#d9edff" FontSize="11"/>
+                                                            </Border>
+                                                            <Border Background="#1c304a" Stroke="{DynamicResource AccentColor}" StrokeThickness="1" Padding="5,1" Margin="0,0,1,1" IsVisible="{Binding HasTag4}">
+                                                                <Border.StrokeShape>
+                                                                    <RoundRectangle CornerRadius="6"/>
+                                                                </Border.StrokeShape>
+                                                                <Label Text="{Binding Tag4}" TextColor="#d9edff" FontSize="11"/>
+                                                            </Border>
+                                                        </HorizontalStackLayout>
+                                                    </Grid>
+                                                </VerticalStackLayout>
+
+                                                <!-- 3-dots Context Menu Trigger -->
+                                                <ContentView Grid.Column="2" VerticalOptions="Center" HorizontalOptions="End" WidthRequest="40" HeightRequest="48" BackgroundColor="Transparent">
+                                                    <ContentView.GestureRecognizers>
+                                                        <TapGestureRecognizer Tapped="OnTrackOptionsTapped" />
+                                                    </ContentView.GestureRecognizers>
+                                                    <Image Source="ellipsis_vertical_icon.png" WidthRequest="20" HeightRequest="20" HorizontalOptions="Center" VerticalOptions="Center" />
+                                                </ContentView>
+                                            </Grid>
                                         </Border>
                                     </Grid>
                                 </mpowerkit:VirtualizeListViewCell>
@@ -223,42 +206,36 @@
                                             </DataTrigger>
                                         </Border.Triggers>
 
-                                        <SwipeView android:SwipeView.SwipeTransitionMode="Drag" ios:SwipeView.SwipeTransitionMode="Drag" Threshold="90" SwipeStarted="OnSwipeStarted">
-                                            <SwipeView.LeftItems>
-                                                <SwipeItems Mode="Reveal">
-                                                    <SwipeItemView WidthRequest="75" MinimumWidthRequest="75" HeightRequest="84">
-                                                        <ContentView WidthRequest="75" HeightRequest="84" BackgroundColor="{DynamicResource SwipeDeleteColor}">
-                                                            <ContentView.GestureRecognizers>
-                                                                <TapGestureRecognizer Command="{Binding BindingContext.DeletePlaylistCommand, Source={x:Reference RootPage}}" CommandParameter="{Binding .}" Tapped="OnDeletePlaylistTapped" />
-                                                            </ContentView.GestureRecognizers>
-                                                            <Image Source="trash_2_icon.png" WidthRequest="22" HeightRequest="22" HorizontalOptions="Center" VerticalOptions="Center" InputTransparent="True" />
-                                                        </ContentView>
-                                                    </SwipeItemView>
-                                                </SwipeItems>
-                                            </SwipeView.LeftItems>
+                                        <!-- Restructured for simple Tap and Options button -->
+                                        <Grid ColumnDefinitions="Auto, *, Auto" ColumnSpacing="12" Padding="12" BackgroundColor="Transparent">
+                                            <Grid.GestureRecognizers>
+                                                <TapGestureRecognizer Tapped="OnPlaylistTapped" />
+                                            </Grid.GestureRecognizers>
 
-                                            <Grid ColumnDefinitions="Auto, *" ColumnSpacing="12" Padding="12" BackgroundColor="Transparent">
-                                                <Grid.GestureRecognizers>
-                                                    <TapGestureRecognizer Tapped="OnPlaylistTapped" />
-                                                </Grid.GestureRecognizers>
+                                            <Image Grid.Column="0" Source="{Binding IconImageSource}" HeightRequest="60" WidthRequest="60" Aspect="AspectFill" VerticalOptions="Center">
+                                                <Image.Clip>
+                                                    <RoundRectangleGeometry CornerRadius="8" Rect="0,0,60,60" />
+                                                </Image.Clip>
+                                            </Image>
 
-                                                <Image Grid.Column="0" Source="{Binding IconImageSource}" HeightRequest="60" WidthRequest="60" Aspect="AspectFill" VerticalOptions="Center">
-                                                    <Image.Clip>
-                                                        <RoundRectangleGeometry CornerRadius="8" Rect="0,0,60,60" />
-                                                    </Image.Clip>
-                                                </Image>
+                                            <VerticalStackLayout Grid.Column="1" VerticalOptions="Center" Spacing="2">
+                                                <Label Text="{Binding Name}" FontSize="15" FontAttributes="Bold" LineBreakMode="TailTruncation" />
+                                                <HorizontalStackLayout Spacing="8">
+                                                    <Label Text="{Binding ItemCount, StringFormat='{0} tracks'}" FontSize="12" TextColor="{DynamicResource MutedColor}" />
+                                                    <Label Text="•" TextColor="{DynamicResource MutedColor}" FontSize="12" />
+                                                    <Label Text="{Binding DisplayDuration}" FontSize="12" TextColor="{DynamicResource MutedColor}" />
+                                                </HorizontalStackLayout>
+                                                <Label Text="{Binding CreatedAt, StringFormat='CREATED {0:MMM dd, yyyy}'}" FontSize="10" TextColor="{DynamicResource MutedColor}" TextTransform="Uppercase" />
+                                            </VerticalStackLayout>
 
-                                                <VerticalStackLayout Grid.Column="1" VerticalOptions="Center" Spacing="2">
-                                                    <Label Text="{Binding Name}" FontSize="15" FontAttributes="Bold" LineBreakMode="TailTruncation" />
-                                                    <HorizontalStackLayout Spacing="8">
-                                                        <Label Text="{Binding ItemCount, StringFormat='{0} tracks'}" FontSize="12" TextColor="{DynamicResource MutedColor}" />
-                                                        <Label Text="•" TextColor="{DynamicResource MutedColor}" FontSize="12" />
-                                                        <Label Text="{Binding DisplayDuration}" FontSize="12" TextColor="{DynamicResource MutedColor}" />
-                                                    </HorizontalStackLayout>
-                                                    <Label Text="{Binding CreatedAt, StringFormat='CREATED {0:MMM dd, yyyy}'}" FontSize="10" TextColor="{DynamicResource MutedColor}" TextTransform="Uppercase" />
-                                                </VerticalStackLayout>
-                                            </Grid>
-                                        </SwipeView>
+                                            <!-- 3-dots Context Menu Trigger -->
+                                            <ContentView Grid.Column="2" VerticalOptions="Center" HorizontalOptions="End" WidthRequest="40" HeightRequest="60" BackgroundColor="Transparent">
+                                                <ContentView.GestureRecognizers>
+                                                    <TapGestureRecognizer Tapped="OnPlaylistOptionsTapped" />
+                                                </ContentView.GestureRecognizers>
+                                                <Image Source="ellipsis_vertical_icon.png" WidthRequest="20" HeightRequest="20" HorizontalOptions="Center" VerticalOptions="Center" />
+                                            </ContentView>
+                                        </Grid>
                                     </Border>
                                 </Grid>
                             </mpowerkit:VirtualizeListViewCell>

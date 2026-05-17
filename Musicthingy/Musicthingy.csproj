@@ -106,6 +106,9 @@
 	  <MauiXaml Update="Views\BottomSheetContainer.xaml">
 	    <Generator>MSBuild:Compile</Generator>
 	  </MauiXaml>
+	  <MauiXaml Update="Views\ContextMenuSheet.xaml">
+	    <Generator>MSBuild:Compile</Generator>
+	  </MauiXaml>
 	  <MauiXaml Update="Views\EditLyricsSheet.xaml">
 	    <Generator>MSBuild:Compile</Generator>
 	  </MauiXaml>
