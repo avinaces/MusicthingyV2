@@ -151,6 +151,11 @@ public partial class MainViewModel
             MainThread.BeginInvokeOnMainThread(() =>
             {
                 IsLoadingMedia = false;
+
+                // If even the VLC fallback fails, automatically skip to the next track
+                // so the playlist doesn't freeze permanently!
+                PlayNextCommand.Execute("Error");
+                Debug.WriteLine("Failed to play media");
             });
             ReleaseTransientWakeLock();
         };
@@ -217,13 +222,6 @@ public partial class MainViewModel
             return; // Abort silently!
         }
 
-        if (rawAudioUrl == null)
-        {
-            IsLoadingMedia = false;
-            ReleaseTransientWakeLock();
-            return;
-        }
-
         var media = new Media(_libVLC!, new Uri(rawAudioUrl));
 
         // --- FIX FOR BACKGROUND SKIPPING & AUDIO CUTOUTS ---
@@ -284,6 +282,16 @@ public partial class MainViewModel
                 }
 
                 return rawAudioUrl;
+            }
+            catch (YoutubeExplode.Exceptions.YoutubeExplodeException ex)
+            {
+                Debug.WriteLine($"YoutubeExplode cipher error: {ex.Message}");
+
+                // FALLBACK: Return the raw YouTube URL instead of null!
+                // LibVLC has its own built-in Lua scripts to parse YouTube URLs.
+                // It uses more bandwidth than YoutubeExplode, but it can bypass
+                // age-restricted/kids video blocks as a last resort!
+                return track.Url;
             }
             catch (Exception ex)
             {
