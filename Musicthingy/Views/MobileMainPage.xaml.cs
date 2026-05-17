@@ -78,7 +78,7 @@ public partial class MobileMainPage : ContentPage
             case GestureStatus.Started:
                 _isSidebarPanning = true;
                 SidebarDarken.IsVisible = true;
-                EdgeSwipeZone.IsVisible = false; // Hide Edge Zone to avoid touch conflicts while open
+                EdgeSwipeZone.IsVisible = false;
                 _panStartX = SidebarGrid.TranslationX;
                 break;
 
@@ -87,13 +87,10 @@ public partial class MobileMainPage : ContentPage
 
                 double newTx = _panStartX + e.TotalX;
 
-                // Clamp drawer between completely closed (-_sidebarWidth) and completely open (0)
                 if (newTx > 0) newTx = 0;
                 if (newTx < -_sidebarWidth) newTx = -_sidebarWidth;
 
                 SidebarGrid.TranslationX = newTx;
-
-                // Adjust opacity perfectly synced with translation distance
                 SidebarDarken.Opacity = (newTx + _sidebarWidth) / _sidebarWidth;
                 break;
 
@@ -101,7 +98,6 @@ public partial class MobileMainPage : ContentPage
             case GestureStatus.Canceled:
                 _isSidebarPanning = false;
 
-                // If they've dragged it past the halfway point, snap it open. Otherwise snap closed.
                 if (SidebarGrid.TranslationX > -(_sidebarWidth * 0.5))
                 {
                     _ = OpenSidebarInternalAsync();
@@ -197,9 +193,9 @@ public partial class MobileMainPage : ContentPage
     }
 
     /// <summary>
-    /// Event handler to open the Bottom Sheet Context Menu for a track when the 3-dots are tapped.
+    /// Event handler to open the Bottom Sheet Context Menu for a track.
     /// </summary>
-    private async void OnTrackOptionsTapped(object? sender, TappedEventArgs e)
+    private async void OnTrackOptionsClicked(object? sender, EventArgs e)
     {
         if (sender is BindableObject bindable && bindable.BindingContext is PlaylistItem track)
         {
@@ -207,13 +203,36 @@ public partial class MobileMainPage : ContentPage
             {
                 ContextMenuSheet menuSheet = new ContextMenuSheet
                 {
-                    MenuTitle = track.Title,
-                    MenuItems = new List<ContextMenuItem>
-                    {
-                        new ContextMenuItem { Title = "Edit Track", IconSource = "pencil_icon.png", Action = () => vm.EditTrackCommand.Execute(track) },
-                        new ContextMenuItem { Title = "Delete from Playlist", IconSource = "trash_2_icon.png", IsDestructive = true, Action = () => vm.DeleteTrackCommand.Execute(track) }
-                    }
+                    HasHeader = true,
+                    HeaderTitle = track.Title,
+                    HeaderSubtitle = vm.SelectedPlaylist?.Name ?? "Track",
+                    HeaderImageSource = track.ItemIconSource
                 };
+
+                menuSheet.MenuItems = new List<ContextMenuItem>
+            {
+                new ContextMenuItem
+                {
+                    Title = "Edit Track",
+                    IconSource = "pencil_icon.png",
+                    Action = async () =>
+                    {
+                        await Services.SheetManager.Host!.HideAsync(menuSheet);
+                        vm.EditTrackCommand.Execute(track);
+                    }
+                },
+                new ContextMenuItem
+                {
+                    Title = "Delete from Playlist",
+                    IconSource = "trash_2_icon.png",
+                    IsDestructive = true,
+                    Action = async () =>
+                    {
+                        await Services.SheetManager.Host!.HideAsync(menuSheet);
+                        vm.DeleteTrackCommand.Execute(track);
+                    }
+                }
+            };
 
                 if (Services.SheetManager.Host != null)
                 {
@@ -224,9 +243,9 @@ public partial class MobileMainPage : ContentPage
     }
 
     /// <summary>
-    /// Event handler to open the Bottom Sheet Context Menu for a playlist when the 3-dots are tapped.
+    /// Event handler to open the Bottom Sheet Context Menu for a playlist.
     /// </summary>
-    private async void OnPlaylistOptionsTapped(object? sender, TappedEventArgs e)
+    private async void OnPlaylistOptionsClicked(object? sender, EventArgs e)
     {
         if (sender is BindableObject bindable && bindable.BindingContext is Playlist playlist)
         {
@@ -234,12 +253,26 @@ public partial class MobileMainPage : ContentPage
             {
                 ContextMenuSheet menuSheet = new ContextMenuSheet
                 {
-                    MenuTitle = playlist.Name,
-                    MenuItems = new List<ContextMenuItem>
-                    {
-                        new ContextMenuItem { Title = "Delete Playlist", IconSource = "trash_2_icon.png", IsDestructive = true, Action = () => vm.DeletePlaylistCommand.Execute(playlist) }
-                    }
+                    HasHeader = true,
+                    HeaderTitle = playlist.Name,
+                    HeaderSubtitle = $"{playlist.ItemCount} tracks • {playlist.DisplayDuration}",
+                    HeaderImageSource = playlist.IconImageSource
                 };
+
+                menuSheet.MenuItems = new List<ContextMenuItem>
+            {
+                new ContextMenuItem
+                {
+                    Title = "Delete Playlist",
+                    IconSource = "trash_2_icon.png",
+                    IsDestructive = true,
+                    Action = async () =>
+                    {
+                        await Services.SheetManager.Host!.HideAsync(menuSheet);
+                        vm.DeletePlaylistCommand.Execute(playlist);
+                    }
+                }
+            };
 
                 if (Services.SheetManager.Host != null)
                 {

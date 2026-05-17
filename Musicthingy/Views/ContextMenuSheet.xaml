@@ -5,26 +5,51 @@
              x:Class="Musicthingy.Views.ContextMenuSheet"
              x:Name="Root">
 
-    <views:BottomSheetContainer x:Name="InnerSheet" Title="{Binding MenuTitle, Source={x:Reference Root}}" CloseRequested="OnSheetCloseRequested">
+    <!-- Notice Title is left blank so the default raw text title collapses, making way for our styled Header Card -->
+    <views:BottomSheetContainer x:Name="InnerSheet" Title="" CloseRequested="OnSheetCloseRequested">
         <views:BottomSheetContainer.Body>
-            <VerticalStackLayout BindableLayout.ItemsSource="{Binding MenuItems, Source={x:Reference Root}}" Spacing="0">
-                <BindableLayout.ItemTemplate>
-                    <DataTemplate x:DataType="views:ContextMenuItem">
-                        <Grid HeightRequest="56" BackgroundColor="Transparent">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="56" />
-                                <ColumnDefinition Width="*" />
-                            </Grid.ColumnDefinitions>
+            <VerticalStackLayout Spacing="16" Padding="0,0,0,8">
 
-                            <Grid.GestureRecognizers>
-                                <TapGestureRecognizer Tapped="OnMenuItemTapped" CommandParameter="{Binding .}" />
-                            </Grid.GestureRecognizers>
+                <!-- 1. Header Card (Image, Title, Subtitle) -->
+                <Border BackgroundColor="#161b22" Stroke="#30363d" StrokeThickness="1" StrokeShape="RoundRectangle 16" 
+                        Padding="16" IsVisible="{Binding HasHeader, Source={x:Reference Root}}">
+                    <Grid ColumnDefinitions="Auto, *" ColumnSpacing="16">
+                        <Image Grid.Column="0" Source="{Binding HeaderImageSource, Source={x:Reference Root}}" 
+                               WidthRequest="48" HeightRequest="48" Aspect="AspectFill" VerticalOptions="Center">
+                            <Image.Clip>
+                                <RoundRectangleGeometry CornerRadius="8" Rect="0,0,48,48" />
+                            </Image.Clip>
+                        </Image>
 
-                            <Image Source="{Binding IconSource}" WidthRequest="24" HeightRequest="24" HorizontalOptions="Center" VerticalOptions="Center" />
-                            <Label Grid.Column="1" Text="{Binding Title}" TextColor="{Binding TextColor}" FontSize="16" VerticalOptions="Center" />
-                        </Grid>
-                    </DataTemplate>
-                </BindableLayout.ItemTemplate>
+                        <VerticalStackLayout Grid.Column="1" VerticalOptions="Center" Spacing="4">
+                            <Label Text="{Binding HeaderTitle, Source={x:Reference Root}}" TextColor="#adcff0" FontSize="16" FontAttributes="Bold" LineBreakMode="TailTruncation" />
+                            <Label Text="{Binding HeaderSubtitle, Source={x:Reference Root}}" TextColor="#8b949e" FontSize="13" LineBreakMode="TailTruncation" />
+                        </VerticalStackLayout>
+                    </Grid>
+                </Border>
+
+                <Border BackgroundColor="#30363d" Stroke="#30363d" StrokeThickness="1" StrokeShape="RoundRectangle 16">
+                    <!-- The BackgroundColor and Spacing="1" trick automatically creates perfect 1px separator lines between items -->
+                    <VerticalStackLayout BindableLayout.ItemsSource="{Binding MenuItems, Source={x:Reference Root}}" Spacing="1" BackgroundColor="#30363d">
+                        <BindableLayout.ItemTemplate>
+                            <DataTemplate x:DataType="views:ContextMenuItem">
+                                <Grid HeightRequest="56">
+
+                                    <!-- The real native button for the ripple effect. Background matches the card color. -->
+                                    <Button BackgroundColor="#161b22" CornerRadius="0" Command="{Binding ItemCommand}" Margin="0" Padding="0" />
+
+                                    <!-- The overlaid content. InputTransparent ensures the Button catches the touches. -->
+                                    <HorizontalStackLayout InputTransparent="True" Spacing="16" Padding="16,0" VerticalOptions="Center">
+                                        <Image Source="{Binding IconSource}" WidthRequest="20" HeightRequest="20" VerticalOptions="Center" />
+                                        <Label Text="{Binding Title}" TextColor="{Binding TextColor}" FontSize="16" VerticalOptions="Center" />
+                                    </HorizontalStackLayout>
+
+                                </Grid>
+                            </DataTemplate>
+                        </BindableLayout.ItemTemplate>
+                    </VerticalStackLayout>
+                </Border>
+
             </VerticalStackLayout>
         </views:BottomSheetContainer.Body>
     </views:BottomSheetContainer>

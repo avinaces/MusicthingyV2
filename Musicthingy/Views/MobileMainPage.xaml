@@ -133,12 +133,16 @@
                                                 </VerticalStackLayout>
 
                                                 <!-- 3-dots Context Menu Trigger -->
-                                                <ContentView Grid.Column="2" VerticalOptions="Center" HorizontalOptions="End" WidthRequest="40" HeightRequest="48" BackgroundColor="Transparent">
-                                                    <ContentView.GestureRecognizers>
-                                                        <TapGestureRecognizer Tapped="OnTrackOptionsTapped" />
-                                                    </ContentView.GestureRecognizers>
-                                                    <Image Source="ellipsis_vertical_icon.png" WidthRequest="20" HeightRequest="20" HorizontalOptions="Center" VerticalOptions="Center" />
-                                                </ContentView>
+                                                <ImageButton Grid.Column="2" 
+             Source="ellipsis_vertical_icon.png" 
+             Clicked="OnTrackOptionsClicked" 
+             VerticalOptions="Center" 
+             HorizontalOptions="End" 
+             WidthRequest="40" 
+             HeightRequest="48" 
+             Padding="10,14" 
+             BackgroundColor="Transparent" 
+             CornerRadius="20" />
                                             </Grid>
                                         </Border>
                                     </Grid>
@@ -229,12 +233,16 @@
                                             </VerticalStackLayout>
 
                                             <!-- 3-dots Context Menu Trigger -->
-                                            <ContentView Grid.Column="2" VerticalOptions="Center" HorizontalOptions="End" WidthRequest="40" HeightRequest="60" BackgroundColor="Transparent">
-                                                <ContentView.GestureRecognizers>
-                                                    <TapGestureRecognizer Tapped="OnPlaylistOptionsTapped" />
-                                                </ContentView.GestureRecognizers>
-                                                <Image Source="ellipsis_vertical_icon.png" WidthRequest="20" HeightRequest="20" HorizontalOptions="Center" VerticalOptions="Center" />
-                                            </ContentView>
+                                            <ImageButton Grid.Column="2" 
+             Source="ellipsis_vertical_icon.png" 
+             Clicked="OnPlaylistOptionsClicked" 
+             VerticalOptions="Center" 
+             HorizontalOptions="End" 
+             WidthRequest="40" 
+             HeightRequest="60" 
+             Padding="10,20" 
+             BackgroundColor="Transparent" 
+             CornerRadius="20" />
                                         </Grid>
                                     </Border>
                                 </Grid>

@@ -1,8 +1,10 @@
+using CommunityToolkit.Mvvm.Input;
 using Microsoft.Maui.Controls;
 using Microsoft.Maui.Graphics;
 using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
+using System.Windows.Input;
 
 namespace Musicthingy.Views;
 
@@ -11,9 +13,20 @@ namespace Musicthingy.Views;
 /// </summary>
 public partial class ContextMenuSheet : ContentView, IBottomSheet
 {
-    public static readonly BindableProperty MenuTitleProperty = BindableProperty.Create(nameof(MenuTitle), typeof(string), typeof(ContextMenuSheet));
-    public string MenuTitle { get => (string)GetValue(MenuTitleProperty); set => SetValue(MenuTitleProperty, value); }
+    // Header Properties
+    public static readonly BindableProperty HasHeaderProperty = BindableProperty.Create(nameof(HasHeader), typeof(bool), typeof(ContextMenuSheet), defaultValue: false);
+    public bool HasHeader { get => (bool)GetValue(HasHeaderProperty); set => SetValue(HasHeaderProperty, value); }
 
+    public static readonly BindableProperty HeaderTitleProperty = BindableProperty.Create(nameof(HeaderTitle), typeof(string), typeof(ContextMenuSheet));
+    public string HeaderTitle { get => (string)GetValue(HeaderTitleProperty); set => SetValue(HeaderTitleProperty, value); }
+
+    public static readonly BindableProperty HeaderSubtitleProperty = BindableProperty.Create(nameof(HeaderSubtitle), typeof(string), typeof(ContextMenuSheet));
+    public string HeaderSubtitle { get => (string)GetValue(HeaderSubtitleProperty); set => SetValue(HeaderSubtitleProperty, value); }
+
+    public static readonly BindableProperty HeaderImageSourceProperty = BindableProperty.Create(nameof(HeaderImageSource), typeof(ImageSource), typeof(ContextMenuSheet));
+    public ImageSource HeaderImageSource { get => (ImageSource)GetValue(HeaderImageSourceProperty); set => SetValue(HeaderImageSourceProperty, value); }
+
+    // Menu Items
     public static readonly BindableProperty MenuItemsProperty = BindableProperty.Create(nameof(MenuItems), typeof(IEnumerable<ContextMenuItem>), typeof(ContextMenuSheet));
     public IEnumerable<ContextMenuItem> MenuItems { get => (IEnumerable<ContextMenuItem>)GetValue(MenuItemsProperty); set => SetValue(MenuItemsProperty, value); }
 
@@ -25,15 +38,6 @@ public partial class ContextMenuSheet : ContentView, IBottomSheet
 
         // Wire up the interface action so SlideUpSheetHost can natively trigger a close when tapping the dark background
         CloseAction = _ => _ = CloseSheetAsync();
-    }
-
-    private async void OnMenuItemTapped(object? sender, TappedEventArgs e)
-    {
-        if (sender is BindableObject bindable && bindable.BindingContext is ContextMenuItem item)
-        {
-            await CloseSheetAsync();
-            item.Action?.Invoke();
-        }
     }
 
     private void OnSheetCloseRequested(object? sender, EventArgs e)
@@ -60,5 +64,12 @@ public class ContextMenuItem
     public bool IsDestructive { get; set; }
     public Action? Action { get; set; }
 
-    public Color TextColor => IsDestructive ? Color.FromArgb("#d73a49") : Color.FromArgb("#c9d1d9");
+    private ICommand? _itemCommand;
+    /// <summary>
+    /// The command bound to the native Button that executes the provided Action.
+    /// </summary>
+    public ICommand ItemCommand => _itemCommand ??= new RelayCommand(() => Action?.Invoke());
+
+    // Muted, softer red for destructive actions to blend better with the dark theme
+    public Color TextColor => IsDestructive ? Color.FromArgb("#e06c75") : Color.FromArgb("#c9d1d9");
 }
