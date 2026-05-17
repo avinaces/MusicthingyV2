@@ -33,26 +33,44 @@ public partial class MainViewModel
                     { DevicePlatform.Android, androidFileTypeJSON },
                 });
 
-            var result = await FilePicker.Default.PickAsync(new PickOptions
+            // Use PickMultipleAsync to allow multiple file selection
+            var results = await FilePicker.Default.PickMultipleAsync(new PickOptions
             {
-                PickerTitle = "Select a Playlist JSON file",
+                PickerTitle = "Select Playlist JSON files",
                 FileTypes = customFileType
             });
 
-            if (result != null)
+            if (results != null)
             {
-                using var stream = await result.OpenReadAsync();
-                using var reader = new StreamReader(stream);
-                var jsonContent = await reader.ReadToEndAsync();
+                var importedPlaylists = new List<Playlist>();
 
-                var importedPlaylist = await _dataService.ImportPlaylistFromJsonAsync(jsonContent);
+                // Loop through all selected files
+                foreach (var result in results)
+                {
+                    using var stream = await result.OpenReadAsync();
+                    using var reader = new StreamReader(stream);
+                    var jsonContent = await reader.ReadToEndAsync();
 
-                if (importedPlaylist != null)
+                    var importedPlaylist = await _dataService.ImportPlaylistFromJsonAsync(jsonContent);
+
+                    if (importedPlaylist != null)
+                    {
+                        importedPlaylists.Add(importedPlaylist);
+                    }
+                }
+
+                if (importedPlaylists.Count > 0)
                 {
                     MainThread.BeginInvokeOnMainThread(() =>
                     {
-                        Playlists.Add(importedPlaylist);
-                        SelectedPlaylist = importedPlaylist;
+                        // Add all successfully imported playlists to the UI
+                        foreach (var playlist in importedPlaylists)
+                        {
+                            Playlists.Add(playlist);
+                        }
+
+                        // Set the last imported playlist as the currently selected one
+                        SelectedPlaylist = importedPlaylists[importedPlaylists.Count - 1];
 
                         RequestSaveLibrary(); // Trigger library save
                     });
