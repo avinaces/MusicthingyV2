@@ -22,6 +22,23 @@ public partial class MainViewModel
     }
 
     [RelayCommand]
+    private async Task EditPlaylistAsync(Playlist playlist)
+    {
+        List<string> allTags = GetAllKnownTags();
+
+        // Create the View
+        Views.EditPlaylistSheet sheet = new Views.EditPlaylistSheet(playlist, allTags);
+
+        // Await natively
+        bool result = await Services.SheetManager.ShowAsync<bool>(sheet);
+
+        if (result)
+        {
+            RequestSaveLibrary();
+        }
+    }
+
+    [RelayCommand]
     private async Task ImportPlaylistAsync()
     {
         try

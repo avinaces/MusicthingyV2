@@ -109,6 +109,12 @@
 	  <MauiXaml Update="Views\ContextMenuSheet.xaml">
 	    <Generator>MSBuild:Compile</Generator>
 	  </MauiXaml>
+	  <MauiXaml Update="Views\EditPlaylistSheet.xaml">
+	    <Generator>MSBuild:Compile</Generator>
+	  </MauiXaml>
+	  <MauiXaml Update="Views\EditPlaylistTabs\EditPlaylistGeneralTab.xaml">
+	    <Generator>MSBuild:Compile</Generator>
+	  </MauiXaml>
 	  <MauiXaml Update="Views\EditTrackSheet.xaml">
 	    <Generator>MSBuild:Compile</Generator>
 	  </MauiXaml>

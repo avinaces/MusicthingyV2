@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentView xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             x:Class="Musicthingy.Views.EditPlaylistGeneralTab">
+
+    <ScrollView VerticalScrollBarVisibility="Never">
+        <VerticalStackLayout Spacing="16" Padding="0,0,0,16">
+
+            <!-- Icon picker at the top center -->
+            <VerticalStackLayout HorizontalOptions="Center" Spacing="8">
+                <Border WidthRequest="110" HeightRequest="110" StrokeShape="RoundRectangle 16" Stroke="#30363d" StrokeThickness="1" BackgroundColor="#0d1117">
+                    <Image Source="{Binding ItemIconSource}" Aspect="AspectFill" />
+                    <Border.GestureRecognizers>
+                        <TapGestureRecognizer Command="{Binding PickIconCommand}"/>
+                    </Border.GestureRecognizers>
+                </Border>
+                <Label Text="Tap to change" FontSize="12" TextColor="#8b949e" HorizontalOptions="Center"/>
+                <Button Text="Reset" Command="{Binding ResetIconCommand}" BackgroundColor="Transparent" TextColor="#e06c75" HeightRequest="32" Padding="8,0" />
+            </VerticalStackLayout>
+
+            <!-- Name -->
+            <VerticalStackLayout Spacing="6">
+                <Label Text="Playlist Name" TextColor="#c9d1d9" FontSize="14"/>
+                <Border BackgroundColor="#0d1117" Stroke="#30363d" StrokeThickness="1" StrokeShape="RoundRectangle 8" Padding="12,0">
+                    <Entry Text="{Binding EditName}" TextColor="White" BackgroundColor="Transparent" HeightRequest="48"/>
+                </Border>
+            </VerticalStackLayout>
+
+            <!-- Source -->
+            <!--
+            <VerticalStackLayout Spacing="6">
+                <Label Text="Source URL (Optional)" TextColor="#c9d1d9" FontSize="14"/>
+                <Border BackgroundColor="#0d1117" Stroke="#30363d" StrokeThickness="1" StrokeShape="RoundRectangle 8" Padding="12,0">
+                    <Entry Text="{Binding EditSource}" TextColor="White" BackgroundColor="Transparent" HeightRequest="48"/>
+                </Border>
+            </VerticalStackLayout>
+            -->
+        </VerticalStackLayout>
+    </ScrollView>
+</ContentView>

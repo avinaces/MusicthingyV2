@@ -263,9 +263,6 @@ public partial class MobileMainPage : ContentPage
         }
     }
 
-    /// <summary>
-    /// Event handler to open the Bottom Sheet Context Menu for a playlist.
-    /// </summary>
     private async void OnPlaylistOptionsClicked(object? sender, EventArgs e)
     {
         if (sender is BindableObject bindable && bindable.BindingContext is Playlist playlist)
@@ -281,19 +278,29 @@ public partial class MobileMainPage : ContentPage
                 };
 
                 menuSheet.MenuItems = new List<ContextMenuItem>
-            {
-                new ContextMenuItem
                 {
-                    Title = "Delete Playlist",
-                    IconSource = "trash_2_icon.png",
-                    IsDestructive = true,
-                    Action = async () =>
+                    new ContextMenuItem
                     {
-                        await Services.SheetManager.Host!.HideAsync(menuSheet);
-                        vm.DeletePlaylistCommand.Execute(playlist);
+                        Title = "Edit Playlist",
+                        IconSource = "pencil_icon.png",
+                        Action = async () =>
+                        {
+                            await Services.SheetManager.Host!.HideAsync(menuSheet);
+                            vm.EditPlaylistCommand.Execute(playlist);
+                        }
+                    },
+                    new ContextMenuItem
+                    {
+                        Title = "Delete Playlist",
+                        IconSource = "trash_2_icon.png",
+                        IsDestructive = true,
+                        Action = async () =>
+                        {
+                            await Services.SheetManager.Host!.HideAsync(menuSheet);
+                            vm.DeletePlaylistCommand.Execute(playlist);
+                        }
                     }
-                }
-            };
+                };
 
                 if (Services.SheetManager.Host != null)
                 {
