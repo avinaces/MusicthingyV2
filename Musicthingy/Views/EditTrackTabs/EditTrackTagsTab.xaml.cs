@@ -1,33 +1,21 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using Microsoft.Maui.Controls;
+using Microsoft.Maui.Graphics;
+using Microsoft.Maui.Storage;
+using System;
+using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.Linq;
 using System.Text.Json;
 
 namespace Musicthingy.Views;
 
-public partial class EditTagsSheet : ContentView, IBottomSheet
+public partial class EditTrackTagsTab : ContentView
 {
-    public Action<object?>? CloseAction { get; set; }
-    public EditTagsForm Form { get; }
-
-    public EditTagsSheet(List<string> currentTags, List<string> allKnownTags)
+    public EditTrackTagsTab()
     {
-        Form = new EditTagsForm(currentTags, allKnownTags);
-        BindingContext = Form;
         InitializeComponent();
-    }
-
-    private void OnCloseRequested(object? sender, EventArgs e) => CloseAction?.Invoke(null);
-    private void OnCancelClicked(object? sender, EventArgs e) => CloseAction?.Invoke(null);
-
-    private void OnSaveClicked(object? sender, EventArgs e)
-    {
-        var finalTags = Form.AllTags
-            .Where(t => t.IsSelected)
-            .Select(t => t.Name)
-            .ToList();
-
-        CloseAction?.Invoke(finalTags);
     }
 }
 
@@ -48,12 +36,12 @@ public partial class EditTagsForm : ObservableObject
 
     public EditTagsForm(List<string> currentTags, List<string> allKnownTags)
     {
-        var combinedTags = allKnownTags
+        List<string> combinedTags = allKnownTags
             .Union(currentTags, StringComparer.OrdinalIgnoreCase)
             .OrderBy(t => t)
             .ToList();
 
-        foreach (var tag in combinedTags)
+        foreach (string tag in combinedTags)
         {
             AllTags.Add(new SelectableTag
             {
@@ -74,7 +62,7 @@ public partial class EditTagsForm : ObservableObject
         }
         else
         {
-            var lowerSearch = SearchText.ToLowerInvariant();
+            string lowerSearch = SearchText.ToLowerInvariant();
             DisplayTags = new ObservableCollection<SelectableTag>(
                 AllTags.Where(t => t.Name.ToLowerInvariant().Contains(lowerSearch))
             );
@@ -89,8 +77,8 @@ public partial class EditTagsForm : ObservableObject
     {
         if (!CanCreateTag) return;
 
-        var newTagName = SearchText.Trim();
-        var newTag = new SelectableTag { Name = newTagName, IsSelected = true };
+        string newTagName = SearchText.Trim();
+        SelectableTag newTag = new SelectableTag { Name = newTagName, IsSelected = true };
 
         AllTags.Insert(0, newTag);
         SearchText = string.Empty;
@@ -102,8 +90,8 @@ public partial class EditTagsForm : ObservableObject
     {
         try
         {
-            var storedTagsJson = Preferences.Default.Get("AppGlobalTags", "[]");
-            var stored = JsonSerializer.Deserialize<List<string>>(storedTagsJson) ?? new List<string>();
+            string storedTagsJson = Preferences.Default.Get("AppGlobalTags", "[]");
+            List<string> stored = JsonSerializer.Deserialize<List<string>>(storedTagsJson) ?? new List<string>();
 
             if (!stored.Contains(newTagName, StringComparer.OrdinalIgnoreCase))
             {

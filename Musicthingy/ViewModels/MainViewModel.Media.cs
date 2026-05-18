@@ -222,7 +222,7 @@ public partial class MainViewModel
             return; // Abort silently!
         }
 
-        var media = new Media(_libVLC!, new Uri(rawAudioUrl));
+        Media media = new Media(_libVLC!, new Uri(rawAudioUrl));
 
         // --- FIX FOR BACKGROUND SKIPPING & AUDIO CUTOUTS ---
 

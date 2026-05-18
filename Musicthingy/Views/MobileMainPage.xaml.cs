@@ -71,6 +71,11 @@ public partial class MobileMainPage : ContentPage
     private void OnEdgePanUpdated(object? sender, PanUpdatedEventArgs e) => HandleSidebarPan(e);
     private void OnSidebarPanUpdated(object? sender, PanUpdatedEventArgs e) => HandleSidebarPan(e);
 
+
+    private double _sidebarVelocityX = 0;
+    private double _sidebarLastPanX = 0;
+    private DateTime _sidebarLastPanTime;
+
     private void HandleSidebarPan(PanUpdatedEventArgs e)
     {
         switch (e.StatusType)
@@ -80,13 +85,26 @@ public partial class MobileMainPage : ContentPage
                 SidebarDarken.IsVisible = true;
                 EdgeSwipeZone.IsVisible = false;
                 _panStartX = SidebarGrid.TranslationX;
+
+                _sidebarVelocityX = 0;
+                _sidebarLastPanX = 0;
+                _sidebarLastPanTime = DateTime.UtcNow;
                 break;
 
             case GestureStatus.Running:
                 if (!_isSidebarPanning) return;
 
-                double newTx = _panStartX + e.TotalX;
+                var now = DateTime.UtcNow;
+                var dt = (now - _sidebarLastPanTime).TotalMilliseconds;
+                if (dt > 0)
+                {
+                    double cv = (e.TotalX - _sidebarLastPanX) / dt;
+                    _sidebarVelocityX = (_sidebarVelocityX == 0) ? cv : (_sidebarVelocityX * 0.2 + cv * 0.8);
+                }
+                _sidebarLastPanX = e.TotalX;
+                _sidebarLastPanTime = now;
 
+                double newTx = _panStartX + e.TotalX;
                 if (newTx > 0) newTx = 0;
                 if (newTx < -_sidebarWidth) newTx = -_sidebarWidth;
 
@@ -98,43 +116,46 @@ public partial class MobileMainPage : ContentPage
             case GestureStatus.Canceled:
                 _isSidebarPanning = false;
 
-                if (SidebarGrid.TranslationX > -(_sidebarWidth * 0.5))
+                if (SidebarGrid.TranslationX > -(_sidebarWidth * 0.5) || _sidebarVelocityX > 0.5)
                 {
-                    _ = OpenSidebarInternalAsync();
+                    _ = OpenSidebarInternalAsync(_sidebarVelocityX);
                 }
                 else
                 {
-                    _ = CloseSidebarInternalAsync();
+                    _ = CloseSidebarInternalAsync(_sidebarVelocityX);
                 }
                 break;
         }
     }
 
-    private async Task OpenSidebarInternalAsync()
+    private async Task OpenSidebarInternalAsync(double velocityX = 0)
     {
         SidebarDarken.IsVisible = true;
         EdgeSwipeZone.IsVisible = false;
-        _ = SidebarDarken.FadeToAsync(1, 250, Easing.CubicOut);
-        await SidebarGrid.TranslateToAsync(0, 0, 250, Easing.CubicOut);
+
+        uint duration = 250;
+        double distance = Math.Abs(SidebarGrid.TranslationX);
+        if (velocityX > 0.1) duration = (uint)Math.Clamp(distance / velocityX, 100, 350);
+
+        _ = SidebarDarken.FadeToAsync(1, duration, Easing.CubicOut);
+        await SidebarGrid.TranslateToAsync(0, 0, duration, Easing.CubicOut);
     }
 
-    private async Task CloseSidebarInternalAsync()
+    private async Task CloseSidebarInternalAsync(double velocityX = 0)
     {
-        _ = SidebarDarken.FadeToAsync(0, 250, Easing.CubicIn);
-        await SidebarGrid.TranslateToAsync(-_sidebarWidth, 0, 250, Easing.CubicIn);
+        uint duration = 250;
+        double distance = Math.Abs(-_sidebarWidth - SidebarGrid.TranslationX);
+        if (velocityX < -0.1) duration = (uint)Math.Clamp(distance / Math.Abs(velocityX), 100, 350);
+
+        _ = SidebarDarken.FadeToAsync(0, duration, Easing.CubicIn);
+        await SidebarGrid.TranslateToAsync(-_sidebarWidth, 0, duration, Easing.CubicIn);
         SidebarDarken.IsVisible = false;
         EdgeSwipeZone.IsVisible = true;
     }
 
-    private void OnHamburgerTapped(object? sender, TappedEventArgs e)
-    {
-        _ = OpenSidebarInternalAsync();
-    }
-
-    private void OnSidebarOverlayTapped(object? sender, TappedEventArgs e)
-    {
-        _ = CloseSidebarInternalAsync();
-    }
+    // Modify OnHamburgerTapped and OnSidebarOverlayTapped to pass '0' to velocity parameters:
+    private void OnHamburgerTapped(object? sender, TappedEventArgs e) => _ = OpenSidebarInternalAsync(0);
+    private void OnSidebarOverlayTapped(object? sender, TappedEventArgs e) => _ = CloseSidebarInternalAsync(0);
 
     protected override bool OnBackButtonPressed()
     {

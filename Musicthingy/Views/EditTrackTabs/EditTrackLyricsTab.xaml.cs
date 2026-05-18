@@ -1,40 +1,21 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using Microsoft.Maui.Controls;
 using Musicthingy.Services;
+using System;
+using System.Threading.Tasks;
 
 namespace Musicthingy.Views;
 
-public partial class EditLyricsSheet : ContentView, IBottomSheet
+public partial class EditTrackLyricsTab : ContentView
 {
-    public Action<object?>? CloseAction { get; set; }
-    public EditLyricsForm Form { get; }
-
-    public EditLyricsSheet(string initialLyrics, string defaultTitle, string defaultArtist, string trackUrl = "")
+    public EditTrackLyricsTab()
     {
         InitializeComponent();
-
-        Form = new EditLyricsForm(initialLyrics, defaultTitle, defaultArtist, trackUrl);
-        BindingContext = Form;
 
 #if WINDOWS
         LyricsEditor.FontFamily = "Consolas";
 #endif
-    }
-
-    private void OnCancelClicked(object? sender, EventArgs e)
-    {
-        CloseAction?.Invoke(false);
-    }
-
-    private void OnSaveClicked(object? sender, EventArgs e)
-    {
-        CloseAction?.Invoke(true);
-    }
-
-    private void OnCloseRequested(object? sender, EventArgs e)
-    {
-        // Treat close request as a cancel by default
-        CloseAction?.Invoke(false);
     }
 }
 

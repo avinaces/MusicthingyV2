@@ -35,9 +35,20 @@
 
                 <!-- Draggable Header -->
                 <Grid Grid.Row="0" BackgroundColor="Transparent" Padding="0,0,0,16" InputTransparent="True">
-                    <VerticalStackLayout Spacing="16">
+                    <!-- Removed Spacing. Spacing applies even if children are blank. Margin collapses with visibility. -->
+                    <VerticalStackLayout>
                         <RoundRectangle WidthRequest="36" HeightRequest="5" CornerRadius="2.5" Fill="#484f58" HorizontalOptions="Center" />
-                        <Label Text="{Binding Title, Source={x:Reference Root}}" TextColor="#adcff0" FontSize="20" FontAttributes="Bold" />
+
+                        <Label Text="{Binding Title, Source={x:Reference Root}}" TextColor="#adcff0" FontSize="20" FontAttributes="Bold" Margin="0,16,0,0" HorizontalOptions="Center" HorizontalTextAlignment="Center">
+                            <Label.Triggers>
+                                <DataTrigger TargetType="Label" Binding="{Binding Title, Source={x:Reference Root}}" Value="">
+                                    <Setter Property="IsVisible" Value="False" />
+                                </DataTrigger>
+                                <DataTrigger TargetType="Label" Binding="{Binding Title, Source={x:Reference Root}}" Value="{x:Null}">
+                                    <Setter Property="IsVisible" Value="False" />
+                                </DataTrigger>
+                            </Label.Triggers>
+                        </Label>
                     </VerticalStackLayout>
                 </Grid>
 

@@ -6,91 +6,49 @@
              BackgroundColor="Transparent">
 
     <local:BottomSheetContainer Title="Edit Track" CloseRequested="OnCloseRequested">
-
         <local:BottomSheetContainer.Body>
-            <ScrollView VerticalScrollBarVisibility="Never">
-                <VerticalStackLayout Spacing="16">
 
-                    <!-- Title -->
-                    <VerticalStackLayout Spacing="6">
-                        <Label Text="Title" TextColor="#c9d1d9" FontSize="14" />
-                        <Border BackgroundColor="#161b22" Stroke="#30363d" StrokeThickness="1" StrokeShape="RoundRectangle 8" Padding="12,0">
-                            <Entry Text="{Binding EditTitle}" TextColor="White" BackgroundColor="Transparent" HeightRequest="48" IsSpellCheckEnabled="True"/>
-                        </Border>
-                    </VerticalStackLayout>
+            <Grid RowDefinitions="Auto, *">
 
-                    <!-- URL -->
-                    <VerticalStackLayout Spacing="6">
-                        <Label Text="URL" TextColor="#c9d1d9" FontSize="14" />
-                        <Border BackgroundColor="#161b22" Stroke="#30363d" StrokeThickness="1" StrokeShape="RoundRectangle 8" Padding="12,0">
-                            <Entry Text="{Binding EditUrl}" TextColor="White" BackgroundColor="Transparent" HeightRequest="48" />
-                        </Border>
-                    </VerticalStackLayout>
+                <!-- MD3 Style Segmented Tab Bar -->
+                <Border Grid.Row="0" BackgroundColor="#0d1117" Stroke="#30363d" StrokeThickness="1" StrokeShape="RoundRectangle 12" Padding="4" Margin="0,0,0,16" HeightRequest="48">
+                    <Grid ColumnDefinitions="*,*,*">
+                        <!-- Background Indicators -->
+                        <Border x:Name="TabIndicator0" Grid.Column="0" BackgroundColor="#21262d" StrokeThickness="0" StrokeShape="RoundRectangle 8" IsVisible="True" />
+                        <Border x:Name="TabIndicator1" Grid.Column="1" BackgroundColor="#21262d" StrokeThickness="0" StrokeShape="RoundRectangle 8" IsVisible="False" />
+                        <Border x:Name="TabIndicator2" Grid.Column="2" BackgroundColor="#21262d" StrokeThickness="0" StrokeShape="RoundRectangle 8" IsVisible="False" />
 
-                    <!-- Start / End Time -->
-                    <Grid ColumnDefinitions="*, *" ColumnSpacing="16">
-                        <VerticalStackLayout Grid.Column="0" Spacing="6">
-                            <Label Text="Start (sec)" TextColor="#c9d1d9" FontSize="14" />
-                            <Border BackgroundColor="#161b22" Stroke="#30363d" StrokeThickness="1" StrokeShape="RoundRectangle 8" Padding="12,0">
-                                <Entry Text="{Binding EditStartTime}" Keyboard="Numeric" TextColor="White" BackgroundColor="Transparent" HeightRequest="48" />
-                            </Border>
-                        </VerticalStackLayout>
-
-                        <VerticalStackLayout Grid.Column="1" Spacing="6">
-                            <Label Text="End (sec)" TextColor="#c9d1d9" FontSize="14" />
-                            <Border BackgroundColor="#161b22" Stroke="#30363d" StrokeThickness="1" StrokeShape="RoundRectangle 8" Padding="12,0">
-                                <Entry Text="{Binding EditEndTime}" Keyboard="Numeric" TextColor="White" BackgroundColor="Transparent" HeightRequest="48" />
-                            </Border>
-                        </VerticalStackLayout>
+                        <!-- Tap Areas and Labels -->
+                        <Grid Grid.Column="0" BackgroundColor="Transparent">
+                            <Grid.GestureRecognizers>
+                                <TapGestureRecognizer Tapped="OnTabTapped" CommandParameter="0"/>
+                            </Grid.GestureRecognizers>
+                            <Label x:Name="TabLabel0" Text="Track" HorizontalOptions="Center" VerticalOptions="Center" TextColor="White" FontAttributes="Bold" FontSize="14" />
+                        </Grid>
+                        <Grid Grid.Column="1" BackgroundColor="Transparent">
+                            <Grid.GestureRecognizers>
+                                <TapGestureRecognizer Tapped="OnTabTapped" CommandParameter="1"/>
+                            </Grid.GestureRecognizers>
+                            <Label x:Name="TabLabel1" Text="Lyrics" HorizontalOptions="Center" VerticalOptions="Center" TextColor="#8b949e" FontAttributes="Bold" FontSize="14" />
+                        </Grid>
+                        <Grid Grid.Column="2" BackgroundColor="Transparent">
+                            <Grid.GestureRecognizers>
+                                <TapGestureRecognizer Tapped="OnTabTapped" CommandParameter="2"/>
+                            </Grid.GestureRecognizers>
+                            <Label x:Name="TabLabel2" Text="Tags" HorizontalOptions="Center" VerticalOptions="Center" TextColor="#8b949e" FontAttributes="Bold" FontSize="14" />
+                        </Grid>
                     </Grid>
+                </Border>
 
-                    <!-- Icon -->
-                    <VerticalStackLayout Spacing="6">
-                        <Label Text="Icon" TextColor="#c9d1d9" FontSize="14" />
-                        <HorizontalStackLayout Spacing="12">
-                            <Border Stroke="#30363d" StrokeThickness="1" StrokeShape="RoundRectangle 8" WidthRequest="48" HeightRequest="48" BackgroundColor="#161b22" Padding="0">
-                                <Border.GestureRecognizers>
-                                    <TapGestureRecognizer Command="{Binding PickIconCommand}" />
-                                </Border.GestureRecognizers>
-                                <Image Source="{Binding ItemIconSource}" Aspect="AspectFill">
-                                    <Image.Clip>
-                                        <RoundRectangleGeometry CornerRadius="8" Rect="0,0,48,48"/>
-                                    </Image.Clip>
-                                </Image>
-                            </Border>
-                            <Button Text="Reset" Command="{Binding ResetIconCommand}" BackgroundColor="#161b22" TextColor="White" BorderColor="#30363d" BorderWidth="1" CornerRadius="8" HeightRequest="48" Padding="16,0" VerticalOptions="Center"/>
-                        </HorizontalStackLayout>
-                    </VerticalStackLayout>
+                <!-- Fixed minimum height prevents the bottom sheet from resizing wildly when switching tabs -->
+                <Grid Grid.Row="1" MinimumHeightRequest="500">
+                    <local:EditTrackGeneralTab x:Name="GeneralTab" />
+                    <local:EditTrackLyricsTab x:Name="LyricsTab" IsVisible="False" />
+                    <local:EditTrackTagsTab x:Name="TagsTab" IsVisible="False" />
+                </Grid>
 
-                    <!-- Tags -->
-                    <VerticalStackLayout Spacing="6">
-                        <Label Text="Tags" TextColor="#c9d1d9" FontSize="14" />
-                        <FlexLayout Direction="Row" Wrap="Wrap" BindableLayout.ItemsSource="{Binding Tags}">
-                            <BindableLayout.ItemTemplate>
-                                <DataTemplate x:DataType="x:String">
-                                    <Border Background="#1c304a" Stroke="#2d5b8c" StrokeThickness="1" Padding="8,4" Margin="0,0,3,6">
-                                        <Border.StrokeShape>
-                                            <RoundRectangle CornerRadius="8"/>
-                                        </Border.StrokeShape>
-                                        <Label Text="{Binding .}" TextColor="#d9edff" FontSize="12"/>
-                                    </Border>
-                                </DataTemplate>
-                            </BindableLayout.ItemTemplate>
-                        </FlexLayout>
-                        <ImageButton Source="tag_icon.png" Clicked="OnEditTagsClicked" BackgroundColor="#161b22" CornerRadius="8" WidthRequest="38" HeightRequest="38" Padding="6" BorderColor="#30363d" BorderWidth="1" HorizontalOptions="Start" />
-                    </VerticalStackLayout>
+            </Grid>
 
-                    <!-- Lyrics Button -->
-                    <VerticalStackLayout Spacing="6">
-                        <Label Text="Lyrics" TextColor="#c9d1d9" FontSize="14" />
-                        <ImageButton Source="scroll_text_icon.png" Clicked="OnEditLyricsClicked" BackgroundColor="#161b22" CornerRadius="8" WidthRequest="38" HeightRequest="38" Padding="6" BorderColor="#30363d" BorderWidth="1" HorizontalOptions="Start" />
-                    </VerticalStackLayout>
-
-                    <!-- Last Played -->
-                    <Label Text="{Binding LastPlayedText, StringFormat='Last Played: {0}'}" TextColor="#8b949e" FontSize="12" Margin="0,8,0,0"/>
-
-                </VerticalStackLayout>
-            </ScrollView>
         </local:BottomSheetContainer.Body>
 
         <local:BottomSheetContainer.Footer>
@@ -99,7 +57,5 @@
                 <Button Text="Save" Clicked="OnSaveClicked" BackgroundColor="#2d5b8c" TextColor="White" CornerRadius="8" HeightRequest="44" Padding="24,0" />
             </HorizontalStackLayout>
         </local:BottomSheetContainer.Footer>
-
     </local:BottomSheetContainer>
-
 </ContentView>

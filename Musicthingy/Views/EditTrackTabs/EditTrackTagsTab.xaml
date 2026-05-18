@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentView xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             xmlns:local="clr-namespace:Musicthingy.Views"
+             x:Class="Musicthingy.Views.EditTrackTagsTab">
+
+    <Grid RowDefinitions="Auto, *">
+        <Grid Grid.Row="0" ColumnDefinitions="*, Auto" ColumnSpacing="12" Margin="0,0,0,16">
+            <Border BackgroundColor="#161b22" Stroke="#30363d" StrokeThickness="1" StrokeShape="RoundRectangle 8" Padding="12,0">
+                <Entry Text="{Binding SearchText}" Placeholder="Search or create tag..." TextColor="White" PlaceholderColor="#8b949e" BackgroundColor="Transparent" HeightRequest="48" />
+            </Border>
+            <Button Grid.Column="1" Text="Create" Command="{Binding CreateTagCommand}" IsVisible="{Binding CanCreateTag}" BackgroundColor="#2d5b8c" TextColor="White" CornerRadius="8" HeightRequest="48" />
+        </Grid>
+
+        <ScrollView Grid.Row="1" VerticalScrollBarVisibility="Never">
+            <FlexLayout Direction="Row" Wrap="Wrap" AlignItems="Start" AlignContent="Start" BindableLayout.ItemsSource="{Binding DisplayTags}">
+                <BindableLayout.ItemTemplate>
+                    <DataTemplate x:DataType="local:SelectableTag">
+                        <Border BackgroundColor="{Binding BackgroundColor}" Stroke="{Binding BorderColor}" StrokeThickness="1" HeightRequest="36" Padding="14,0" Margin="2,4">
+                            <Border.StrokeShape>
+                                <RoundRectangle CornerRadius="9"/>
+                            </Border.StrokeShape>
+                            <Border.GestureRecognizers>
+                                <TapGestureRecognizer Command="{Binding BindingContext.ToggleTagCommand, Source={RelativeSource AncestorType={x:Type local:EditTrackTagsTab}}}" CommandParameter="{Binding .}" />
+                            </Border.GestureRecognizers>
+                            <Label Text="{Binding Name}" TextColor="{Binding TextColor}" FontSize="14" FontAttributes="Bold" VerticalOptions="Center" VerticalTextAlignment="Center"/>
+                        </Border>
+                    </DataTemplate>
+                </BindableLayout.ItemTemplate>
+            </FlexLayout>
+        </ScrollView>
+    </Grid>
+</ContentView>

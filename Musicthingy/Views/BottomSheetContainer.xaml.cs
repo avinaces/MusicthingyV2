@@ -18,6 +18,10 @@ public partial class BottomSheetContainer : ContentView
 
     public event EventHandler? CloseRequested;
 
+    private double _velocityY;
+    private double _lastPanY;
+    private DateTime _lastPanTime;
+
     private static void OnFooterChanged(BindableObject bindable, object oldValue, object newValue)
     {
         if (bindable is BottomSheetContainer container)
@@ -54,36 +58,58 @@ public partial class BottomSheetContainer : ContentView
         Close();
     }
 
+
     private void OnPanUpdated(object? sender, PanUpdatedEventArgs e)
     {
-        // V1 Restored: Translate the parent wrapper exactly as SlideUpSheetHost expects.
         View sheetParent = this.Parent as View ?? this;
 
         switch (e.StatusType)
         {
+            case GestureStatus.Started:
+                _velocityY = 0;
+                _lastPanY = 0;
+                _lastPanTime = DateTime.UtcNow;
+                break;
+
             case GestureStatus.Running:
+                // Calculate velocity (pixels per millisecond)
+                var now = DateTime.UtcNow;
+                var dt = (now - _lastPanTime).TotalMilliseconds;
+                if (dt > 0)
+                {
+                    double currentV = (e.TotalY - _lastPanY) / dt;
+                    // Smooth out the velocity reading
+                    _velocityY = (_velocityY == 0) ? currentV : (_velocityY * 0.2 + currentV * 0.8);
+                }
+                _lastPanY = e.TotalY;
+                _lastPanTime = now;
+
                 // Only allow sliding downwards
                 if (e.TotalY > 0)
                 {
                     sheetParent.TranslationY = e.TotalY;
-
-                    // Dim the dark background dynamically as you drag it down
                     OverlayBox.Opacity = Math.Clamp(1 - (e.TotalY / 400), 0, 1);
                 }
                 break;
 
             case GestureStatus.Completed:
             case GestureStatus.Canceled:
-                // If dragged down more than 100px, close it
-                if (sheetParent.TranslationY > 100)
+                // Close if dragged down more than 100px OR flicked downwards quickly (with at least 40px of movement)
+                if (sheetParent.TranslationY > 100 || (_velocityY > 1.0 && sheetParent.TranslationY > 40))
                 {
                     Close();
                 }
                 else
                 {
-                    // Otherwise, spring back into place
-                    _ = sheetParent.TranslateToAsync(0, 0, 250, Easing.CubicOut);
-                    _ = OverlayBox.FadeToAsync(1, 250, Easing.CubicOut);
+                    // Dynamic spring back based on how fast they flicked UP (negative velocity)
+                    uint duration = 250;
+                    if (_velocityY < -0.1)
+                    {
+                        duration = (uint)Math.Clamp(Math.Abs(sheetParent.TranslationY / _velocityY), 100, 350);
+                    }
+
+                    _ = sheetParent.TranslateToAsync(0, 0, duration, Easing.CubicOut);
+                    _ = OverlayBox.FadeToAsync(1, duration, Easing.CubicOut);
                 }
                 break;
         }
