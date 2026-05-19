@@ -37,33 +37,39 @@ public class PlaylistDataService
                 return PlaylistIconType.Playlist;
             }
 
-            foreach (var playlistTag in dto.tags)
+            // Harden against nulls in older JSON exports
+            if (dto.tags != null)
             {
-                playlist.Tags.Add(playlistTag);
+                foreach (var playlistTag in dto.tags)
+                {
+                    playlist.Tags.Add(playlistTag);
+                }
             }
 
-
-            foreach (var itemDto in dto.items)
+            // Harden against nulls in older JSON exports
+            if (dto.items != null)
             {
-                var item = new PlaylistItem
+                foreach (var itemDto in dto.items)
                 {
-                    Title = string.IsNullOrEmpty(itemDto.title) ? "Unknown Title" : itemDto.title,
-                    Url = itemDto.url,
-                    StartTime = itemDto.startTime,
-                    EndTime = itemDto.endTime,
-                    IconUrl = itemDto.icon,
-                    Lyrics = itemDto.lyrics,
-                    LastPlayedAt = itemDto.lastPlayedAt
-                };
+                    var item = new PlaylistItem
+                    {
+                        Title = string.IsNullOrEmpty(itemDto.title) ? "Unknown Title" : itemDto.title,
+                        Url = itemDto.url,
+                        StartTime = itemDto.startTime,
+                        EndTime = itemDto.endTime,
+                        IconUrl = itemDto.icon,
+                        Lyrics = itemDto.lyrics,
+                        LastPlayedAt = itemDto.lastPlayedAt
+                    };
 
-                if (itemDto.tags != null)
-                {
-                    foreach (var tag in itemDto.tags)
-                        item.Tags.Add(tag);
+                    if (itemDto.tags != null)
+                    {
+                        foreach (var tag in itemDto.tags)
+                            item.Tags.Add(tag);
+                    }
+
+                    playlist.Items.Add(item);
                 }
-
-
-                playlist.Items.Add(item);
             }
 
             return playlist;

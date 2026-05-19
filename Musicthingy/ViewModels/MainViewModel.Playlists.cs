@@ -1,8 +1,10 @@
 ﻿using CommunityToolkit.Maui;
 using CommunityToolkit.Maui.Extensions;
+using CommunityToolkit.Maui.Storage;
 using CommunityToolkit.Mvvm.Input;
 using Musicthingy.Models;
 using System.Diagnostics;
+using System.Text.Json;
 
 namespace Musicthingy.ViewModels;
 
@@ -19,23 +21,6 @@ public partial class MainViewModel
         SelectedPlaylist = newList;
 
         RequestSaveLibrary(); // Trigger library save
-    }
-
-    [RelayCommand]
-    private async Task EditPlaylistAsync(Playlist playlist)
-    {
-        List<string> allTags = GetAllKnownTags();
-
-        // Create the View
-        Views.EditPlaylistSheet sheet = new Views.EditPlaylistSheet(playlist, allTags);
-
-        // Await natively
-        bool result = await Services.SheetManager.ShowAsync<bool>(sheet);
-
-        if (result)
-        {
-            RequestSaveLibrary();
-        }
     }
 
     [RelayCommand]
@@ -96,7 +81,64 @@ public partial class MainViewModel
         }
         catch (Exception ex)
         {
-            await Shell.Current.DisplayAlertAsync("Error", $"Failed to import: {ex.Message}", "OK");
+            await MainThread.InvokeOnMainThreadAsync(() =>
+                Shell.Current.DisplayAlertAsync("Error", $"Failed to import: {ex.Message}", "OK"));
+        }
+    }
+
+    [RelayCommand]
+    private async Task ExportPlaylistAsync(Playlist playlist)
+    {
+        try
+        {
+            // 1. Map current Playlist to safe DTO
+            var dto = new PlaylistDto
+            {
+                name = playlist.Name,
+                icon = playlist.IconUrl,
+                iconType = playlist.IconType.ToString().ToLowerInvariant(),
+                source = playlist.Source,
+                createdAt = playlist.CreatedAt,
+                updatedAt = playlist.UpdatedAt,
+                duration = playlist.Duration,
+                tags = playlist.Tags.ToList(),
+                items = playlist.Items.Select(i => new PlaylistItemDto
+                {
+                    title = i.Title,
+                    url = i.Url,
+                    startTime = i.StartTime,
+                    endTime = i.EndTime,
+                    duration = i.Duration,
+                    icon = i.IconUrl,
+                    tags = i.Tags.ToList(),
+                    lyrics = i.Lyrics,
+                    lastPlayedAt = i.LastPlayedAt
+                }).ToList()
+            };
+
+            // 2. Serialize to pretty JSON
+            string json = JsonSerializer.Serialize(dto, new JsonSerializerOptions { WriteIndented = true });
+
+            // 3. Clean invalid file name chars
+            string cleanName = string.Join("_", playlist.Name.Split(Path.GetInvalidFileNameChars()));
+            string fileName = $"{cleanName}.json";
+
+            // 4. Save file natively
+            using var stream = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(json));
+            var fileSaverResult = await FileSaver.Default.SaveAsync(fileName, stream, CancellationToken.None);
+
+            if (fileSaverResult.IsSuccessful)
+            {
+                // CRITICAL FIX: Push the UI alert back to the Main Thread
+                await MainThread.InvokeOnMainThreadAsync(() =>
+                    Shell.Current.DisplayAlertAsync("Success", $"Playlist exported to:\n{fileSaverResult.FilePath}", "OK"));
+            }
+        }
+        catch (Exception ex)
+        {
+            // CRITICAL FIX: Push the UI alert back to the Main Thread
+            await MainThread.InvokeOnMainThreadAsync(() =>
+                Shell.Current.DisplayAlertAsync("Export Failed", ex.Message, "OK"));
         }
     }
 
@@ -153,7 +195,7 @@ public partial class MainViewModel
         var storedTagsJson = Preferences.Default.Get("AppGlobalTags", "[]");
         try
         {
-            var stored = System.Text.Json.JsonSerializer.Deserialize<List<string>>(storedTagsJson);
+            var stored = JsonSerializer.Deserialize<List<string>>(storedTagsJson);
             if (stored != null)
             {
                 foreach (var t in stored) tags.Add(t);
@@ -172,7 +214,7 @@ public partial class MainViewModel
         // Create the View
         var sheet = new Views.EditTrackSheet(track, allTags);
 
-        // Await it native natively
+        // Await it natively
         var result = await Services.SheetManager.ShowAsync<bool>(sheet);
 
         if (result)
@@ -181,20 +223,20 @@ public partial class MainViewModel
         }
     }
 
-    private void LoadDummyData()
+    [RelayCommand]
+    private async Task EditPlaylistAsync(Playlist playlist)
     {
-        Playlist dummyList = new()
+        List<string> allTags = GetAllKnownTags();
+
+        // Create the View
+        Views.EditPlaylistSheet sheet = new Views.EditPlaylistSheet(playlist, allTags);
+
+        // Await natively
+        bool result = await Services.SheetManager.ShowAsync<bool>(sheet);
+
+        if (result)
         {
-            Name = "Test",
-            CreatedAt = DateTime.Now
-        };
-
-        dummyList.Items.Add(new PlaylistItem { Title = "Skarrsinger Karmelita", Url = "https://www.youtube.com/watch?v=dhc4WFEeZfw&list=RDdhc4WFEeZfw&start_radio=1", StartTime = 5466, EndTime = 5573 });
-        dummyList.Items.Add(new PlaylistItem { Title = "76", Url = "https://static.bandlab.com/revisions-formatted/7277ea00-254d-9b8c-0eab-c6b7bf94e414/7277ea00-254d-9b8c-0eab-c6b7bf94e414.m4a" });
-
-        Playlists.Add(dummyList);
-        Playlists.Add(new Playlist { Name = "Empty", CreatedAt = DateTime.Now });
-
-        SelectedPlaylist = dummyList;
+            RequestSaveLibrary();
+        }
     }
 }

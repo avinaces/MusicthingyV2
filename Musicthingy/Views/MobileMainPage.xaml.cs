@@ -291,6 +291,16 @@ public partial class MobileMainPage : ContentPage
                     },
                     new ContextMenuItem
                     {
+                        Title = "Export Playlist",
+                        IconSource = "upload_icon.png",
+                        Action = async () =>
+                        {
+                            await Services.SheetManager.Host!.HideAsync(menuSheet);
+                            vm.ExportPlaylistCommand.Execute(playlist);
+                        }
+                    },
+                    new ContextMenuItem
+                    {
                         Title = "Delete Playlist",
                         IconSource = "trash_2_icon.png",
                         IsDestructive = true,

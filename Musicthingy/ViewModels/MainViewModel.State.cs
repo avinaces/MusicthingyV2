@@ -204,9 +204,6 @@ public partial class MainViewModel
         // Fallback to dummy data if no library exists (e.g. first app launch) or loading failed
         MainThread.BeginInvokeOnMainThread(() =>
         {
-#if DEBUG
-            LoadDummyData();
-#endif
             _isRestoringState = false;
         });
     }
