@@ -18,6 +18,8 @@ public partial class MainViewModel
     private readonly YoutubeClient _youtubeClient = new();
     private readonly ConcurrentDictionary<string, (string RawUrl, DateTime FetchedAt)> _streamUrlCache = new();
 
+    private Stopwatch? _playbackStartupSw;
+
     // Configured to emulate OkHttp's underlying behavior
     private static readonly HttpClient _innerTubeClient = new HttpClient(new HttpClientHandler
     {
@@ -38,34 +40,140 @@ public partial class MainViewModel
     {
         if (_libVLC != null) return;
 
-        _libVLC = new LibVLC("--no-video", "--http-reconnect");
+        _libVLC = new LibVLC(
+            "--no-video",
+            "--http-reconnect",
+            "--verbose=2"
+        );
+
         _player = new MediaPlayer(_libVLC);
+
+        // -----------------------------
+        // VLC lifecycle diagnostics
+        // -----------------------------
+
+        _player.Opening += (s, e) =>
+        {
+            Debug.WriteLine($"[VLC] Opening @ {_playbackStartupSw?.ElapsedMilliseconds}ms");
+        };
+
+        _player.Buffering += (s, e) =>
+        {
+            MainThread.BeginInvokeOnMainThread(() =>
+            {
+                // Ensure the loading indicator is visible while the track is still buffering over the network
+                bool isBuffering = e.Cache < 100f;
+                if (IsLoadingMedia != isBuffering)
+                {
+                    IsLoadingMedia = isBuffering;
+                }
+            });
+        };
+
+        _player.Playing += (s, e) =>
+        {
+            Debug.WriteLine($"[VLC] Playing @ {_playbackStartupSw?.ElapsedMilliseconds}ms");
+
+            MainThread.BeginInvokeOnMainThread(() =>
+            {
+                IsPlaying = true;
+                IsLoadingMedia = false;
+                SyncOSPlaybackState();
+            });
+
+            ReleaseTransientWakeLock();
+        };
+
+        _player.Paused += (s, e) =>
+        {
+            MainThread.BeginInvokeOnMainThread(() =>
+            {
+                IsPlaying = false;
+                SyncOSPlaybackState();
+            });
+
+            if (!IsLoadingMedia)
+                ReleaseTransientWakeLock();
+        };
+
+        _player.Stopped += (s, e) =>
+        {
+            MainThread.BeginInvokeOnMainThread(() =>
+            {
+                IsPlaying = false;
+                SyncOSPlaybackState();
+            });
+
+            if (!IsLoadingMedia)
+                ReleaseTransientWakeLock();
+        };
+
+        _player.EncounteredError += (s, e) =>
+        {
+            Debug.WriteLine($"[VLC] EncounteredError @ {_playbackStartupSw?.ElapsedMilliseconds}ms");
+
+            MainThread.BeginInvokeOnMainThread(() =>
+            {
+                IsLoadingMedia = false;
+                PlayNextCommand.Execute("Error");
+                Debug.WriteLine("Failed to play media");
+            });
+
+            ReleaseTransientWakeLock();
+        };
+
+        _player.EndReached += (s, e) =>
+        {
+            AcquireTransientWakeLock();
+
+            MainThread.BeginInvokeOnMainThread(() =>
+            {
+                IsLoadingMedia = true;
+                PlayNextCommand.Execute("Natural");
+            });
+        };
+
+        // -----------------------------
+        // Timing updates
+        // -----------------------------
 
         _player.TimeChanged += (s, e) =>
         {
             long currentTicks = Environment.TickCount64;
-            if (currentTicks - _lastTimeUpdateTicks < 500) return;
+
+            if (currentTicks - _lastTimeUpdateTicks < 500)
+                return;
+
             _lastTimeUpdateTicks = currentTicks;
 
             double startMs = (CurrentTrack?.StartTime ?? 0) * 1000.0;
             double relativeTimeMs = e.Time - startMs;
-            if (relativeTimeMs < 0) relativeTimeMs = 0;
+
+            if (relativeTimeMs < 0)
+                relativeTimeMs = 0;
 
             MainThread.BeginInvokeOnMainThread(() =>
             {
                 CurrentPosition = TimeSpan.FromMilliseconds(relativeTimeMs);
-                if (!_isDragging) CurrentPositionSeconds = CurrentPosition.TotalSeconds;
+
+                if (!_isDragging)
+                    CurrentPositionSeconds = CurrentPosition.TotalSeconds;
+
                 SyncActiveLyric(CurrentPosition);
             });
         };
 
         _player.LengthChanged += (s, e) =>
         {
+            Debug.WriteLine($"[VLC] LengthChanged={e.Length}ms @ {_playbackStartupSw?.ElapsedMilliseconds}ms");
+
             double totalSeconds = e.Length / 1000.0;
             double end = CurrentTrack?.EndTime ?? totalSeconds;
             double start = CurrentTrack?.StartTime ?? 0;
             double duration = end - start;
-            if (duration <= 0) duration = totalSeconds;
+
+            if (duration <= 0)
+                duration = totalSeconds;
 
             MainThread.BeginInvokeOnMainThread(() =>
             {
@@ -75,57 +183,66 @@ public partial class MainViewModel
                 if (CurrentTrack != null)
                 {
                     bool changed = CurrentTrack.Duration != Duration;
+
                     CurrentTrack.Duration = Duration;
-                    if (changed) RequestSaveLibrary();
+
+                    if (changed)
+                        RequestSaveLibrary();
                 }
             });
 
             if (CurrentTrack != null)
             {
                 string widgetIconUrl = string.Empty;
+
                 var pl = CurrentTrack.Playlist;
                 var iconType = pl?.IconType ?? PlaylistIconType.Playlist;
 
                 if (iconType == PlaylistIconType.Track)
                 {
-                    widgetIconUrl = !string.IsNullOrEmpty(CurrentTrack.IconUrl) ? CurrentTrack.IconUrl : pl?.IconUrl ?? string.Empty;
+                    widgetIconUrl =
+                        !string.IsNullOrEmpty(CurrentTrack.IconUrl)
+                            ? CurrentTrack.IconUrl
+                            : pl?.IconUrl ?? string.Empty;
                 }
                 else if (iconType == PlaylistIconType.YouTube)
                 {
                     string? ytThumb = null;
-                    if (!string.IsNullOrEmpty(CurrentTrack.Url) && (CurrentTrack.Url.Contains("youtube.com") || CurrentTrack.Url.Contains("youtu.be")))
+
+                    if (!string.IsNullOrEmpty(CurrentTrack.Url) &&
+                        (CurrentTrack.Url.Contains("youtube.com") ||
+                         CurrentTrack.Url.Contains("youtu.be")))
                     {
                         var videoId = YoutubeExplode.Videos.VideoId.TryParse(CurrentTrack.Url);
-                        if (videoId != null) ytThumb = $"https://img.youtube.com/vi/{videoId.Value}/hqdefault.jpg";
+
+                        if (videoId != null)
+                        {
+                            ytThumb =
+                                $"https://img.youtube.com/vi/{videoId.Value}/hqdefault.jpg";
+                        }
                     }
-                    widgetIconUrl = !string.IsNullOrEmpty(ytThumb) ? ytThumb : pl?.IconUrl ?? CurrentTrack.IconUrl ?? string.Empty;
+
+                    widgetIconUrl =
+                        !string.IsNullOrEmpty(ytThumb)
+                            ? ytThumb
+                            : pl?.IconUrl ?? CurrentTrack.IconUrl ?? string.Empty;
                 }
                 else
                 {
-                    widgetIconUrl = !string.IsNullOrEmpty(pl?.IconUrl) ? pl.IconUrl : CurrentTrack.IconUrl ?? string.Empty;
+                    widgetIconUrl =
+                        !string.IsNullOrEmpty(pl?.IconUrl)
+                            ? pl.IconUrl
+                            : CurrentTrack.IconUrl ?? string.Empty;
                 }
 
-                _ = UpdateOSMediaWidgetsAsync(CurrentTrack.Title, pl?.Name ?? "Musicthingy", widgetIconUrl);
+                _ = UpdateOSMediaWidgetsAsync(
+                    CurrentTrack.Title,
+                    pl?.Name ?? "Musicthingy",
+                    widgetIconUrl
+                );
             }
         };
-
-        _player.Playing += (s, e) => { MainThread.BeginInvokeOnMainThread(() => { IsPlaying = true; IsLoadingMedia = false; SyncOSPlaybackState(); }); ReleaseTransientWakeLock(); };
-        _player.Paused += (s, e) => { MainThread.BeginInvokeOnMainThread(() => { IsPlaying = false; SyncOSPlaybackState(); }); if (!IsLoadingMedia) ReleaseTransientWakeLock(); };
-        _player.Stopped += (s, e) => { MainThread.BeginInvokeOnMainThread(() => { IsPlaying = false; SyncOSPlaybackState(); }); if (!IsLoadingMedia) ReleaseTransientWakeLock(); };
-
-        _player.EncounteredError += (s, e) =>
-        {
-            MainThread.BeginInvokeOnMainThread(() => { IsLoadingMedia = false; PlayNextCommand.Execute("Error"); Debug.WriteLine("Failed to play media"); });
-            ReleaseTransientWakeLock();
-        };
-
-        _player.EndReached += (s, e) =>
-        {
-            AcquireTransientWakeLock();
-            MainThread.BeginInvokeOnMainThread(() => { IsLoadingMedia = true; PlayNextCommand.Execute("Natural"); });
-        };
     }
-
     private async Task PreloadNextTrackAsync()
     {
         if (PlaybackQueue == null || PlaybackQueue.Count == 0 || CurrentTrack == null) return;
@@ -147,19 +264,29 @@ public partial class MainViewModel
         _mediaLoadCts = new CancellationTokenSource();
         var token = _mediaLoadCts.Token;
 
+        Stopwatch totalSw = Stopwatch.StartNew();
+
+        Debug.WriteLine($"[Playback] ===== START LOAD =====");
+        Debug.WriteLine($"[Playback] Track: {newValue.Title} (Start: {newValue.StartTime}, End: {newValue.EndTime})");
+
         if (IsAutoFollowEnabled) TriggerAutoFollow();
 
         IsLoadingMedia = true;
         AcquireTransientWakeLock();
 
         InitializeVLCEngine();
+
         _player!.Stop();
 
         CurrentPosition = TimeSpan.Zero;
         CurrentPositionSeconds = 0;
         SyncOSPlaybackState();
 
+        Stopwatch resolveSw = Stopwatch.StartNew();
         string? rawAudioUrl = await ResolveMediaSourceAsync(newValue);
+        resolveSw.Stop();
+
+        Debug.WriteLine($"[Playback] Resolved media source in {resolveSw.ElapsedMilliseconds}ms");
 
         if (token.IsCancellationRequested)
         {
@@ -169,12 +296,19 @@ public partial class MainViewModel
 
         Media media = new Media(_libVLC!, new Uri(rawAudioUrl));
 
-        media.AddOption(":network-caching=3000");
+        media.AddOption(":network-caching=1000");
         media.AddOption(":clock-jitter=0");
         media.AddOption(":clock-synchro=0");
 
-        if (newValue.StartTime.HasValue) media.AddOption($":start-time={newValue.StartTime.Value}");
-        if (newValue.EndTime.HasValue) media.AddOption($":stop-time={newValue.EndTime.Value}");
+        if (newValue.StartTime.HasValue)
+        {
+            media.AddOption($":start-time={newValue.StartTime.Value}");
+        }
+
+        if (newValue.EndTime.HasValue)
+        {
+            media.AddOption($":stop-time={newValue.EndTime.Value}");
+        }
 
         if (_initialRestorePosition > 0)
         {
@@ -183,7 +317,13 @@ public partial class MainViewModel
             _initialRestorePosition = 0;
         }
 
+        _playbackStartupSw = Stopwatch.StartNew();
+
         _player.Play(media);
+
+        totalSw.Stop();
+        Debug.WriteLine($"[Playback] ReloadMediaAsync completed in {totalSw.ElapsedMilliseconds}ms");
+
         _ = Task.Run(PreloadNextTrackAsync);
     }
 
@@ -282,7 +422,6 @@ public partial class MainViewModel
                         string newVd = vd.GetString()!;
                         if (_visitorData != newVd)
                         {
-                            Debug.WriteLine($"[FastPath] Client {c.Name} obtained new bound visitorData: {newVd}");
                             _visitorData = newVd;
                         }
                     }
@@ -293,15 +432,11 @@ public partial class MainViewModel
                         status.GetString() != "OK")
                     {
                         string statusStr = status.GetString()!;
-                        string reason = statusProp.TryGetProperty("reason", out var reasonProp) ? reasonProp.GetString() ?? "N/A" : "N/A";
-
-                        Debug.WriteLine($"[FastPath] Client {c.Name} Blocked: {statusStr} (Reason: {reason})");
 
                         // 3. THE TRICK: If BotGuard blocks us but gives us a session token, we instantly bounce back 
                         // with that token to prove we are stateful!
                         if (attempt == 1 && statusStr == "LOGIN_REQUIRED" && !string.IsNullOrEmpty(_visitorData))
                         {
-                            Debug.WriteLine($"[FastPath] Retrying Client {c.Name} with newly bound visitorData...");
                             continue; // Retry this specific client!
                         }
 
@@ -315,28 +450,31 @@ public partial class MainViewModel
                         var bestAudio = adaptiveFormats.EnumerateArray()
                             .Where(f => f.TryGetProperty("mimeType", out var mime) && mime.GetString()!.Contains("audio/"))
                             .Where(f => f.TryGetProperty("url", out _)) // Must have a direct URL, no ciphers
-                            .OrderByDescending(f => f.TryGetProperty("bitrate", out var b) ? b.GetInt32() : 0)
+                            .OrderByDescending(f => {
+                                int score = f.TryGetProperty("bitrate", out var b) ? b.GetInt32() : 0;
+                                string mime = f.TryGetProperty("mimeType", out var m) ? m.GetString() ?? "" : "";
+                                // Prefer WebM/Opus to slightly aid network streaming performance
+                                if (mime.Contains("webm") || mime.Contains("opus")) score += 1000000;
+                                return score;
+                            })
                             .FirstOrDefault();
 
                         if (bestAudio.ValueKind != JsonValueKind.Undefined && bestAudio.TryGetProperty("url", out var urlProp))
                         {
-                            Debug.WriteLine($"[FastPath] SUCCESS! Resolved direct stream using client: {c.Name} (Attempt {attempt})");
+                            Debug.WriteLine($"[Resolve] FAST PATH SUCCESS! Resolved direct stream using client: {c.Name}");
                             return urlProp.GetString();
                         }
                     }
 
-                    Debug.WriteLine($"[FastPath] Client {c.Name} returned NO direct streams.");
                     break;
                 }
-                catch (Exception ex)
+                catch (Exception)
                 {
-                    Debug.WriteLine($"[FastPath] Client {c.Name} Exception: {ex.Message}");
                     break;
                 }
             }
         }
 
-        Debug.WriteLine("[FastPath] ALL Fast Clients failed. Triggering YoutubeExplode...");
         return null;
     }
 
@@ -346,12 +484,9 @@ public partial class MainViewModel
 
         if (track.Url.Contains("youtube.com") || track.Url.Contains("youtu.be"))
         {
-            Stopwatch totalSw = Stopwatch.StartNew();
-            Debug.WriteLine($"[Resolve] Starting resolution for: {track.Url}");
-
             if (_streamUrlCache.TryGetValue(track.Url, out var cached) && (DateTime.Now - cached.FetchedAt).TotalHours < 2)
             {
-                Debug.WriteLine($"[Resolve] CACHE HIT - Took {totalSw.ElapsedMilliseconds}ms");
+                Debug.WriteLine($"[Resolve] CACHE HIT");
                 return cached.RawUrl;
             }
 
@@ -360,55 +495,44 @@ public partial class MainViewModel
 
             if (videoId != null)
             {
-                // FAST PATH: Rapid Fallback Loop
-                Stopwatch fastSw = Stopwatch.StartNew();
-                Debug.WriteLine("[Resolve] Attempting Fast InnerTube Path...");
                 resolvedUrl = await GetFastStreamUrlAsync(videoId.Value.Value);
-                fastSw.Stop();
 
-                if (!string.IsNullOrEmpty(resolvedUrl))
+                if (string.IsNullOrEmpty(resolvedUrl))
                 {
-                    Debug.WriteLine($"[Resolve] FAST PATH SUCCESS - Took {fastSw.ElapsedMilliseconds}ms (Total: {totalSw.ElapsedMilliseconds}ms)");
-                }
-                else
-                {
-                    Debug.WriteLine($"[Resolve] FAST PATH FAILED - Took {fastSw.ElapsedMilliseconds}ms. Falling back to YoutubeExplode...");
-
-                    // SLOW PATH: YoutubeExplode Fetch
-                    Stopwatch ytSw = Stopwatch.StartNew();
                     try
                     {
                         var rawAudioUrl = await Task.Run(async () =>
                         {
                             using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
                             var manifest = await _youtubeClient.Videos.Streams.GetManifestAsync(videoId.Value, cts.Token);
-                            return manifest.GetAudioOnlyStreams().GetWithHighestBitrate()?.Url;
+                            var audioStreams = manifest.GetAudioOnlyStreams();
+
+                            var bestStream = audioStreams
+                                .OrderByDescending(s => s.Container.Name == "webm" ? 1 : 0)
+                                .ThenByDescending(s => s.Bitrate)
+                                .FirstOrDefault();
+
+                            return bestStream?.Url;
                         });
 
                         resolvedUrl = rawAudioUrl;
-                        ytSw.Stop();
-                        Debug.WriteLine($"[Resolve] YOUTUBE EXPLODE SUCCESS - Took {ytSw.ElapsedMilliseconds}ms (Total: {totalSw.ElapsedMilliseconds}ms)");
+                        Debug.WriteLine($"[Resolve] YOUTUBE EXPLODE SUCCESS");
                     }
                     catch (Exception ex)
                     {
-                        ytSw.Stop();
-                        Debug.WriteLine($"[Resolve] YOUTUBE EXPLODE ERROR: {ex.Message} (Took {ytSw.ElapsedMilliseconds}ms)");
+                        Debug.WriteLine($"[Resolve] YOUTUBE EXPLODE ERROR: {ex.Message}");
                     }
                 }
             }
 
             if (string.IsNullOrEmpty(resolvedUrl))
             {
-                Debug.WriteLine($"[Resolve] ALL METHODS FAILED - Returning raw YouTube URL to LibVLC (Total time: {totalSw.ElapsedMilliseconds}ms)");
                 resolvedUrl = track.Url;
             }
             else if (resolvedUrl != track.Url)
             {
                 _streamUrlCache[track.Url] = (resolvedUrl, DateTime.Now);
             }
-
-            totalSw.Stop();
-            Debug.WriteLine($"[Resolve] Finished resolution chain in {totalSw.ElapsedMilliseconds}ms");
 
             return resolvedUrl;
         }
