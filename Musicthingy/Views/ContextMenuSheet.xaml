@@ -3,6 +3,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
              xmlns:views="clr-namespace:Musicthingy.Views"
              x:Class="Musicthingy.Views.ContextMenuSheet"
+             xmlns:toolkit="http://schemas.microsoft.com/dotnet/2022/maui/toolkit"
              x:Name="Root">
 
     <!-- Notice Title is left blank so the default raw text title collapses, making way for our styled Header Card -->
@@ -40,7 +41,13 @@
 
                                     <!-- The overlaid content. InputTransparent ensures the Button catches the touches. -->
                                     <HorizontalStackLayout InputTransparent="True" Spacing="16" Padding="16,0" VerticalOptions="Center">
-                                        <Image Source="{Binding IconSource}" WidthRequest="20" HeightRequest="20" VerticalOptions="Center" />
+                                        <Image Source="{Binding IconSource}" WidthRequest="20" HeightRequest="20" VerticalOptions="Center">
+
+                                            <!-- TODO: IconTintColorBehavior Does'nt work here currently -->
+                                                <Image.Behaviors>
+                                                <toolkit:IconTintColorBehavior TintColor="{Binding TextColor}"/>
+                                            </Image.Behaviors>
+                                        </Image>
                                         <Label Text="{Binding Title}" TextColor="{Binding TextColor}" FontSize="16" VerticalOptions="Center" />
                                     </HorizontalStackLayout>
 

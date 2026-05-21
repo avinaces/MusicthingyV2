@@ -36,7 +36,6 @@ public partial class MobilePlayerPaneView : ContentView
 
         WeakReferenceMessenger.Default.Register<ActiveLyricChangedMessage>(this, (r, m) =>
         {
-            // 🚀 CRITICAL OPTIMIZATION: Do not force layout scrolls while resizing/panning
             if (_isAnimating || _currentGesture != GestureIntent.None)
                 return;
 
