@@ -3,62 +3,23 @@
 			 xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
 			 xmlns:models="clr-namespace:Musicthingy.Models"
 			 x:Class="Musicthingy.MainPage"
-			 BackgroundColor="{StaticResource BgColor}"
+			 BackgroundColor="{DynamicResource BgColor}"
 			 xmlns:views="clr-namespace:Musicthingy.Views">
-
-    <ContentPage.Resources>
-        <Color x:Key="BgColor">#0d1117</Color>
-        <Color x:Key="CardColor">#161b22</Color>
-        <Color x:Key="CardHoverColor">#1c2128</Color>
-        <Color x:Key="AccentColor">#58a6ff</Color>
-        <Color x:Key="SelectedBgColor">#374C69</Color>
-        <Color x:Key="DangerColor">#d73a49</Color>
-        <Color x:Key="TitleColor">#adcff0</Color>
-        <Color x:Key="MutedColor">#8b949e</Color>
-        <Color x:Key="TextColor">#c9d1d9</Color>
-        <Color x:Key="BorderColor">#30363d</Color>
-
-        <Style TargetType="Label">
-            <Setter Property="TextColor" Value="{StaticResource TextColor}" />
-        </Style>
-
-        <Style x:Key="IconImageButton" TargetType="ImageButton">
-            <Setter Property="BackgroundColor" Value="{StaticResource CardColor}" />
-            <Setter Property="CornerRadius" Value="8" />
-            <Setter Property="WidthRequest" Value="38" />
-            <Setter Property="HeightRequest" Value="38" />
-            <Setter Property="Padding" Value="6" />
-            <Setter Property="BorderColor" Value="{StaticResource BorderColor}" />
-            <Setter Property="BorderWidth" Value="1" />
-            <Setter Property="VisualStateManager.VisualStateGroups">
-                <VisualStateGroupList>
-                    <VisualStateGroup x:Name="CommonStates">
-                        <VisualState x:Name="Normal" />
-                        <VisualState x:Name="PointerOver">
-                            <VisualState.Setters>
-                                <Setter Property="BackgroundColor" Value="{StaticResource CardHoverColor}" />
-                            </VisualState.Setters>
-                        </VisualState>
-                    </VisualStateGroup>
-                </VisualStateGroupList>
-            </Setter>
-        </Style>
-    </ContentPage.Resources>
 
     <Grid ColumnDefinitions="220, *, 350" Padding="16" ColumnSpacing="16">
 
         <!-- SIDEBAR -->
-        <Border Grid.Column="0" Background="{StaticResource CardColor}" Stroke="{StaticResource BorderColor}" StrokeThickness="1" StrokeShape="RoundRectangle 12" Padding="12">
+        <Border Grid.Column="0" Background="{DynamicResource CardColor}" Stroke="{DynamicResource BorderColor}" StrokeThickness="1" StrokeShape="RoundRectangle 12" Padding="12">
             <Grid RowDefinitions="Auto, *">
                 <Grid Grid.Row="0" RowDefinitions="Auto, Auto" RowSpacing="12" Margin="0,0,0,16">
-                    <Label Grid.Row="0" Text="Playlists" TextColor="{StaticResource TitleColor}" FontSize="20" FontAttributes="Bold" HorizontalOptions="Center" />
+                    <Label Grid.Row="0" Text="Playlists" TextColor="{DynamicResource TitleColor}" FontSize="20" FontAttributes="Bold" HorizontalOptions="Center" />
                     <HorizontalStackLayout Grid.Row="1" Spacing="8" HorizontalOptions="Center">
                         <ImageButton Source="upload_icon.png" Style="{StaticResource IconImageButton}" />
                         <ImageButton Source="download_icon.png" Command="{Binding ImportPlaylistCommand}" Style="{StaticResource IconImageButton}" />
                         <ImageButton Source="plus_icon.png" Command="{Binding AddNewPlaylistCommand}" Style="{StaticResource IconImageButton}" />
                         <ImageButton Source="maximize_2_icon.png" Style="{StaticResource IconImageButton}" />
                     </HorizontalStackLayout>
-                    <BoxView Grid.Row="1" HeightRequest="1" Color="{StaticResource BorderColor}" VerticalOptions="End" Margin="0,0,0,-8" />
+                    <BoxView Grid.Row="1" HeightRequest="1" Color="{DynamicResource BorderColor}" VerticalOptions="End" Margin="0,0,0,-8" />
                 </Grid>
 
                 <CollectionView Grid.Row="1" ItemsSource="{Binding Playlists}" SelectedItem="{Binding SelectedPlaylist, Mode=TwoWay}" SelectionMode="Single" ItemSizingStrategy="MeasureFirstItem">
@@ -67,11 +28,11 @@
                             <Grid Margin="0,0,0,6">
 
                                 <!-- Layer 1: Background with DataTrigger instead of VSM -->
-                                <Border x:Name="RootBorder" StrokeShape="RoundRectangle 12" Padding="0" Background="#1c2128" Stroke="Transparent">
+                                <Border x:Name="RootBorder" StrokeShape="RoundRectangle 12" Padding="0" Background="{DynamicResource CardHoverColor}" Stroke="Transparent">
                                     <Border.Triggers>
                                         <DataTrigger TargetType="Border" Binding="{Binding IsSelected}" Value="True">
-                                            <Setter Property="Background" Value="{StaticResource SelectedBgColor}" />
-                                            <Setter Property="Stroke" Value="{StaticResource AccentColor}" />
+                                            <Setter Property="Background" Value="{DynamicResource SelectedBgColor}" />
+                                            <Setter Property="Stroke" Value="{DynamicResource AccentColor}" />
                                         </DataTrigger>
                                     </Border.Triggers>
                                 </Border>
@@ -87,20 +48,20 @@
                                     <Label Grid.Row="1" Text="{Binding Name}" HorizontalTextAlignment="Center" FontSize="14" FontAttributes="Bold" />
 
                                     <HorizontalStackLayout Grid.Row="2" HorizontalOptions="Center" Spacing="6">
-                                        <Border Background="#0d1117" Stroke="{StaticResource BorderColor}" StrokeThickness="1" Padding="8,2">
+                                        <Border Background="{DynamicResource SurfaceInput}" Stroke="{DynamicResource BorderColor}" StrokeThickness="1" Padding="8,2">
                                             <Border.StrokeShape>
                                                 <RoundRectangle CornerRadius="6" />
                                             </Border.StrokeShape>
-                                            <Label Text="{Binding ItemCount, StringFormat='{0} tracks'}" TextColor="{StaticResource MutedColor}" FontSize="10" />
+                                            <Label Text="{Binding ItemCount, StringFormat='{0} tracks'}" TextColor="{DynamicResource MutedColor}" FontSize="10" />
                                         </Border>
-                                        <Border Background="#0d1117" Stroke="{StaticResource BorderColor}" StrokeThickness="1" Padding="8,2">
+                                        <Border Background="{DynamicResource SurfaceInput}" Stroke="{DynamicResource BorderColor}" StrokeThickness="1" Padding="8,2">
                                             <Border.StrokeShape>
                                                 <RoundRectangle CornerRadius="6" />
                                             </Border.StrokeShape>
-                                            <Label Text="{Binding DisplayDuration}" TextColor="{StaticResource MutedColor}" FontSize="10" HorizontalOptions="Center" VerticalOptions="Center" LineBreakMode="NoWrap"/>
+                                            <Label Text="{Binding DisplayDuration}" TextColor="{DynamicResource MutedColor}" FontSize="10" HorizontalOptions="Center" VerticalOptions="Center" LineBreakMode="NoWrap"/>
                                         </Border>
                                     </HorizontalStackLayout>
-                                    <Label Grid.Row="3" Text="{Binding CreatedAt, StringFormat='CREATED {0:MMM dd, yyyy, hh:mm tt}'}" HorizontalTextAlignment="Center" TextColor="{StaticResource MutedColor}" FontSize="9" CharacterSpacing="0.5" TextTransform="Uppercase" Margin="0,4,0,0" />
+                                    <Label Grid.Row="3" Text="{Binding CreatedAt, StringFormat='CREATED {0:MMM dd, yyyy, hh:mm tt}'}" HorizontalTextAlignment="Center" TextColor="{DynamicResource MutedColor}" FontSize="9" CharacterSpacing="0.5" TextTransform="Uppercase" Margin="0,4,0,0" />
                                 </Grid>
 
                                 <!-- Layer 3: Desktop Hover Catcher & Action Buttons -->
@@ -110,7 +71,7 @@
                                     </Grid.GestureRecognizers>
 
                                     <!-- Hover Tint -->
-                                    <Border BackgroundColor="White" Opacity="0" InputTransparent="True" StrokeShape="RoundRectangle 12" Stroke="Transparent">
+                                    <Border BackgroundColor="{DynamicResource OnSurfaceInverse}" Opacity="0" InputTransparent="True" StrokeShape="RoundRectangle 12" Stroke="Transparent">
                                         <Border.Triggers>
                                             <DataTrigger TargetType="Border" Binding="{Binding IsHovered}" Value="True">
                                                 <Setter Property="Opacity" Value="0.06" />
@@ -132,14 +93,14 @@
                                         </HorizontalStackLayout.Triggers>
 
                                         <ImageButton Source="pencil_icon.png" Style="{StaticResource IconImageButton}" WidthRequest="36" HeightRequest="36" Padding="6" />
-                                        <ImageButton Source="trash_2_icon.png" BackgroundColor="{StaticResource DangerColor}" BorderColor="Transparent" CornerRadius="8" WidthRequest="37" HeightRequest="37" Padding="6" Command="{Binding BindingContext.DeletePlaylistCommand, Source={RelativeSource AncestorType={x:Type ContentPage}}}" CommandParameter="{Binding .}">
+                                        <ImageButton Source="trash_2_icon.png" BackgroundColor="{DynamicResource DangerColor}" BorderColor="Transparent" CornerRadius="8" WidthRequest="37" HeightRequest="37" Padding="6" Command="{Binding BindingContext.DeletePlaylistCommand, Source={RelativeSource AncestorType={x:Type ContentPage}}}" CommandParameter="{Binding .}">
                                             <VisualStateManager.VisualStateGroups>
                                                 <VisualStateGroupList>
                                                     <VisualStateGroup x:Name="CommonStates">
                                                         <VisualState x:Name="Normal"/>
                                                         <VisualState x:Name="PointerOver">
                                                             <VisualState.Setters>
-                                                                <Setter Property="BackgroundColor" Value="#e05462" />
+                                                                <Setter Property="BackgroundColor" Value="{DynamicResource DangerFillHover}" />
                                                             </VisualState.Setters>
                                                         </VisualState>
                                                     </VisualStateGroup>
@@ -158,14 +119,14 @@
         </Border>
 
         <!-- MAIN CONTENT -->
-        <Border Grid.Column="1" Background="{StaticResource CardColor}" Stroke="{StaticResource BorderColor}" StrokeThickness="1" StrokeShape="RoundRectangle 12" Padding="16">
+        <Border Grid.Column="1" Background="{DynamicResource CardColor}" Stroke="{DynamicResource BorderColor}" StrokeThickness="1" StrokeShape="RoundRectangle 12" Padding="16">
             <Grid RowDefinitions="Auto, Auto, *">
                 <Grid Grid.Row="0" ColumnDefinitions="*, Auto" Margin="0,0,0,16">
-                    <Label Grid.Column="0" Text="{Binding SelectedPlaylist.Name, FallbackValue='Select a Playlist'}" TextColor="{StaticResource TitleColor}" FontSize="24" FontAttributes="Bold" LineBreakMode="TailTruncation" />
+                    <Label Grid.Column="0" Text="{Binding SelectedPlaylist.Name, FallbackValue='Select a Playlist'}" TextColor="{DynamicResource TitleColor}" FontSize="24" FontAttributes="Bold" LineBreakMode="TailTruncation" />
                     <HorizontalStackLayout Grid.Column="1" Spacing="16" VerticalOptions="Center">
                         <VerticalStackLayout VerticalOptions="Center">
-                            <Label Text="{Binding SelectedPlaylist.ItemCount, StringFormat='{0} items'}" TextColor="{StaticResource MutedColor}" FontSize="13" HorizontalOptions="End"/>
-                            <Label Text="{Binding SelectedPlaylist.DisplayDuration}" TextColor="{StaticResource MutedColor}" FontSize="13" HorizontalOptions="End"/>
+                            <Label Text="{Binding SelectedPlaylist.ItemCount, StringFormat='{0} items'}" TextColor="{DynamicResource MutedColor}" FontSize="13" HorizontalOptions="End"/>
+                            <Label Text="{Binding SelectedPlaylist.DisplayDuration}" TextColor="{DynamicResource MutedColor}" FontSize="13" HorizontalOptions="End"/>
                         </VerticalStackLayout>
                         <ImageButton Source="settings_icon.png" Style="{StaticResource IconImageButton}" />
                     </HorizontalStackLayout>
@@ -190,11 +151,11 @@
                             <Grid Margin="0,0,0,4" HeightRequest="58">
 
                                 <!-- Layer 1: Background with DataTrigger instead of VSM -->
-                                <Border x:Name="RootBorder" StrokeShape="RoundRectangle 8" Padding="0" Background="#1c2128" Stroke="{StaticResource BorderColor}">
+                                <Border x:Name="RootBorder" StrokeShape="RoundRectangle 8" Padding="0" Background="{DynamicResource CardHoverColor}" Stroke="{DynamicResource BorderColor}">
                                     <Border.Triggers>
                                         <DataTrigger TargetType="Border" Binding="{Binding IsSelected}" Value="True">
-                                            <Setter Property="Background" Value="#253549" />
-                                            <Setter Property="Stroke" Value="{StaticResource AccentColor}" />
+                                            <Setter Property="Background" Value="{DynamicResource SurfaceSelected}" />
+                                            <Setter Property="Stroke" Value="{DynamicResource AccentColor}" />
                                         </DataTrigger>
                                     </Border.Triggers>
                                 </Border>
@@ -227,32 +188,32 @@
 												IsVisible="{Binding HasTags}">
 
                                                 <!-- Tags -->
-                                                <Border Background="#1c304a" Stroke="{StaticResource AccentColor}" StrokeThickness="1" Padding="5,1" Margin="0,0,1,1" IsVisible="{Binding HasTag1}">
+                                                <Border Background="{DynamicResource TagBgColor}" Stroke="{DynamicResource AccentColor}" StrokeThickness="1" Padding="5,1" Margin="0,0,1,1" IsVisible="{Binding HasTag1}">
                                                     <Border.StrokeShape>
                                                         <RoundRectangle CornerRadius="6"/>
                                                     </Border.StrokeShape>
-                                                    <Label Text="{Binding Tag1}" TextColor="#d9edff" FontSize="11"/>
+                                                    <Label Text="{Binding Tag1}" TextColor="{DynamicResource TagTextColor}" FontSize="11"/>
                                                 </Border>
 
-                                                <Border Background="#1c304a" Stroke="{StaticResource AccentColor}" StrokeThickness="1" Padding="5,1" Margin="0,0,1,1" IsVisible="{Binding HasTag2}">
+                                                <Border Background="{DynamicResource TagBgColor}" Stroke="{DynamicResource AccentColor}" StrokeThickness="1" Padding="5,1" Margin="0,0,1,1" IsVisible="{Binding HasTag2}">
                                                     <Border.StrokeShape>
                                                         <RoundRectangle CornerRadius="6"/>
                                                     </Border.StrokeShape>
-                                                    <Label Text="{Binding Tag2}" TextColor="#d9edff" FontSize="11"/>
+                                                    <Label Text="{Binding Tag2}" TextColor="{DynamicResource TagTextColor}" FontSize="11"/>
                                                 </Border>
 
-                                                <Border Background="#1c304a" Stroke="{StaticResource AccentColor}" StrokeThickness="1" Padding="5,1" Margin="0,0,1,1" IsVisible="{Binding HasTag3}">
+                                                <Border Background="{DynamicResource TagBgColor}" Stroke="{DynamicResource AccentColor}" StrokeThickness="1" Padding="5,1" Margin="0,0,1,1" IsVisible="{Binding HasTag3}">
                                                     <Border.StrokeShape>
                                                         <RoundRectangle CornerRadius="6"/>
                                                     </Border.StrokeShape>
-                                                    <Label Text="{Binding Tag3}" TextColor="#d9edff" FontSize="11"/>
+                                                    <Label Text="{Binding Tag3}" TextColor="{DynamicResource TagTextColor}" FontSize="11"/>
                                                 </Border>
 
-                                                <Border Background="#1c304a" Stroke="{StaticResource AccentColor}" StrokeThickness="1" Padding="5,1" Margin="0,0,1,1" IsVisible="{Binding HasTag4}">
+                                                <Border Background="{DynamicResource TagBgColor}" Stroke="{DynamicResource AccentColor}" StrokeThickness="1" Padding="5,1" Margin="0,0,1,1" IsVisible="{Binding HasTag4}">
                                                     <Border.StrokeShape>
                                                         <RoundRectangle CornerRadius="6"/>
                                                     </Border.StrokeShape>
-                                                    <Label Text="{Binding Tag4}" TextColor="#d9edff" FontSize="11"/>
+                                                    <Label Text="{Binding Tag4}" TextColor="{DynamicResource TagTextColor}" FontSize="11"/>
                                                 </Border>
 
                                             </FlexLayout>
@@ -268,7 +229,7 @@
                                     </Grid.GestureRecognizers>
 
                                     <!-- Hover Tint -->
-                                    <Border BackgroundColor="White" Opacity="0" InputTransparent="True" StrokeShape="RoundRectangle 8" Stroke="Transparent">
+                                    <Border BackgroundColor="{DynamicResource OnSurfaceInverse}" Opacity="0" InputTransparent="True" StrokeShape="RoundRectangle 8" Stroke="Transparent">
                                         <Border.Triggers>
                                             <DataTrigger TargetType="Border" Binding="{Binding IsHovered}" Value="True">
                                                 <Setter Property="Opacity" Value="0.08" />
@@ -289,7 +250,7 @@
 			 Command="{Binding BindingContext.EditTrackCommand, Source={RelativeSource AncestorType={x:Type ContentPage}}}" 
 			 CommandParameter="{Binding .}"/>
 
-                                        <ImageButton Source="trash_2_icon.png" Style="{StaticResource IconImageButton}" BackgroundColor="{StaticResource DangerColor}"
+                                        <ImageButton Source="trash_2_icon.png" Style="{StaticResource IconImageButton}" BackgroundColor="{DynamicResource DangerColor}"
 			 Command="{Binding BindingContext.DeleteTrackCommand, Source={RelativeSource AncestorType={x:Type ContentPage}}}" 
 			 CommandParameter="{Binding .}">
                                             <VisualStateManager.VisualStateGroups>
@@ -298,7 +259,7 @@
                                                         <VisualState x:Name="Normal"/>
                                                         <VisualState x:Name="PointerOver">
                                                             <VisualState.Setters>
-                                                                <Setter Property="BackgroundColor" Value="#e05462" />
+                                                                <Setter Property="BackgroundColor" Value="{DynamicResource DangerFillHover}" />
                                                             </VisualState.Setters>
                                                         </VisualState>
                                                     </VisualStateGroup>
@@ -322,19 +283,19 @@
         <Grid Grid.ColumnSpan="3" IsVisible="{Binding IsModalVisible}" ZIndex="100">
 
             <!-- Dimmed Background Catcher -->
-            <BoxView BackgroundColor="#A6000000">
+            <BoxView BackgroundColor="{DynamicResource SurfaceScrim}">
                 <BoxView.GestureRecognizers>
                     <TapGestureRecognizer Command="{Binding ModalBackgroundTappedCommand}" />
                 </BoxView.GestureRecognizers>
             </BoxView>
 
             <!-- Modal Window -->
-            <Border Background="{StaticResource CardColor}" Stroke="{StaticResource BorderColor}" StrokeThickness="1" StrokeShape="RoundRectangle 12" HorizontalOptions="Center" VerticalOptions="Center" WidthRequest="400" Padding="24">
+            <Border Background="{DynamicResource CardColor}" Stroke="{DynamicResource BorderColor}" StrokeThickness="1" StrokeShape="RoundRectangle 12" HorizontalOptions="Center" VerticalOptions="Center" WidthRequest="400" Padding="24">
                 <VerticalStackLayout Spacing="16">
 
-                    <Label Text="{Binding ModalTitle}" TextColor="{StaticResource TitleColor}" FontSize="20" FontAttributes="Bold" />
+                    <Label Text="{Binding ModalTitle}" TextColor="{DynamicResource TitleColor}" FontSize="20" FontAttributes="Bold" />
 
-                    <Label Text="{Binding ModalMessage}" TextColor="{StaticResource TextColor}" IsVisible="{Binding IsModalMessageVisible}" />
+                    <Label Text="{Binding ModalMessage}" TextColor="{DynamicResource TextColor}" IsVisible="{Binding IsModalMessageVisible}" />
 
                     <Entry Text="{Binding ModalInputText}" Style="{StaticResource FormEntryStyle}" IsVisible="{Binding IsModalInputVisible}" Placeholder="Type here..." />
 

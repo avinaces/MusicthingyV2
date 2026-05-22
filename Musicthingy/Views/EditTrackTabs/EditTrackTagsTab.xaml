@@ -6,10 +6,10 @@
 
     <Grid RowDefinitions="Auto, *">
         <Grid Grid.Row="0" ColumnDefinitions="*, Auto" ColumnSpacing="12" Margin="0,0,0,16">
-            <Border BackgroundColor="#161b22" Stroke="#30363d" StrokeThickness="1" StrokeShape="RoundRectangle 8" Padding="12,0">
-                <Entry Text="{Binding SearchText}" Placeholder="Search or create tag..." TextColor="White" PlaceholderColor="#8b949e" BackgroundColor="Transparent" HeightRequest="48" />
+            <Border BackgroundColor="{DynamicResource CardColor}" Stroke="{DynamicResource InputBorderColor}" StrokeThickness="1" StrokeShape="RoundRectangle 8" Padding="12,0">
+                <Entry Text="{Binding SearchText}" Placeholder="Search or create tag..." TextColor="{DynamicResource TextColor}" PlaceholderColor="{DynamicResource MutedColor}" BackgroundColor="Transparent" HeightRequest="48" />
             </Border>
-            <Button Grid.Column="1" Text="Create" Command="{Binding CreateTagCommand}" IsVisible="{Binding CanCreateTag}" BackgroundColor="#2d5b8c" TextColor="White" CornerRadius="8" HeightRequest="48" />
+            <Button Grid.Column="1" Text="Create" Command="{Binding CreateTagCommand}" IsVisible="{Binding CanCreateTag}" BackgroundColor="{DynamicResource AccentFill}" TextColor="{DynamicResource OnAccent}" CornerRadius="8" HeightRequest="48" />
         </Grid>
 
         <ScrollView Grid.Row="1" VerticalScrollBarVisibility="Never">

@@ -11,31 +11,31 @@
             <Grid RowDefinitions="Auto, *">
 
                 <!-- MD3 Style Segmented Tab Bar -->
-                <Border Grid.Row="0" BackgroundColor="#0d1117" Stroke="#30363d" StrokeThickness="1" StrokeShape="RoundRectangle 12" Padding="4" Margin="0,0,0,16" HeightRequest="48">
+                <Border Grid.Row="0" BackgroundColor="{DynamicResource SurfaceInput}" Stroke="{DynamicResource BorderColor}" StrokeThickness="1" StrokeShape="RoundRectangle 12" Padding="4" Margin="0,0,0,16" HeightRequest="48">
                     <Grid ColumnDefinitions="*,*,*">
                         <!-- Background Indicators -->
-                        <Border x:Name="TabIndicator0" Grid.Column="0" BackgroundColor="#21262d" StrokeThickness="0" StrokeShape="RoundRectangle 8" IsVisible="True" />
-                        <Border x:Name="TabIndicator1" Grid.Column="1" BackgroundColor="#21262d" StrokeThickness="0" StrokeShape="RoundRectangle 8" IsVisible="False" />
-                        <Border x:Name="TabIndicator2" Grid.Column="2" BackgroundColor="#21262d" StrokeThickness="0" StrokeShape="RoundRectangle 8" IsVisible="False" />
+                        <Border x:Name="TabIndicator0" Grid.Column="0" BackgroundColor="{DynamicResource TabIndicatorColor}" StrokeThickness="0" StrokeShape="RoundRectangle 8" IsVisible="True" />
+                        <Border x:Name="TabIndicator1" Grid.Column="1" BackgroundColor="{DynamicResource TabIndicatorColor}" StrokeThickness="0" StrokeShape="RoundRectangle 8" IsVisible="False" />
+                        <Border x:Name="TabIndicator2" Grid.Column="2" BackgroundColor="{DynamicResource TabIndicatorColor}" StrokeThickness="0" StrokeShape="RoundRectangle 8" IsVisible="False" />
 
                         <!-- Tap Areas and Labels -->
                         <Grid Grid.Column="0" BackgroundColor="Transparent">
                             <Grid.GestureRecognizers>
                                 <TapGestureRecognizer Tapped="OnTabTapped" CommandParameter="0"/>
                             </Grid.GestureRecognizers>
-                            <Label x:Name="TabLabel0" Text="Track" HorizontalOptions="Center" VerticalOptions="Center" TextColor="White" FontAttributes="Bold" FontSize="14" />
+                            <Label x:Name="TabLabel0" Text="Track" HorizontalOptions="Center" VerticalOptions="Center" TextColor="{DynamicResource OnSurfaceInverse}" FontAttributes="Bold" FontSize="14" />
                         </Grid>
                         <Grid Grid.Column="1" BackgroundColor="Transparent">
                             <Grid.GestureRecognizers>
                                 <TapGestureRecognizer Tapped="OnTabTapped" CommandParameter="1"/>
                             </Grid.GestureRecognizers>
-                            <Label x:Name="TabLabel1" Text="Lyrics" HorizontalOptions="Center" VerticalOptions="Center" TextColor="#8b949e" FontAttributes="Bold" FontSize="14" />
+                            <Label x:Name="TabLabel1" Text="Lyrics" HorizontalOptions="Center" VerticalOptions="Center" TextColor="{DynamicResource MutedColor}" FontAttributes="Bold" FontSize="14" />
                         </Grid>
                         <Grid Grid.Column="2" BackgroundColor="Transparent">
                             <Grid.GestureRecognizers>
                                 <TapGestureRecognizer Tapped="OnTabTapped" CommandParameter="2"/>
                             </Grid.GestureRecognizers>
-                            <Label x:Name="TabLabel2" Text="Tags" HorizontalOptions="Center" VerticalOptions="Center" TextColor="#8b949e" FontAttributes="Bold" FontSize="14" />
+                            <Label x:Name="TabLabel2" Text="Tags" HorizontalOptions="Center" VerticalOptions="Center" TextColor="{DynamicResource MutedColor}" FontAttributes="Bold" FontSize="14" />
                         </Grid>
                     </Grid>
                 </Border>
@@ -53,8 +53,8 @@
 
         <local:BottomSheetContainer.Footer>
             <HorizontalStackLayout HorizontalOptions="End" Spacing="12">
-                <Button Text="Cancel" Clicked="OnCancelClicked" BackgroundColor="#21262d" TextColor="White" BorderColor="#30363d" BorderWidth="1" CornerRadius="8" HeightRequest="44" Padding="16,0" />
-                <Button Text="Save" Clicked="OnSaveClicked" BackgroundColor="#2d5b8c" TextColor="White" CornerRadius="8" HeightRequest="44" Padding="24,0" />
+                <Button Text="Cancel" Clicked="OnCancelClicked" BackgroundColor="{DynamicResource SurfaceRaised}" TextColor="{DynamicResource TextColor}" BorderColor="{DynamicResource BorderColor}" BorderWidth="1" CornerRadius="8" HeightRequest="44" Padding="16,0" />
+                <Button Text="Save" Clicked="OnSaveClicked" BackgroundColor="{DynamicResource AccentFill}" TextColor="{DynamicResource OnAccent}" CornerRadius="8" HeightRequest="44" Padding="24,0" />
             </HorizontalStackLayout>
         </local:BottomSheetContainer.Footer>
     </local:BottomSheetContainer>

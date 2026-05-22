@@ -10,14 +10,14 @@
         <!-- 1. Dark Background Overlay -->
         <!-- Massive negative margin safely bypasses safe areas and bounds. 
              Blocks inputs to lower sheets and natively darkens everything behind it. -->
-        <BoxView x:Name="OverlayBox" BackgroundColor="#A6000000" Margin="-4000">
+        <BoxView x:Name="OverlayBox" BackgroundColor="{DynamicResource SurfaceScrim}" Margin="-4000">
             <BoxView.GestureRecognizers>
                 <TapGestureRecognizer Tapped="OnOverlayTapped" />
             </BoxView.GestureRecognizers>
         </BoxView>
 
         <!-- 2. The Sheet Content (Restored exact V1 sizing) -->
-        <Border x:Name="SheetContent" BackgroundColor="#161b22" Stroke="#30363d" StrokeThickness="1" 
+        <Border x:Name="SheetContent" BackgroundColor="{DynamicResource CardColor}" Stroke="{DynamicResource BorderColor}" StrokeThickness="1" 
                 Margin="-1,0,-1,-2" Padding="0" VerticalOptions="End">
 
             <Border.StrokeShape>
@@ -37,9 +37,9 @@
                 <Grid Grid.Row="0" BackgroundColor="Transparent" Padding="0,0,0,16" InputTransparent="True">
                     <!-- Removed Spacing. Spacing applies even if children are blank. Margin collapses with visibility. -->
                     <VerticalStackLayout>
-                        <RoundRectangle WidthRequest="36" HeightRequest="5" CornerRadius="2.5" Fill="#484f58" HorizontalOptions="Center" />
+                        <RoundRectangle WidthRequest="36" HeightRequest="5" CornerRadius="2.5" Fill="{DynamicResource DragHandleColor}" HorizontalOptions="Center" />
 
-                        <Label Text="{Binding Title, Source={x:Reference Root}}" TextColor="#adcff0" FontSize="20" FontAttributes="Bold" Margin="0,16,0,0" HorizontalOptions="Center" HorizontalTextAlignment="Center">
+                        <Label Text="{Binding Title, Source={x:Reference Root}}" TextColor="{DynamicResource TitleColor}" FontSize="20" FontAttributes="Bold" Margin="0,16,0,0" HorizontalOptions="Center" HorizontalTextAlignment="Center">
                             <Label.Triggers>
                                 <DataTrigger TargetType="Label" Binding="{Binding Title, Source={x:Reference Root}}" Value="">
                                     <Setter Property="IsVisible" Value="False" />

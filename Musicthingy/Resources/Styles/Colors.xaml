@@ -1,60 +1,107 @@
 ﻿<?xml version="1.0" encoding="UTF-8" ?>
 <ResourceDictionary 
-    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
-    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml">
+	xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+	xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml">
 
-    <!-- Note: For Android please see also Platforms\Android\Resources\values\colors.xml -->
+	<!--
+		Palette notes:
+		- The source palette is organized around OKLCH-style perceptual roles.
+		- MAUI XAML consumes sRGB hex, so keep all raw color values here.
+		- Use semantic resources in views; avoid direct hex literals in page XAML.
+	-->
 
-    <Color x:Key="Primary">#512BD4</Color>
-    <Color x:Key="PrimaryDark">#ac99ea</Color>
-    <Color x:Key="PrimaryDarkText">#242424</Color>
-    <Color x:Key="Secondary">#DFD8F7</Color>
-    <Color x:Key="SecondaryDarkText">#9880e5</Color>
-    <Color x:Key="Tertiary">#2B0B98</Color>
+	<Color x:Key="White">#F8FBFF</Color>
+	<Color x:Key="Black">#080B10</Color>
 
-    <Color x:Key="White">White</Color>
-    <Color x:Key="Black">Black</Color>
-    <Color x:Key="Magenta">#D600AA</Color>
-    <Color x:Key="MidnightBlue">#190649</Color>
-    <Color x:Key="OffBlack">#1f1f1f</Color>
+	<!-- Neutral surface ramp -->
+	<Color x:Key="SurfaceCanvas">#0E1218</Color>
+	<Color x:Key="SurfaceInput">#10151C</Color>
+	<Color x:Key="SurfacePanel">#161B22</Color>
+	<Color x:Key="SurfacePanelHover">#1C2128</Color>
+	<Color x:Key="SurfaceRaised">#21262D</Color>
+	<Color x:Key="SurfaceSelected">#253549</Color>
+	<Color x:Key="SurfaceSelectedStrong">#314967</Color>
+	<Color x:Key="SurfaceScrim">#A6000000</Color>
+	<Color x:Key="SurfaceScrimStrong">#D9000000</Color>
+	<Color x:Key="SurfaceScrimPanel">#D9161B22</Color>
 
-    <Color x:Key="Gray100">#E1E1E1</Color>
-    <Color x:Key="Gray200">#C8C8C8</Color>
-    <Color x:Key="Gray300">#ACACAC</Color>
-    <Color x:Key="Gray400">#919191</Color>
-    <Color x:Key="Gray500">#6E6E6E</Color>
-    <Color x:Key="Gray600">#404040</Color>
-    <Color x:Key="Gray900">#212121</Color>
-    <Color x:Key="Gray950">#141414</Color>
+	<!-- Content colors -->
+	<Color x:Key="OnSurface">#D0D8E0</Color>
+	<Color x:Key="OnSurfaceMuted">#93A0AE</Color>
+	<Color x:Key="OnSurfaceStrong">#BFD7EE</Color>
+	<Color x:Key="OnSurfaceInverse">#F8FBFF</Color>
+	<Color x:Key="Outline">#34404C</Color>
+	<Color x:Key="InputOutline">#5D6875</Color>
+	<Color x:Key="OutlineStrong">#5D6875</Color>
+	<Color x:Key="DragHandleColor">#4B5663</Color>
 
-    <SolidColorBrush x:Key="PrimaryBrush" Color="{StaticResource Primary}"/>
-    <SolidColorBrush x:Key="SecondaryBrush" Color="{StaticResource Secondary}"/>
-    <SolidColorBrush x:Key="TertiaryBrush" Color="{StaticResource Tertiary}"/>
-    <SolidColorBrush x:Key="WhiteBrush" Color="{StaticResource White}"/>
-    <SolidColorBrush x:Key="BlackBrush" Color="{StaticResource Black}"/>
+	<!-- Accent roles: lighter for text/indicators, darker for filled controls. -->
+	<Color x:Key="Accent">#6EA0D6</Color>
+	<Color x:Key="AccentFill">#315F88</Color>
+	<Color x:Key="AccentFillHover">#3B6F9E</Color>
+	<Color x:Key="AccentOutline">#4F7EAE</Color>
+	<Color x:Key="AccentContainer">#1C304A</Color>
+	<Color x:Key="OnAccent">#F8FBFF</Color>
+	<Color x:Key="OnAccentContainer">#D9EDFF</Color>
 
-    <SolidColorBrush x:Key="Gray100Brush" Color="{StaticResource Gray100}"/>
-    <SolidColorBrush x:Key="Gray200Brush" Color="{StaticResource Gray200}"/>
-    <SolidColorBrush x:Key="Gray300Brush" Color="{StaticResource Gray300}"/>
-    <SolidColorBrush x:Key="Gray400Brush" Color="{StaticResource Gray400}"/>
-    <SolidColorBrush x:Key="Gray500Brush" Color="{StaticResource Gray500}"/>
-    <SolidColorBrush x:Key="Gray600Brush" Color="{StaticResource Gray600}"/>
-    <SolidColorBrush x:Key="Gray900Brush" Color="{StaticResource Gray900}"/>
-    <SolidColorBrush x:Key="Gray950Brush" Color="{StaticResource Gray950}"/>
+	<!-- Destructive roles are muted so they don't dominate the dark UI. -->
+	<Color x:Key="Danger">#D86A73</Color>
+	<Color x:Key="DangerFill">#74313A</Color>
+	<Color x:Key="DangerFillHover">#8A3A44</Color>
+	<Color x:Key="OnDanger">#F8FBFF</Color>
 
-    <!-- App Colors -->
-    <Color x:Key="BgColor">#0d1117</Color>
-    <Color x:Key="CardColor">#161b22</Color>
-    <Color x:Key="CardHoverColor">#1c2128</Color>
-    <Color x:Key="AccentColor">#58a6ff</Color>
-    <Color x:Key="SelectedBgColor">#374C69</Color>
-    <Color x:Key="DangerColor">#d73a49</Color>
-    <Color x:Key="TitleColor">#adcff0</Color>
-    <Color x:Key="MutedColor">#8b949e</Color>
-    <Color x:Key="TextColor">#c9d1d9</Color>
-    <Color x:Key="BorderColor">#30363d</Color>
-    <Color x:Key="TagBgColor">#1c304a</Color>
+	<!-- Compatibility aliases for older views and MAUI default styles. -->
+	<Color x:Key="Primary">#315F88</Color>
+	<Color x:Key="PrimaryDark">#86B4E4</Color>
+	<Color x:Key="PrimaryDarkText">#0E1218</Color>
+	<Color x:Key="Secondary">#253549</Color>
+	<Color x:Key="SecondaryDarkText">#9DBBD8</Color>
+	<Color x:Key="Tertiary">#4F7EAE</Color>
+	<Color x:Key="Magenta">#6EA0D6</Color>
+	<Color x:Key="MidnightBlue">#0E1218</Color>
+	<Color x:Key="OffBlack">#0E1218</Color>
 
-    <Color x:Key="SwipeEditColor">#2d5b8c</Color>
-    <Color x:Key="SwipeDeleteColor">#5c181f</Color>
+	<Color x:Key="Gray100">#E1E1E1</Color>
+	<Color x:Key="Gray200">#C8C8C8</Color>
+	<Color x:Key="Gray300">#ACACAC</Color>
+	<Color x:Key="Gray400">#919191</Color>
+	<Color x:Key="Gray500">#6E6E6E</Color>
+	<Color x:Key="Gray600">#404040</Color>
+	<Color x:Key="Gray900">#212121</Color>
+	<Color x:Key="Gray950">#141414</Color>
+
+	<SolidColorBrush x:Key="PrimaryBrush" Color="{StaticResource Primary}"/>
+	<SolidColorBrush x:Key="SecondaryBrush" Color="{StaticResource Secondary}"/>
+	<SolidColorBrush x:Key="TertiaryBrush" Color="{StaticResource Tertiary}"/>
+	<SolidColorBrush x:Key="WhiteBrush" Color="{StaticResource White}"/>
+	<SolidColorBrush x:Key="BlackBrush" Color="{StaticResource Black}"/>
+
+	<SolidColorBrush x:Key="Gray100Brush" Color="{StaticResource Gray100}"/>
+	<SolidColorBrush x:Key="Gray200Brush" Color="{StaticResource Gray200}"/>
+	<SolidColorBrush x:Key="Gray300Brush" Color="{StaticResource Gray300}"/>
+	<SolidColorBrush x:Key="Gray400Brush" Color="{StaticResource Gray400}"/>
+	<SolidColorBrush x:Key="Gray500Brush" Color="{StaticResource Gray500}"/>
+	<SolidColorBrush x:Key="Gray600Brush" Color="{StaticResource Gray600}"/>
+	<SolidColorBrush x:Key="Gray900Brush" Color="{StaticResource Gray900}"/>
+	<SolidColorBrush x:Key="Gray950Brush" Color="{StaticResource Gray950}"/>
+
+	<!-- Existing app keys retained as aliases during migration. -->
+	<Color x:Key="BgColor">#0E1218</Color>
+	<Color x:Key="CardColor">#161B22</Color>
+	<Color x:Key="CardHoverColor">#1C2128</Color>
+	<Color x:Key="AccentColor">#6EA0D6</Color>
+	<Color x:Key="SelectedBgColor">#253549</Color>
+	<Color x:Key="DangerColor">#74313A</Color>
+	<Color x:Key="TitleColor">#BFD7EE</Color>
+	<Color x:Key="MutedColor">#93A0AE</Color>
+	<Color x:Key="TextColor">#D0D8E0</Color>
+	<Color x:Key="BorderColor">#34404C</Color>
+	<Color x:Key="InputBorderColor">#5D6875</Color>
+	<Color x:Key="TagBgColor">#1C304A</Color>
+	<Color x:Key="TagTextColor">#D9EDFF</Color>
+	<Color x:Key="TabIndicatorColor">#21262D</Color>
+    <Color x:Key="IconSelectedColor">#adcff0</Color>
+
+	<Color x:Key="SwipeEditColor">#315F88</Color>
+	<Color x:Key="SwipeDeleteColor">#74313A</Color>
 </ResourceDictionary>

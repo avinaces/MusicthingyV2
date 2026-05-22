@@ -1,5 +1,6 @@
 using Microsoft.Maui.Controls;
 using Microsoft.Maui.Graphics;
+using Musicthingy;
 using Musicthingy.Models;
 using System;
 using System.Collections.Generic;
@@ -39,8 +40,10 @@ public partial class EditPlaylistSheet : ContentView, IBottomSheet
         TabIndicator0.IsVisible = index == 0;
         TabIndicator1.IsVisible = index == 1;
 
-        TabLabel0.TextColor = index == 0 ? Colors.White : Color.FromArgb("#8b949e");
-        TabLabel1.TextColor = index == 1 ? Colors.White : Color.FromArgb("#8b949e");
+        Color activeText = ThemeResources.Color("OnSurfaceInverse");
+        Color inactiveText = ThemeResources.Color("MutedColor");
+        TabLabel0.TextColor = index == 0 ? activeText : inactiveText;
+        TabLabel1.TextColor = index == 1 ? activeText : inactiveText;
 
         GeneralTab.IsVisible = index == 0;
         TagsTab.IsVisible = index == 1;

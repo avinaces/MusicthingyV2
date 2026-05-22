@@ -36,10 +36,6 @@ public partial class MainViewModel : ObservableObject
 
         Task.Run(LoadStateAsync);
 
-#if WINDOWS
-        Task.Run(CleanupCache);
-#endif
-
         // Restore Hardware Keyboard/Bluetooth support sent from MainActivity.cs
         WeakReferenceMessenger.Default.Register<MediaControlMessage>(this, (r, m) =>
         {

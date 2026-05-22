@@ -60,9 +60,7 @@
 		<MauiImage Include="Resources\Images\*" />
 		<MauiImage Update="Resources\Images\dotnet_bot.png" Resize="True" BaseSize="300,185" />
 		
-		<!-- Custom Fonts -->
-		<MauiFont Include="Resources\Fonts\*" />
-		<MauiFont Update="Resources\Fonts\Roboto_VariableFont_wdth.ttf" />
+      <!-- Custom fonts removed so the app will use system default fonts -->
 		
 
 		<!-- Raw Assets (also remove the "Resources\Raw" prefix) -->

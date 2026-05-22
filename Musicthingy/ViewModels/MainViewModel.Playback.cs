@@ -1,6 +1,7 @@
 ﻿using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Musicthingy.Models;
+using Musicthingy;
 using System.Collections.ObjectModel;
 using System.Text.Json;
 using CommunityToolkit.Mvvm.Messaging;
@@ -50,12 +51,12 @@ public partial class MainViewModel
             ? "locate_fixed_icon.png"
             : "locate_icon.png";
 
-    public Color AutoFollowIconColor => IsAutoFollowEnabled ? Color.FromArgb("#adcff0") : Color.FromArgb("#8b949e");
+    public Color AutoFollowIconColor => IsAutoFollowEnabled ? ThemeResources.Color("IconSelectedColor") : ThemeResources.Color("MutedColor");
 
     public string PlayPauseIcon => IsPlaying ? "pause_icon.png" : "play_icon.png";
 
     // Gray when off, Soft Pastel Blue when active
-    public Color ShuffleIconColor => IsShuffleEnabled ? Color.FromArgb("#adcff0") : Color.FromArgb("#8b949e");
+    public Color ShuffleIconColor => IsShuffleEnabled ? ThemeResources.Color("IconSelectedColor") : ThemeResources.Color("MutedColor");
 
     // Dynamic Icon Images
     public string RepeatIconSource => RepeatState switch
@@ -68,9 +69,9 @@ public partial class MainViewModel
     // Gray when off, Soft Pastel Blue when repeating All or One
     public Color RepeatIconColor => RepeatState switch
     {
-        RepeatMode.All => Color.FromArgb("#adcff0"),
-        RepeatMode.One => Color.FromArgb("#adcff0"),
-        _ => Color.FromArgb("#8b949e")
+        RepeatMode.All => ThemeResources.Color("IconSelectedColor"),
+        RepeatMode.One => ThemeResources.Color("IconSelectedColor"),
+        _ => ThemeResources.Color("MutedColor")
     };
 
     private PlaylistItem? _lastTrackSkipped;

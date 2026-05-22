@@ -5,7 +5,7 @@
              IsVisible="False">
     <Grid>
         <!-- The tappable dim background -->
-        <BoxView x:Name="Backdrop" BackgroundColor="#A6000000" Opacity="0">
+        <BoxView x:Name="Backdrop" BackgroundColor="{DynamicResource SurfaceScrim}" Opacity="0">
             <BoxView.GestureRecognizers>
                 <TapGestureRecognizer Tapped="OnBackdropTapped"/>
             </BoxView.GestureRecognizers>

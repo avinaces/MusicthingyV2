@@ -8,49 +8,49 @@
 
             <!-- Icon picker at the top center -->
             <VerticalStackLayout HorizontalOptions="Center" Spacing="8">
-                <Border WidthRequest="96" HeightRequest="96" StrokeShape="RoundRectangle 16" Stroke="#30363d" StrokeThickness="1" BackgroundColor="#0d1117">
+                <Border WidthRequest="96" HeightRequest="96" StrokeShape="RoundRectangle 16" Stroke="{DynamicResource BorderColor}" StrokeThickness="1" BackgroundColor="{DynamicResource SurfaceInput}">
                     <Image Source="{Binding ItemIconSource}" Aspect="AspectFill" />
                     <Border.GestureRecognizers>
                         <TapGestureRecognizer Command="{Binding PickIconCommand}"/>
                     </Border.GestureRecognizers>
                 </Border>
-                <Label Text="Tap to change" FontSize="12" TextColor="#8b949e" HorizontalOptions="Center"/>
-                <Button Text="Reset" Command="{Binding ResetIconCommand}" BackgroundColor="Transparent" TextColor="#e06c75" HeightRequest="32" Padding="8,0" />
+                <Label Text="Tap to change" FontSize="12" TextColor="{DynamicResource MutedColor}" HorizontalOptions="Center"/>
+                <Button Text="Reset" Command="{Binding ResetIconCommand}" BackgroundColor="Transparent" TextColor="{DynamicResource Danger}" HeightRequest="32" Padding="8,0" />
             </VerticalStackLayout>
 
             <!-- Title -->
             <VerticalStackLayout Spacing="6">
-                <Label Text="Title" TextColor="#c9d1d9" FontSize="14"/>
-                <Border BackgroundColor="#0d1117" Stroke="#30363d" StrokeThickness="1" StrokeShape="RoundRectangle 8" Padding="12,0">
-                    <Entry Text="{Binding EditTitle}" TextColor="White" BackgroundColor="Transparent" HeightRequest="48"/>
+                <Label Text="Title" TextColor="{DynamicResource TextColor}" FontSize="14"/>
+                <Border BackgroundColor="{DynamicResource SurfaceInput}" Stroke="{DynamicResource InputBorderColor}" StrokeThickness="1" StrokeShape="RoundRectangle 8" Padding="12,0">
+                    <Entry Text="{Binding EditTitle}" TextColor="{DynamicResource TextColor}" BackgroundColor="Transparent" HeightRequest="48"/>
                 </Border>
             </VerticalStackLayout>
 
             <!-- URL -->
             <VerticalStackLayout Spacing="6">
-                <Label Text="Stream URL / Path" TextColor="#c9d1d9" FontSize="14"/>
-                <Border BackgroundColor="#0d1117" Stroke="#30363d" StrokeThickness="1" StrokeShape="RoundRectangle 8" Padding="12,0">
-                    <Entry Text="{Binding EditUrl}" TextColor="White" BackgroundColor="Transparent" HeightRequest="48"/>
+                <Label Text="Stream URL / Path" TextColor="{DynamicResource TextColor}" FontSize="14"/>
+                <Border BackgroundColor="{DynamicResource SurfaceInput}" Stroke="{DynamicResource InputBorderColor}" StrokeThickness="1" StrokeShape="RoundRectangle 8" Padding="12,0">
+                    <Entry Text="{Binding EditUrl}" TextColor="{DynamicResource TextColor}" BackgroundColor="Transparent" HeightRequest="48"/>
                 </Border>
             </VerticalStackLayout>
 
             <!-- Times Grid -->
             <Grid ColumnDefinitions="*,*" ColumnSpacing="12">
                 <VerticalStackLayout Grid.Column="0" Spacing="6">
-                    <Label Text="Start Time (ms)" TextColor="#c9d1d9" FontSize="14"/>
-                    <Border BackgroundColor="#0d1117" Stroke="#30363d" StrokeThickness="1" StrokeShape="RoundRectangle 8" Padding="12,0">
-                        <Entry Text="{Binding EditStartTime}" Keyboard="Numeric" TextColor="White" BackgroundColor="Transparent" HeightRequest="48"/>
+                    <Label Text="Start Time (ms)" TextColor="{DynamicResource TextColor}" FontSize="14"/>
+                    <Border BackgroundColor="{DynamicResource SurfaceInput}" Stroke="{DynamicResource InputBorderColor}" StrokeThickness="1" StrokeShape="RoundRectangle 8" Padding="12,0">
+                        <Entry Text="{Binding EditStartTime}" Keyboard="Numeric" TextColor="{DynamicResource TextColor}" BackgroundColor="Transparent" HeightRequest="48"/>
                     </Border>
                 </VerticalStackLayout>
                 <VerticalStackLayout Grid.Column="1" Spacing="6">
-                    <Label Text="End Time (ms)" TextColor="#c9d1d9" FontSize="14"/>
-                    <Border BackgroundColor="#0d1117" Stroke="#30363d" StrokeThickness="1" StrokeShape="RoundRectangle 8" Padding="12,0">
-                        <Entry Text="{Binding EditEndTime}" Keyboard="Numeric" TextColor="White" BackgroundColor="Transparent" HeightRequest="48"/>
+                    <Label Text="End Time (ms)" TextColor="{DynamicResource TextColor}" FontSize="14"/>
+                    <Border BackgroundColor="{DynamicResource SurfaceInput}" Stroke="{DynamicResource InputBorderColor}" StrokeThickness="1" StrokeShape="RoundRectangle 8" Padding="12,0">
+                        <Entry Text="{Binding EditEndTime}" Keyboard="Numeric" TextColor="{DynamicResource TextColor}" BackgroundColor="Transparent" HeightRequest="48"/>
                     </Border>
                 </VerticalStackLayout>
             </Grid>
 
-            <Label Text="{Binding LastPlayedText, StringFormat='Last Played: {0}'}" TextColor="#8b949e" FontSize="12" HorizontalOptions="Center" Margin="0,8,0,0">
+            <Label Text="{Binding LastPlayedText, StringFormat='Last Played: {0}'}" TextColor="{DynamicResource MutedColor}" FontSize="12" HorizontalOptions="Center" Margin="0,8,0,0">
                 <Label.Triggers>
                     <DataTrigger TargetType="Label" Binding="{Binding LastPlayedText}" Value="">
                         <Setter Property="IsVisible" Value="False" />

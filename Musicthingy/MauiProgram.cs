@@ -19,12 +19,7 @@ namespace Musicthingy
             builder.UseMauiApp<App>()
                 .UseMauiCommunityToolkit()
                 .UseMPowerKitListView()
-                .ConfigureFonts(fonts =>
-            {
-                fonts.AddFont("OpenSans-Regular.ttf", "OpenSansRegular");
-                fonts.AddFont("OpenSans-Semibold.ttf", "OpenSansSemibold");
-                fonts.AddFont("Roboto_VariableFont_wdth.ttf", "Roboto");
-            });
+                .ConfigureFonts(fonts => { });
 #if DEBUG
             builder.Logging.AddDebug();
 #endif

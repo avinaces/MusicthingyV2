@@ -1,6 +1,7 @@
 using CommunityToolkit.Mvvm.Input;
 using Microsoft.Maui.Controls;
 using Microsoft.Maui.Graphics;
+using Musicthingy;
 using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
@@ -70,6 +71,6 @@ public class ContextMenuItem
     /// </summary>
     public ICommand ItemCommand => _itemCommand ??= new RelayCommand(() => Action?.Invoke());
 
-    // Muted, softer red for destructive actions to blend better with the dark theme
-    public Color TextColor => IsDestructive ? Color.FromArgb("#e06c75") : Color.FromArgb("#c9d1d9");
+    // Muted, softer red for destructive actions to blend better with the dark theme.
+    public Color TextColor => IsDestructive ? ThemeResources.Color("Danger") : ThemeResources.Color("TextColor");
 }

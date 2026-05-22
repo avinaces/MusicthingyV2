@@ -7,8 +7,8 @@
              xmlns:views="clr-namespace:Musicthingy.Views">
 
     <Border x:Name="PlayerRoot" 
-            Background="#161b22" 
-            Stroke="#30363d" 
+            Background="{DynamicResource CardColor}" 
+            Stroke="{DynamicResource BorderColor}" 
             StrokeThickness="1" 
             Margin="-1,0,0,-2"
             Padding="0"
@@ -43,11 +43,11 @@
                         <HorizontalStackLayout BindableLayout.ItemsSource="{Binding CurrentTrack.Tags}" Spacing="4">
                             <BindableLayout.ItemTemplate>
                                 <DataTemplate x:DataType="x:String">
-                                    <Border Background="#1c304a" Stroke="#58a6ff" StrokeThickness="1" Padding="6,2">
+                                    <Border Background="{DynamicResource TagBgColor}" Stroke="{DynamicResource AccentColor}" StrokeThickness="1" Padding="6,2">
                                         <Border.StrokeShape>
                                             <RoundRectangle CornerRadius="6"/>
                                         </Border.StrokeShape>
-                                        <Label Text="{Binding .}" TextColor="#d9edff" FontSize="10"/>
+                                        <Label Text="{Binding .}" TextColor="{DynamicResource TagTextColor}" FontSize="10"/>
                                     </Border>
                                 </DataTemplate>
                             </BindableLayout.ItemTemplate>
@@ -56,11 +56,11 @@
 
                     <!-- Progress Bar -->
                     <Grid ColumnDefinitions="Auto, *, Auto" ColumnSpacing="12" Margin="0,0,0,4">
-                        <Label Grid.Column="0" Text="{Binding CurrentPosition, StringFormat='{0:mm\\:ss}'}" TextColor="#8b949e" FontSize="11" VerticalOptions="Center" MinimumWidthRequest="35"/>
+                        <Label Grid.Column="0" Text="{Binding CurrentPosition, StringFormat='{0:mm\\:ss}'}" TextColor="{DynamicResource MutedColor}" FontSize="11" VerticalOptions="Center" MinimumWidthRequest="35"/>
                         <Slider Grid.Column="1" Minimum="0" Maximum="{Binding DurationSeconds}" Value="{Binding CurrentPositionSeconds, Mode=TwoWay}"
                                 DragStartedCommand="{Binding DragStartedCommand}" DragCompletedCommand="{Binding SeekCommand}"
-                                MinimumTrackColor="#58a6ff" MaximumTrackColor="#30363d" ThumbColor="#adcff0" VerticalOptions="Center" Margin="0,-6,0,-6"/>
-                        <Label Grid.Column="2" Text="{Binding Duration, StringFormat='{0:mm\\:ss}'}" TextColor="#8b949e" FontSize="11" VerticalOptions="Center" MinimumWidthRequest="35"/>
+                                MinimumTrackColor="{DynamicResource AccentColor}" MaximumTrackColor="{DynamicResource BorderColor}" ThumbColor="{DynamicResource TitleColor}" VerticalOptions="Center" Margin="0,-6,0,-6"/>
+                        <Label Grid.Column="2" Text="{Binding Duration, StringFormat='{0:mm\\:ss}'}" TextColor="{DynamicResource MutedColor}" FontSize="11" VerticalOptions="Center" MinimumWidthRequest="35"/>
                     </Grid>
 
                     <!-- Main Transport Controls -->
@@ -78,7 +78,7 @@
 
                         <ImageButton Source="skip_back_icon.png" Command="{Binding PlayPreviousCommand}" WidthRequest="44" HeightRequest="44" BackgroundColor="Transparent" Padding="10" CornerRadius="22" />
 
-                        <Border Background="#1c2128" Stroke="#30363d" StrokeThickness="1" WidthRequest="56" HeightRequest="56">
+                        <Border Background="{DynamicResource CardHoverColor}" Stroke="{DynamicResource BorderColor}" StrokeThickness="1" WidthRequest="56" HeightRequest="56">
                             <Border.StrokeShape>
                                 <RoundRectangle CornerRadius="28" />
                             </Border.StrokeShape>
@@ -86,8 +86,8 @@
                             <Grid>
                                 <ImageButton Source="{Binding PlayPauseIcon}" Command="{Binding TogglePlayCommand}" WidthRequest="56" HeightRequest="56" BackgroundColor="Transparent" Padding="14"/>
 
-                                <Grid BackgroundColor="#D9161b22" IsVisible="{Binding IsLoadingMedia}">
-                                    <ActivityIndicator IsRunning="{Binding IsLoadingMedia}" Color="#58a6ff" WidthRequest="24" HeightRequest="24" HorizontalOptions="Center" VerticalOptions="Center" />
+                                <Grid BackgroundColor="{DynamicResource SurfaceScrimPanel}" IsVisible="{Binding IsLoadingMedia}">
+                                    <ActivityIndicator IsRunning="{Binding IsLoadingMedia}" Color="{DynamicResource AccentColor}" WidthRequest="24" HeightRequest="24" HorizontalOptions="Center" VerticalOptions="Center" />
                                 </Grid>
                             </Grid>
                         </Border>
@@ -116,12 +116,12 @@
                                 <Label Text="{Binding Text}" HorizontalOptions="Fill" HorizontalTextAlignment="Center" LineHeight="1.4" Margin="10,6,10,6">
                                     <Label.Triggers>
                                         <DataTrigger TargetType="Label" Binding="{Binding IsActive}" Value="True">
-                                            <Setter Property="TextColor" Value="#ffffff" />
+                                            <Setter Property="TextColor" Value="{DynamicResource OnSurfaceInverse}" />
                                             <Setter Property="FontAttributes" Value="Bold" />
                                             <Setter Property="FontSize" Value="22" />
                                         </DataTrigger>
                                         <DataTrigger TargetType="Label" Binding="{Binding IsActive}" Value="False">
-                                            <Setter Property="TextColor" Value="#8b949e" />
+                                            <Setter Property="TextColor" Value="{DynamicResource MutedColor}" />
                                             <Setter Property="FontAttributes" Value="None" />
                                             <Setter Property="FontSize" Value="18" />
                                         </DataTrigger>
@@ -136,7 +136,7 @@
 
                     <ScrollView VerticalOptions="Fill" IsVisible="{Binding HasStaticLyrics}">
                         <Label Text="{Binding CurrentTrack.Lyrics}" 
-                               TextColor="#c9d1d9" 
+                               TextColor="{DynamicResource TextColor}" 
                                HorizontalOptions="Center" 
                                HorizontalTextAlignment="Center" 
                                VerticalOptions="Start" 
@@ -148,10 +148,10 @@
                     <!-- Prompt to Find Lyrics -->
                     <ContentView IsVisible="{Binding HasNoLyrics}">
                         <VerticalStackLayout x:Name="NoLyricsPrompt" VerticalOptions="Center" Spacing="16" IsVisible="False" Opacity="0">
-                            <Label Text="No lyrics available for this track." TextColor="#8b949e" HorizontalOptions="Center" />
+                            <Label Text="No lyrics available for this track." TextColor="{DynamicResource MutedColor}" HorizontalOptions="Center" />
 
                             <Button Text="Find Lyrics" Command="{Binding FindLyricsCommand}" 
-                                    BackgroundColor="#21262d" TextColor="#58a6ff" CornerRadius="8" WidthRequest="160" HorizontalOptions="Center">
+                                    BackgroundColor="{DynamicResource SurfaceRaised}" TextColor="{DynamicResource AccentColor}" CornerRadius="8" WidthRequest="160" HorizontalOptions="Center">
                                 <Button.Triggers>
                                     <DataTrigger TargetType="Button" Binding="{Binding IsFetchingLyrics}" Value="True">
                                         <Setter Property="IsEnabled" Value="False" />
@@ -160,7 +160,7 @@
                                 </Button.Triggers>
                             </Button>
 
-                            <ActivityIndicator IsRunning="True" Color="#58a6ff" WidthRequest="24" HeightRequest="24" IsVisible="{Binding IsFetchingLyrics}"/>
+                            <ActivityIndicator IsRunning="True" Color="{DynamicResource AccentColor}" WidthRequest="24" HeightRequest="24" IsVisible="{Binding IsFetchingLyrics}"/>
                         </VerticalStackLayout>
                     </ContentView>
                 </Grid>
@@ -172,7 +172,7 @@
             <Grid x:Name="HeaderDragZone" BackgroundColor="Transparent" Padding="0" VerticalOptions="Start">
 
                 <RoundRectangle x:Name="DragHandle" 
-                                Fill="#484f58" WidthRequest="36" HeightRequest="5" 
+                                Fill="{DynamicResource DragHandleColor}" WidthRequest="36" HeightRequest="5" 
                                 CornerRadius="2.5" HorizontalOptions="Center" VerticalOptions="Start"
                                 Margin="0,12,0,0" IsVisible="False" Opacity="0" />
 
@@ -186,8 +186,8 @@
                     </Border>
 
                     <VerticalStackLayout Grid.Column="1" VerticalOptions="Center" Spacing="2">
-                        <views:AutoMarqueeLabel Text="{Binding CurrentTrack.Title}" TextColor="#adcff0" FontSize="16" FontAttributes="Bold" />
-                        <views:AutoMarqueeLabel Text="{Binding CurrentTrack.Artist, FallbackValue='Unknown Artist'}" TextColor="#8b949e" FontSize="13" />
+                        <views:AutoMarqueeLabel Text="{Binding CurrentTrack.Title}" TextColor="{DynamicResource TitleColor}" FontSize="16" FontAttributes="Bold" />
+                        <views:AutoMarqueeLabel Text="{Binding CurrentTrack.Artist, FallbackValue='Unknown Artist'}" TextColor="{DynamicResource MutedColor}" FontSize="13" />
                     </VerticalStackLayout>
 
                     <!-- Mini Controls -->
@@ -195,11 +195,11 @@
                         <Grid WidthRequest="40" HeightRequest="40">
                             <ImageButton Source="{Binding PlayPauseIcon}" Command="{Binding TogglePlayCommand}" BackgroundColor="Transparent" Padding="8" CornerRadius="20"/>
 
-                            <Border Background="#D9161b22" StrokeThickness="0" IsVisible="{Binding IsLoadingMedia}">
+                            <Border Background="{DynamicResource SurfaceScrimPanel}" StrokeThickness="0" IsVisible="{Binding IsLoadingMedia}">
                                 <Border.StrokeShape>
                                     <RoundRectangle CornerRadius="20" />
                                 </Border.StrokeShape>
-                                <ActivityIndicator IsRunning="{Binding IsLoadingMedia}" Color="#58a6ff" WidthRequest="20" HeightRequest="20" HorizontalOptions="Center" VerticalOptions="Center" />
+                                <ActivityIndicator IsRunning="{Binding IsLoadingMedia}" Color="{DynamicResource AccentColor}" WidthRequest="20" HeightRequest="20" HorizontalOptions="Center" VerticalOptions="Center" />
                             </Border>
                         </Grid>
                         <ImageButton Source="skip_forward_icon.png" Command="{Binding PlayNextCommand}" WidthRequest="40" HeightRequest="40" BackgroundColor="Transparent" Padding="8" CornerRadius="20"/>

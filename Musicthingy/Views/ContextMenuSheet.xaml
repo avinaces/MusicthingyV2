@@ -1,63 +1,63 @@
 <?xml version="1.0" encoding="utf-8" ?>
 <ContentView xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
-             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
-             xmlns:views="clr-namespace:Musicthingy.Views"
-             x:Class="Musicthingy.Views.ContextMenuSheet"
-             xmlns:toolkit="http://schemas.microsoft.com/dotnet/2022/maui/toolkit"
-             x:Name="Root">
+			 xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+			 xmlns:views="clr-namespace:Musicthingy.Views"
+			 x:Class="Musicthingy.Views.ContextMenuSheet"
+			 xmlns:toolkit="http://schemas.microsoft.com/dotnet/2022/maui/toolkit"
+			 x:Name="Root">
 
-    <!-- Notice Title is left blank so the default raw text title collapses, making way for our styled Header Card -->
-    <views:BottomSheetContainer x:Name="InnerSheet" Title="" CloseRequested="OnSheetCloseRequested">
-        <views:BottomSheetContainer.Body>
-            <VerticalStackLayout Spacing="16" Padding="0,0,0,8">
+	<!-- Notice Title is left blank so the default raw text title collapses, making way for our styled Header Card -->
+	<views:BottomSheetContainer x:Name="InnerSheet" Title="" CloseRequested="OnSheetCloseRequested">
+		<views:BottomSheetContainer.Body>
+			<VerticalStackLayout Spacing="16" Padding="0,0,0,8">
 
-                <!-- 1. Header Card (Image, Title, Subtitle) -->
-                <Border BackgroundColor="#161b22" Stroke="#30363d" StrokeThickness="1" StrokeShape="RoundRectangle 16" 
-                        Padding="16" IsVisible="{Binding HasHeader, Source={x:Reference Root}}">
-                    <Grid ColumnDefinitions="Auto, *" ColumnSpacing="16">
-                        <Image Grid.Column="0" Source="{Binding HeaderImageSource, Source={x:Reference Root}}" 
-                               WidthRequest="48" HeightRequest="48" Aspect="AspectFill" VerticalOptions="Center">
-                            <Image.Clip>
-                                <RoundRectangleGeometry CornerRadius="8" Rect="0,0,48,48" />
-                            </Image.Clip>
-                        </Image>
+				<!-- 1. Header Card (Image, Title, Subtitle) -->
+				<Border BackgroundColor="{DynamicResource CardColor}" Stroke="{DynamicResource BorderColor}" StrokeThickness="1" StrokeShape="RoundRectangle 16" 
+						Padding="16" IsVisible="{Binding HasHeader, Source={x:Reference Root}}">
+					<Grid ColumnDefinitions="Auto, *" ColumnSpacing="16">
+						<Image Grid.Column="0" Source="{Binding HeaderImageSource, Source={x:Reference Root}}" 
+							   WidthRequest="48" HeightRequest="48" Aspect="AspectFill" VerticalOptions="Center">
+							<Image.Clip>
+								<RoundRectangleGeometry CornerRadius="8" Rect="0,0,48,48" />
+							</Image.Clip>
+						</Image>
 
-                        <VerticalStackLayout Grid.Column="1" VerticalOptions="Center" Spacing="4">
-                            <Label Text="{Binding HeaderTitle, Source={x:Reference Root}}" TextColor="#adcff0" FontSize="16" FontAttributes="Bold" LineBreakMode="TailTruncation" />
-                            <Label Text="{Binding HeaderSubtitle, Source={x:Reference Root}}" TextColor="#8b949e" FontSize="13" LineBreakMode="TailTruncation" />
-                        </VerticalStackLayout>
-                    </Grid>
-                </Border>
+						<VerticalStackLayout Grid.Column="1" VerticalOptions="Center" Spacing="4">
+							<Label Text="{Binding HeaderTitle, Source={x:Reference Root}}" TextColor="{DynamicResource TitleColor}" FontSize="16" FontAttributes="Bold" LineBreakMode="TailTruncation" />
+							<Label Text="{Binding HeaderSubtitle, Source={x:Reference Root}}" TextColor="{DynamicResource MutedColor}" FontSize="13" LineBreakMode="TailTruncation" />
+						</VerticalStackLayout>
+					</Grid>
+				</Border>
 
-                <Border BackgroundColor="#30363d" Stroke="#30363d" StrokeThickness="1" StrokeShape="RoundRectangle 16">
-                    <!-- The BackgroundColor and Spacing="1" trick automatically creates perfect 1px separator lines between items -->
-                    <VerticalStackLayout BindableLayout.ItemsSource="{Binding MenuItems, Source={x:Reference Root}}" Spacing="1" BackgroundColor="#30363d">
-                        <BindableLayout.ItemTemplate>
-                            <DataTemplate x:DataType="views:ContextMenuItem">
-                                <Grid HeightRequest="56">
+				<Border BackgroundColor="{DynamicResource BorderColor}" Stroke="{DynamicResource BorderColor}" StrokeThickness="1" StrokeShape="RoundRectangle 16">
+					<!-- The BackgroundColor and Spacing="1" trick automatically creates perfect 1px separator lines between items -->
+					<VerticalStackLayout BindableLayout.ItemsSource="{Binding MenuItems, Source={x:Reference Root}}" Spacing="1" BackgroundColor="{DynamicResource BorderColor}">
+						<BindableLayout.ItemTemplate>
+							<DataTemplate x:DataType="views:ContextMenuItem">
+								<Grid HeightRequest="56">
 
-                                    <!-- The real native button for the ripple effect. Background matches the card color. -->
-                                    <Button BackgroundColor="#161b22" CornerRadius="0" Command="{Binding ItemCommand}" Margin="0" Padding="0" />
+									<!-- The real native button for the ripple effect. Background matches the card color. -->
+									<Button BackgroundColor="{DynamicResource CardColor}" CornerRadius="0" Command="{Binding ItemCommand}" Margin="0" Padding="0" />
 
-                                    <!-- The overlaid content. InputTransparent ensures the Button catches the touches. -->
-                                    <HorizontalStackLayout InputTransparent="True" Spacing="16" Padding="16,0" VerticalOptions="Center">
-                                        <Image Source="{Binding IconSource}" WidthRequest="20" HeightRequest="20" VerticalOptions="Center">
+									<!-- The overlaid content. InputTransparent ensures the Button catches the touches. -->
+									<HorizontalStackLayout InputTransparent="True" Spacing="16" Padding="16,0" VerticalOptions="Center">
+										<Image Source="{Binding IconSource}" WidthRequest="20" HeightRequest="20" VerticalOptions="Center">
 
-                                            <!-- TODO: IconTintColorBehavior Does'nt work here currently -->
-                                                <Image.Behaviors>
-                                                <toolkit:IconTintColorBehavior TintColor="{Binding TextColor}"/>
-                                            </Image.Behaviors>
-                                        </Image>
-                                        <Label Text="{Binding Title}" TextColor="{Binding TextColor}" FontSize="16" VerticalOptions="Center" />
-                                    </HorizontalStackLayout>
+											<!-- TODO: IconTintColorBehavior Does'nt work here currently -->
+												<Image.Behaviors>
+												<toolkit:IconTintColorBehavior TintColor="{Binding TextColor}"/>
+											</Image.Behaviors>
+										</Image>
+										<Label Text="{Binding Title}" TextColor="{Binding TextColor}" FontSize="16" VerticalOptions="Center" />
+									</HorizontalStackLayout>
 
-                                </Grid>
-                            </DataTemplate>
-                        </BindableLayout.ItemTemplate>
-                    </VerticalStackLayout>
-                </Border>
+								</Grid>
+							</DataTemplate>
+						</BindableLayout.ItemTemplate>
+					</VerticalStackLayout>
+				</Border>
 
-            </VerticalStackLayout>
-        </views:BottomSheetContainer.Body>
-    </views:BottomSheetContainer>
+			</VerticalStackLayout>
+		</views:BottomSheetContainer.Body>
+	</views:BottomSheetContainer>
 </ContentView>

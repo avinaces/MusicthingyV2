@@ -1,5 +1,6 @@
 using Microsoft.Maui.Controls;
 using Microsoft.Maui.Graphics;
+using Musicthingy;
 using Musicthingy.Models;
 using System;
 using System.Collections.Generic;
@@ -43,9 +44,11 @@ public partial class EditTrackSheet : ContentView, IBottomSheet
         TabIndicator2.IsVisible = index == 2;
 
         // Update the text contrast to match the active state
-        TabLabel0.TextColor = index == 0 ? Colors.White : Color.FromArgb("#8b949e");
-        TabLabel1.TextColor = index == 1 ? Colors.White : Color.FromArgb("#8b949e");
-        TabLabel2.TextColor = index == 2 ? Colors.White : Color.FromArgb("#8b949e");
+        Color activeText = ThemeResources.Color("OnSurfaceInverse");
+        Color inactiveText = ThemeResources.Color("MutedColor");
+        TabLabel0.TextColor = index == 0 ? activeText : inactiveText;
+        TabLabel1.TextColor = index == 1 ? activeText : inactiveText;
+        TabLabel2.TextColor = index == 2 ? activeText : inactiveText;
 
         // Swap the active content views
         GeneralTab.IsVisible = index == 0;

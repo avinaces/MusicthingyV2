@@ -3,6 +3,7 @@ using CommunityToolkit.Mvvm.Input;
 using Microsoft.Maui.Controls;
 using Microsoft.Maui.Graphics;
 using Microsoft.Maui.Storage;
+using Musicthingy;
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
@@ -115,7 +116,7 @@ public partial class SelectableTag : ObservableObject
         OnPropertyChanged(nameof(TextColor));
     }
 
-    public Color BackgroundColor => IsSelected ? Color.FromArgb("#2d5b8c") : Color.FromArgb("#161b22");
-    public Color BorderColor => IsSelected ? Color.FromArgb("#4d7bb0") : Color.FromArgb("#30363d");
-    public Color TextColor => IsSelected ? Colors.White : Color.FromArgb("#c9d1d9");
+    public Color BackgroundColor => IsSelected ? ThemeResources.Color("AccentFill") : ThemeResources.Color("CardColor");
+    public Color BorderColor => IsSelected ? ThemeResources.Color("AccentOutline") : ThemeResources.Color("BorderColor");
+    public Color TextColor => IsSelected ? ThemeResources.Color("OnAccent") : ThemeResources.Color("TextColor");
 }
