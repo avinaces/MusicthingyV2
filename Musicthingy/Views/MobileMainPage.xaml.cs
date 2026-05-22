@@ -2,6 +2,7 @@ using CommunityToolkit.Mvvm.Messaging;
 using Musicthingy.Models;
 using MPowerKit.VirtualizeListView;
 using Microsoft.Maui.Controls;
+using Musicthingy.ViewModels;
 
 namespace Musicthingy.Views;
 
@@ -16,10 +17,10 @@ public partial class MobileMainPage : ContentPage
     private bool _isSidebarPanning = false;
     private readonly double _sidebarWidth = 360;
 
-    public MobileMainPage()
+    public MobileMainPage(MainViewModel viewModel)
     {
         InitializeComponent();
-        BindingContext = new ViewModels.MainViewModel();
+        BindingContext = viewModel;
 
         Services.SheetManager.Host = GlobalSheetHost;
 
@@ -238,7 +239,7 @@ public partial class MobileMainPage : ContentPage
                     IconSource = "pencil_icon.png",
                     Action = async () =>
                     {
-                        await Services.SheetManager.Host!.HideAsync(menuSheet);
+                        _ = Services.SheetManager.Host!.HideAsync(menuSheet);
                         vm.EditTrackCommand.Execute(track);
                     }
                 },
@@ -249,7 +250,7 @@ public partial class MobileMainPage : ContentPage
                     IsDestructive = true,
                     Action = async () =>
                     {
-                        await Services.SheetManager.Host!.HideAsync(menuSheet);
+                        _ = Services.SheetManager.Host!.HideAsync(menuSheet);
                         vm.DeleteTrackCommand.Execute(track);
                     }
                 }
@@ -257,7 +258,7 @@ public partial class MobileMainPage : ContentPage
 
                 if (Services.SheetManager.Host != null)
                 {
-                    await Services.SheetManager.Host.ShowAsync(menuSheet);
+                    _ = Services.SheetManager.Host.ShowAsync(menuSheet);
                 }
             }
         }
@@ -285,7 +286,7 @@ public partial class MobileMainPage : ContentPage
                         IconSource = "pencil_icon.png",
                         Action = async () =>
                         {
-                            await Services.SheetManager.Host!.HideAsync(menuSheet);
+                            _ = Services.SheetManager.Host!.HideAsync(menuSheet);
                             vm.EditPlaylistCommand.Execute(playlist);
                         }
                     },
@@ -295,7 +296,7 @@ public partial class MobileMainPage : ContentPage
                         IconSource = "upload_icon.png",
                         Action = async () =>
                         {
-                            await Services.SheetManager.Host!.HideAsync(menuSheet);
+                            _ = Services.SheetManager.Host!.HideAsync(menuSheet);
                             vm.ExportPlaylistCommand.Execute(playlist);
                         }
                     },
@@ -306,7 +307,7 @@ public partial class MobileMainPage : ContentPage
                         IsDestructive = true,
                         Action = async () =>
                         {
-                            await Services.SheetManager.Host!.HideAsync(menuSheet);
+                            _ = Services.SheetManager.Host!.HideAsync(menuSheet);
                             vm.DeletePlaylistCommand.Execute(playlist);
                         }
                     }

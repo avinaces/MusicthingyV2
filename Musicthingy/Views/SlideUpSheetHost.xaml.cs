@@ -1,8 +1,16 @@
+using Microsoft.Maui.Controls;
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Threading.Tasks;
+
 namespace Musicthingy.Views;
 
 public partial class SlideUpSheetHost : ContentView
 {
     public SlideUpSheetHost() { InitializeComponent(); }
+
+    private const float BACKDROP_OPACITY = 0.3f;
 
     public async Task ShowAsync(View content)
     {
@@ -12,8 +20,8 @@ public partial class SlideUpSheetHost : ContentView
 
         var tasks = new List<Task> { content.TranslateToAsync(0, 0, 300, Easing.CubicOut) };
 
-        if (SheetContainer.Children.Count == 1) // Only fade backdrop for the first sheet
-            tasks.Add(Backdrop.FadeToAsync(1, 250, Easing.CubicOut));
+        if (SheetContainer.Children.Count == 1)
+            tasks.Add(Backdrop.FadeToAsync(BACKDROP_OPACITY, 250, Easing.CubicOut));
 
         await Task.WhenAll(tasks);
     }
@@ -22,7 +30,7 @@ public partial class SlideUpSheetHost : ContentView
     {
         var tasks = new List<Task> { content.TranslateToAsync(0, 2000, 250, Easing.CubicIn) };
 
-        if (SheetContainer.Children.Count == 1) // Fade out backdrop if it's the last sheet closing
+        if (SheetContainer.Children.Count == 1)
             tasks.Add(Backdrop.FadeToAsync(0, 250, Easing.CubicIn));
 
         await Task.WhenAll(tasks);

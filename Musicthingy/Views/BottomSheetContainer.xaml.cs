@@ -22,6 +22,8 @@ public partial class BottomSheetContainer : ContentView
     private double _lastPanY;
     private DateTime _lastPanTime;
 
+    private const float BACKDROP_OPACITY = 0.3f;
+
     private static void OnFooterChanged(BindableObject bindable, object oldValue, object newValue)
     {
         if (bindable is BottomSheetContainer container)
@@ -38,15 +40,11 @@ public partial class BottomSheetContainer : ContentView
         base.OnParentSet();
         if (Parent != null)
         {
-            // Smoothly fade the overlay in. Doesn't conflict with SlideUpSheetHost translating the wrapper.
             OverlayBox.Opacity = 0;
-            _ = OverlayBox.FadeToAsync(1, 250, Easing.CubicOut);
+            _ = OverlayBox.FadeToAsync(BACKDROP_OPACITY, 250, Easing.CubicOut);
         }
     }
 
-    /// <summary>
-    /// Invokes the CloseRequested event to signal the host to natively close the bottom sheet.
-    /// </summary>
     public void Close()
     {
         CloseRequested?.Invoke(this, EventArgs.Empty);
@@ -54,10 +52,8 @@ public partial class BottomSheetContainer : ContentView
 
     private void OnOverlayTapped(object? sender, TappedEventArgs e)
     {
-        // Simply requesting to close lets SlideUpSheetHost handle its clean, native exit animation.
         Close();
     }
-
 
     private void OnPanUpdated(object? sender, PanUpdatedEventArgs e)
     {
@@ -72,36 +68,33 @@ public partial class BottomSheetContainer : ContentView
                 break;
 
             case GestureStatus.Running:
-                // Calculate velocity (pixels per millisecond)
                 var now = DateTime.UtcNow;
                 var dt = (now - _lastPanTime).TotalMilliseconds;
                 if (dt > 0)
                 {
                     double currentV = (e.TotalY - _lastPanY) / dt;
-                    // Smooth out the velocity reading
                     _velocityY = (_velocityY == 0) ? currentV : (_velocityY * 0.2 + currentV * 0.8);
                 }
                 _lastPanY = e.TotalY;
                 _lastPanTime = now;
 
-                // Only allow sliding downwards
                 if (e.TotalY > 0)
                 {
                     sheetParent.TranslationY = e.TotalY;
-                    OverlayBox.Opacity = Math.Clamp(1 - (e.TotalY / 400), 0, 1);
+
+                    // (Dividing by 800 makes the fade-out smoother while dragging)
+                    OverlayBox.Opacity = Math.Clamp(BACKDROP_OPACITY - (e.TotalY / 800), 0, BACKDROP_OPACITY);
                 }
                 break;
 
             case GestureStatus.Completed:
             case GestureStatus.Canceled:
-                // Close if dragged down more than 100px OR flicked downwards quickly (with at least 40px of movement)
                 if (sheetParent.TranslationY > 100 || (_velocityY > 1.0 && sheetParent.TranslationY > 40))
                 {
                     Close();
                 }
                 else
                 {
-                    // Dynamic spring back based on how fast they flicked UP (negative velocity)
                     uint duration = 250;
                     if (_velocityY < -0.1)
                     {
@@ -109,7 +102,8 @@ public partial class BottomSheetContainer : ContentView
                     }
 
                     _ = sheetParent.TranslateToAsync(0, 0, duration, Easing.CubicOut);
-                    _ = OverlayBox.FadeToAsync(1, duration, Easing.CubicOut);
+
+                    _ = OverlayBox.FadeToAsync(BACKDROP_OPACITY, duration, Easing.CubicOut);
                 }
                 break;
         }

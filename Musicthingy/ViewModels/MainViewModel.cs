@@ -27,8 +27,9 @@ public partial class MainViewModel : ObservableObject
     public bool IsMediaSelected => CurrentTrack != null;
     public bool IsNotMediaSelected => CurrentTrack == null;
 
-    public MainViewModel()
+    public MainViewModel(ThemeManager themeManager)
     {
+        _themeManager = themeManager;
         _cleanupOldInstances?.Invoke();
         _cleanupOldInstances = CleanupMedia;
 

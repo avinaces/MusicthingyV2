@@ -1,4 +1,5 @@
 ﻿using Musicthingy.Models;
+using Musicthingy.Services;
 using System.Diagnostics;
 using System.Text.Json;
 
@@ -9,6 +10,7 @@ public partial class MainViewModel
     private const string LibraryFileName = "library.json";
     private CancellationTokenSource? _saveLibraryCts;
 
+    private readonly ThemeManager _themeManager;
     private bool _isRestoringState = true;
     private double _initialRestorePosition = 0;
 
@@ -33,6 +35,7 @@ public partial class MainViewModel
     /// </summary>
     public void RequestSaveLibrary()
     {
+
         _saveLibraryCts?.Cancel();
         _saveLibraryCts = new CancellationTokenSource();
         var token = _saveLibraryCts.Token;
@@ -42,11 +45,11 @@ public partial class MainViewModel
         List<PlaylistDto> librarySnapshot = new();
         try
         {
-                librarySnapshot = Playlists.Select(p => new PlaylistDto
+            librarySnapshot = Playlists.Select(p => new PlaylistDto
             {
                 name = p.Name,
                 icon = p.IconUrl,
-                    iconType = p.IconType.ToString().ToLowerInvariant(),
+                iconType = p.IconType.ToString().ToLowerInvariant(),
                 source = p.Source,
                 createdAt = p.CreatedAt,
                 updatedAt = p.UpdatedAt,
@@ -84,6 +87,7 @@ public partial class MainViewModel
         Debug.WriteLine("Saving Library...");
         try
         {
+
             string path = Path.Combine(FileSystem.AppDataDirectory, LibraryFileName);
             string tempPath = path + ".tmp";
 
@@ -278,6 +282,24 @@ public partial class MainViewModel
         }
 
         _isRestoringState = false;
+    }
+
+
+    public void LoadThemeState()
+    {
+        // Load the saved hex from preferences (fallback to a nice blue if it's the first time)
+        string savedHex = Preferences.Get("AppThemeSeedColor", "#6EA0D6");
+        Color seedColor = Color.FromArgb("savedHex");
+
+        _themeManager.ApplyTheme(seedColor);
+    }
+
+    public void SaveThemeColor(Color newColor)
+    {
+        string hex = newColor.ToHex();
+        Preferences.Set("AppThemeSeedColor", hex);
+
+        _themeManager.ApplyTheme(newColor);
     }
 
     public class QueueItemRef

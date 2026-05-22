@@ -2,6 +2,7 @@
 using LibVLCSharp.Shared;
 using Microsoft.Extensions.Logging;
 using MPowerKit.VirtualizeListView;
+using Musicthingy.Services;
 using Musicthingy.ViewModels;
 
 namespace Musicthingy
@@ -15,7 +16,13 @@ namespace Musicthingy
             Core.Initialize();
 
             var builder = MauiApp.CreateBuilder();
+
+            builder.Services.AddSingleton<ThemeManager>();
             builder.Services.AddSingleton<MainViewModel>();
+
+            // Register your platform-specific views
+            builder.Services.AddTransient<Views.MobileMainPage>();
+            builder.Services.AddTransient<AppShell>();
             builder.UseMauiApp<App>()
                 .UseMauiCommunityToolkit()
                 .UseMPowerKitListView()
