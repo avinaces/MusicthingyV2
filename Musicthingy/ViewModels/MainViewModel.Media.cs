@@ -26,6 +26,7 @@ public partial class MainViewModel
     private static LibVLC? _probeVlc;
 
     private long _lastTimeUpdateTicks = 0;
+    private string? _loadedMediaUrl;
 
 
     private void InitializeVLCEngine()
@@ -68,8 +69,6 @@ public partial class MainViewModel
                 IsLoadingMedia = false;
                 SyncOSPlaybackState();
             });
-
-            ReleaseTransientWakeLock();
         };
 
         _player.Paused += (s, e) =>
@@ -123,6 +122,24 @@ public partial class MainViewModel
 
         _player.TimeChanged += (s, e) =>
         {
+            // Transition gracefully if a track reaches its logical end time
+            double endMs = (CurrentTrack?.EndTime ?? 0) * 1000.0;
+            if (endMs > 0 && e.Time >= endMs)
+            {
+                if (!IsLoadingMedia)
+                {
+                    MainThread.BeginInvokeOnMainThread(() =>
+                    {
+                        if (!IsLoadingMedia)
+                        {
+                            IsLoadingMedia = true;
+                            PlayNextCommand.Execute("Natural");
+                        }
+                    });
+                }
+                return; // Suppress further position updates for this track to avoid overflow
+            }
+
             long currentTicks = Environment.TickCount64;
 
             if (currentTicks - _lastTimeUpdateTicks < MinimumTimeUpdateIntervalMs)
@@ -174,52 +191,56 @@ public partial class MainViewModel
                 }
             });
 
-            if (CurrentTrack != null)
-            {
-                string widgetIconUrl = string.Empty;
-
-                Playlist? pl = CurrentTrack.Playlist;
-                PlaylistIconType iconType = pl?.IconType ?? PlaylistIconType.Playlist;
-
-                if (iconType == PlaylistIconType.Track)
-                {
-                    widgetIconUrl = !string.IsNullOrEmpty(CurrentTrack.IconUrl)
-                        ? CurrentTrack.IconUrl
-                        : pl?.IconUrl ?? string.Empty;
-                }
-                else if (iconType == PlaylistIconType.YouTube)
-                {
-                    string? ytThumb = null;
-
-                    if (!string.IsNullOrEmpty(CurrentTrack.Url) &&
-                        (CurrentTrack.Url.Contains("youtube.com") || CurrentTrack.Url.Contains("youtu.be")))
-                    {
-                        YoutubeExplode.Videos.VideoId? videoId = YoutubeExplode.Videos.VideoId.TryParse(CurrentTrack.Url);
-
-                        if (videoId != null)
-                        {
-                            ytThumb = $"https://img.youtube.com/vi/{videoId.Value}/hqdefault.jpg";
-                        }
-                    }
-
-                    widgetIconUrl = !string.IsNullOrEmpty(ytThumb)
-                        ? ytThumb
-                        : pl?.IconUrl ?? CurrentTrack.IconUrl ?? string.Empty;
-                }
-                else
-                {
-                    widgetIconUrl = !string.IsNullOrEmpty(pl?.IconUrl)
-                        ? pl.IconUrl
-                        : CurrentTrack.IconUrl ?? string.Empty;
-                }
-
-                _ = UpdateOSMediaWidgetsAsync(
-                    CurrentTrack.Title,
-                    pl?.Name ?? "Musicthingy",
-                    widgetIconUrl
-                );
-            }
+            UpdateMediaWidgetForTrack(CurrentTrack);
         };
+    }
+
+    private void UpdateMediaWidgetForTrack(PlaylistItem? track)
+    {
+        if (track == null) return;
+
+        string widgetIconUrl = string.Empty;
+
+        Playlist? pl = track.Playlist;
+        PlaylistIconType iconType = pl?.IconType ?? PlaylistIconType.Playlist;
+
+        if (iconType == PlaylistIconType.Track)
+        {
+            widgetIconUrl = !string.IsNullOrEmpty(track.IconUrl)
+                ? track.IconUrl
+                : pl?.IconUrl ?? string.Empty;
+        }
+        else if (iconType == PlaylistIconType.YouTube)
+        {
+            string? ytThumb = null;
+
+            if (!string.IsNullOrEmpty(track.Url) &&
+                (track.Url.Contains("youtube.com") || track.Url.Contains("youtu.be")))
+            {
+                YoutubeExplode.Videos.VideoId? videoId = YoutubeExplode.Videos.VideoId.TryParse(track.Url);
+
+                if (videoId != null)
+                {
+                    ytThumb = $"https://img.youtube.com/vi/{videoId.Value}/hqdefault.jpg";
+                }
+            }
+
+            widgetIconUrl = !string.IsNullOrEmpty(ytThumb)
+                ? ytThumb
+                : pl?.IconUrl ?? track.IconUrl ?? string.Empty;
+        }
+        else
+        {
+            widgetIconUrl = !string.IsNullOrEmpty(pl?.IconUrl)
+                ? pl.IconUrl
+                : track.IconUrl ?? string.Empty;
+        }
+
+        _ = UpdateOSMediaWidgetsAsync(
+            track.Title,
+            pl?.Name ?? "Musicthingy",
+            widgetIconUrl
+        );
     }
 
     private async Task PreloadNextTrackAsync()
@@ -253,12 +274,75 @@ public partial class MainViewModel
         if (IsAutoFollowEnabled)
             TriggerAutoFollow();
 
+        InitializeVLCEngine();
+
+        // Check if we can flawlessly continue/seek within the currently streaming media to save bandwidth and buffering time
+        bool canReuseMedia = _loadedMediaUrl == newValue.Url &&
+                             _player != null &&
+                             _player.Media != null &&
+                             _player.State != VLCState.Stopped &&
+                             _player.State != VLCState.Ended &&
+                             _player.State != VLCState.Error &&
+                             _player.State != VLCState.NothingSpecial;
+
+        if (canReuseMedia)
+        {
+            Debug.WriteLine($"[Playback] Reusing existing media stream for URL: {newValue.Url}");
+
+            double startMs = (newValue.StartTime ?? 0) * 1000.0;
+            double currentMs = _player!.Time;
+
+            if (Math.Abs(currentMs - startMs) > 1500)
+            {
+                _player.Time = (long)startMs;
+            }
+
+            if (_player.State == VLCState.Paused)
+            {
+                AcquireTransientWakeLock(); // <-- ADD THIS HERE
+                _player.Play();
+            }
+
+            MainThread.BeginInvokeOnMainThread(() =>
+            {
+                IsLoadingMedia = false;
+                IsPlaying = true;
+                CurrentPosition = TimeSpan.Zero;
+                CurrentPositionSeconds = 0;
+
+                double lengthSecs = _player.Length > 0 ? (_player.Length / 1000.0) : (CurrentTrack?.Duration.TotalSeconds ?? 0);
+                double end = newValue.EndTime ?? lengthSecs;
+                double start = newValue.StartTime ?? 0;
+                double duration = end - start;
+
+                if (duration <= 0)
+                    duration = lengthSecs;
+
+                Duration = TimeSpan.FromSeconds(duration);
+                DurationSeconds = duration;
+
+                if (CurrentTrack != null)
+                {
+                    bool changed = CurrentTrack.Duration != Duration;
+                    CurrentTrack.Duration = Duration;
+                    if (changed)
+                        RequestSaveLibrary();
+                }
+
+                SyncOSPlaybackState();
+            });
+
+            UpdateMediaWidgetForTrack(newValue);
+
+            _ = Task.Run(PreloadNextTrackAsync);
+            return;
+        }
+
         IsLoadingMedia = true;
         AcquireTransientWakeLock();
 
-        InitializeVLCEngine();
-
         _player!.Stop();
+        _loadedMediaUrl = null;
 
         CurrentPosition = TimeSpan.Zero;
         CurrentPositionSeconds = 0;
@@ -278,7 +362,7 @@ public partial class MainViewModel
 
         Media media = new Media(_libVLC!, new Uri(rawAudioUrl));
 
-        media.AddOption(":network-caching=1000");
+        media.AddOption(":network-caching=2000");
         media.AddOption(":clock-jitter=0");
         media.AddOption(":clock-synchro=0");
 
@@ -287,10 +371,7 @@ public partial class MainViewModel
             media.AddOption($":start-time={newValue.StartTime.Value}");
         }
 
-        if (newValue.EndTime.HasValue)
-        {
-            media.AddOption($":stop-time={newValue.EndTime.Value}");
-        }
+        // We intentionally don't apply the stop-time anymore, so the network stream doesn't natively crash when tracking segments sequentially.
 
         if (_initialRestorePosition > 0)
         {
@@ -300,6 +381,7 @@ public partial class MainViewModel
         }
 
         _playbackStartupSw = Stopwatch.StartNew();
+        _loadedMediaUrl = newValue.Url;
         _player.Play(media);
 
         totalSw.Stop();

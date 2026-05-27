@@ -147,6 +147,7 @@ public partial class MainViewModel
     {
         try
         {
+            LoadThemeState();
             string path = Path.Combine(FileSystem.AppDataDirectory, LibraryFileName);
             if (File.Exists(path))
             {
@@ -284,13 +285,26 @@ public partial class MainViewModel
         _isRestoringState = false;
     }
 
-
     public void LoadThemeState()
     {
-        // Load the saved hex from preferences (fallback to a nice blue if it's the first time)
-        string savedHex = Preferences.Get("AppThemeSeedColor", "#6EA0D6");
-        Color seedColor = Color.FromArgb("savedHex");
+        Color seedColor;
 
+        // 1. Try to get the Android 12+ Material You color
+        Color? androidSystemColor = SystemThemeHelper.GetAndroidSystemAccentColor();
+
+        if (androidSystemColor != null)
+        {
+            // Use the OS wallpaper theme!
+            seedColor = androidSystemColor;
+        }
+        else
+        {
+            // 2. Fallback for Windows or older Android: Use saved preferences
+            string savedHex = Preferences.Get("AppThemeSeedColor", "#6EA0D6");
+            seedColor = Color.FromArgb(savedHex);
+        }
+
+        // Apply it using your existing perfectly-tuned OKLCH logic!
         _themeManager.ApplyTheme(seedColor);
     }
 

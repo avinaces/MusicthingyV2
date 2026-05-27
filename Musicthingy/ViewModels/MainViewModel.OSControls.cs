@@ -340,7 +340,7 @@ public partial class MainViewModel
                 _wakeLock = pm?.NewWakeLock(Android.OS.WakeLockFlags.Partial, "Musicthingy::Wakelock");
                 _wakeLock?.SetReferenceCounted(false);
             }
-            _wakeLock?.Acquire(10 * 60 * 1000L);
+            _wakeLock?.Acquire();
 
             if (_wifiLock == null)
             {

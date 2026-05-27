@@ -88,3 +88,25 @@ public class ThemeManager
         Debug.WriteLine($"ThemeManager: Applied new theme with Hue {targetHue}° from seed color {targetSeedColor}");
     }
 }
+
+public static class SystemThemeHelper
+{
+    public static Color? GetAndroidSystemAccentColor()
+    {
+#if ANDROID
+        // Material You dynamic colors are only available on Android 12 (API 31) and higher
+        if (Android.OS.Build.VERSION.SdkInt >= Android.OS.BuildVersionCodes.S)
+        {
+            var context = Android.App.Application.Context;
+
+            // "SystemAccent1500" is the standard vibrant primary color generated from the wallpaper
+            int colorResId = Android.Resource.Color.SystemAccent1500;
+            var androidColor = new Android.Graphics.Color(context.Resources.GetColor(colorResId, context.Theme));
+
+            return Color.FromRgba(androidColor.R, androidColor.G, androidColor.B, androidColor.A);
+        }
+#endif
+        // Returns null on Windows or older Android versions
+        return null;
+    }
+}

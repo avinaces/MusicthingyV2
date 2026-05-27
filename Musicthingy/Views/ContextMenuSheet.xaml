@@ -39,19 +39,20 @@
 									<!-- The real native button for the ripple effect. Background matches the card color. -->
 									<Button BackgroundColor="{DynamicResource CardColor}" CornerRadius="0" Command="{Binding ItemCommand}" Margin="0" Padding="0" />
 
-									<!-- The overlaid content. InputTransparent ensures the Button catches the touches. -->
-									<HorizontalStackLayout InputTransparent="True" Spacing="16" Padding="16,0" VerticalOptions="Center">
-										<Image Source="{Binding IconSource}" WidthRequest="20" HeightRequest="20" VerticalOptions="Center">
+                                    <HorizontalStackLayout InputTransparent="True" Spacing="16" Padding="16,0" VerticalOptions="Center">
 
-											<!-- TODO: IconTintColorBehavior Does'nt work here currently -->
-												<Image.Behaviors>
-												<toolkit:IconTintColorBehavior TintColor="{Binding TextColor}"/>
-											</Image.Behaviors>
-										</Image>
-										<Label Text="{Binding Title}" TextColor="{Binding TextColor}" FontSize="16" VerticalOptions="Center" />
-									</HorizontalStackLayout>
+                                        <!-- 1. Give the image a name (e.g. x:Name="MenuIcon") -->
+                                        <Image x:Name="MenuIcon" Source="{Binding IconSource}" WidthRequest="20" HeightRequest="20" VerticalOptions="Center">
+                                            <Image.Behaviors>
+                                                <!-- 2. Force the binding to route through the Image's BindingContext -->
+                                                <toolkit:IconTintColorBehavior TintColor="{Binding BindingContext.TextColor, Source={x:Reference MenuIcon}}" />
+                                            </Image.Behaviors>
+                                        </Image>
 
-								</Grid>
+                                        <Label Text="{Binding Title}" TextColor="{Binding TextColor}" FontSize="16" VerticalOptions="Center" />
+                                    </HorizontalStackLayout>
+
+                                </Grid>
 							</DataTemplate>
 						</BindableLayout.ItemTemplate>
 					</VerticalStackLayout>

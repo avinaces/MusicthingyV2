@@ -134,7 +134,7 @@ public partial class MainViewModel
         var sat = 0.45 + Random.Shared.NextDouble() * 0.25;   // 45% - 70%
         var light = 0.45 + Random.Shared.NextDouble() * 0.2;  // 45% - 65%
         var randomColor = Color.FromHsla(hue / 360.0, sat, light);
-        SaveThemeColor(randomColor);
+        //SaveThemeColor(randomColor);
 
         // Cycle through: Off -> All -> One -> Off
         RepeatState = RepeatState switch
