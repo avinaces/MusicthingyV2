@@ -42,7 +42,7 @@
         these colors will punch through the screen on every theme.
     -->
     <Color x:Key="Accent">#6EA0D6</Color>
-    <Color x:Key="AccentFill">#315F88</Color>
+    <Color x:Key="AccentFill">#254866</Color>
     <Color x:Key="AccentFillHover">#3B6F9E</Color>
     <Color x:Key="AccentOutline">#4F7EAE</Color>
     <Color x:Key="AccentContainer">#1C304A</Color>

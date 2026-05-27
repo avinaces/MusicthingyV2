@@ -28,29 +28,14 @@ public partial class EditTrackSheet : ContentView, IBottomSheet
         TagsTab.BindingContext = new EditTagsForm(track.Tags.ToList(), allTags);
     }
 
-    private void OnTabTapped(object? sender, TappedEventArgs e)
+    private void OnTabChanged(object? sender, int index)
     {
-        if (int.TryParse(e.Parameter?.ToString(), out int tabIndex))
-        {
-            SetActiveTab(tabIndex);
-        }
+        SetActiveTab(index);
     }
 
     private void SetActiveTab(int index)
     {
-        // Smoothly toggle the pill background indicators
-        TabIndicator0.IsVisible = index == 0;
-        TabIndicator1.IsVisible = index == 1;
-        TabIndicator2.IsVisible = index == 2;
-
-        // Update the text contrast to match the active state
-        Color activeText = ThemeResources.Color("OnSurfaceInverse");
-        Color inactiveText = ThemeResources.Color("MutedColor");
-        TabLabel0.TextColor = index == 0 ? activeText : inactiveText;
-        TabLabel1.TextColor = index == 1 ? activeText : inactiveText;
-        TabLabel2.TextColor = index == 2 ? activeText : inactiveText;
-
-        // Swap the active content views
+        // Color updates and pills are handled natively by the component now
         GeneralTab.IsVisible = index == 0;
         LyricsTab.IsVisible = index == 1;
         TagsTab.IsVisible = index == 2;

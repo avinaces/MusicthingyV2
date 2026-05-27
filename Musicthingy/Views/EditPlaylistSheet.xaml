@@ -10,28 +10,8 @@
 
             <Grid RowDefinitions="Auto, *">
 
-                <!-- MD3 Style Segmented Tab Bar -->
-                <Border Grid.Row="0" BackgroundColor="{DynamicResource SurfaceInput}" Stroke="{DynamicResource BorderColor}" StrokeThickness="1" StrokeShape="RoundRectangle 12" Padding="4" Margin="0,0,0,16" HeightRequest="48">
-                    <Grid ColumnDefinitions="*,*">
-                        <!-- Background Indicators -->
-                        <Border x:Name="TabIndicator0" Grid.Column="0" BackgroundColor="{DynamicResource TabIndicatorColor}" StrokeThickness="0" StrokeShape="RoundRectangle 8" IsVisible="True" />
-                        <Border x:Name="TabIndicator1" Grid.Column="1" BackgroundColor="{DynamicResource TabIndicatorColor}" StrokeThickness="0" StrokeShape="RoundRectangle 8" IsVisible="False" />
-
-                        <!-- Tap Areas and Labels -->
-                        <Grid Grid.Column="0" BackgroundColor="Transparent">
-                            <Grid.GestureRecognizers>
-                                <TapGestureRecognizer Tapped="OnTabTapped" CommandParameter="0"/>
-                            </Grid.GestureRecognizers>
-                            <Label x:Name="TabLabel0" Text="Playlist" HorizontalOptions="Center" VerticalOptions="Center" TextColor="{DynamicResource OnSurfaceInverse}" FontAttributes="Bold" FontSize="14" />
-                        </Grid>
-                        <Grid Grid.Column="1" BackgroundColor="Transparent">
-                            <Grid.GestureRecognizers>
-                                <TapGestureRecognizer Tapped="OnTabTapped" CommandParameter="1"/>
-                            </Grid.GestureRecognizers>
-                            <Label x:Name="TabLabel1" Text="Tags" HorizontalOptions="Center" VerticalOptions="Center" TextColor="{DynamicResource MutedColor}" FontAttributes="Bold" FontSize="14" />
-                        </Grid>
-                    </Grid>
-                </Border>
+                <!-- Segmented Tab Bar -->
+                <local:SegmentedTabBar Grid.Row="0" Tabs="Playlist, Tags" SelectedIndexChanged="OnTabChanged" Margin="0,0,0,16" />
 
                 <!-- Fixed minimum height prevents the bottom sheet from resizing wildly -->
                 <Grid Grid.Row="1" MinimumHeightRequest="500">

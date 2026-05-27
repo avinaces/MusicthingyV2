@@ -27,24 +27,14 @@ public partial class EditPlaylistSheet : ContentView, IBottomSheet
         TagsTab.BindingContext = new EditTagsForm(playlist.Tags.ToList(), allTags);
     }
 
-    private void OnTabTapped(object? sender, TappedEventArgs e)
+    private void OnTabChanged(object? sender, int index)
     {
-        if (int.TryParse(e.Parameter?.ToString(), out int tabIndex))
-        {
-            SetActiveTab(tabIndex);
-        }
+        SetActiveTab(index);
     }
 
     private void SetActiveTab(int index)
     {
-        TabIndicator0.IsVisible = index == 0;
-        TabIndicator1.IsVisible = index == 1;
-
-        Color activeText = ThemeResources.Color("OnSurfaceInverse");
-        Color inactiveText = ThemeResources.Color("MutedColor");
-        TabLabel0.TextColor = index == 0 ? activeText : inactiveText;
-        TabLabel1.TextColor = index == 1 ? activeText : inactiveText;
-
+        // Color updates and pills are handled natively by the component now
         GeneralTab.IsVisible = index == 0;
         TagsTab.IsVisible = index == 1;
     }

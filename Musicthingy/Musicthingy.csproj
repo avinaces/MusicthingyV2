@@ -140,6 +140,9 @@
 	  <MauiXaml Update="Views\PlayerPaneView.xaml">
 	    <Generator>MSBuild:Compile</Generator>
 	  </MauiXaml>
+	  <MauiXaml Update="Views\SegmentedTabBar.xaml">
+	    <Generator>MSBuild:Compile</Generator>
+	  </MauiXaml>
 	  <MauiXaml Update="Views\SharedPopupContainer.xaml">
 	    <Generator>MSBuild:Compile</Generator>
 	  </MauiXaml>
