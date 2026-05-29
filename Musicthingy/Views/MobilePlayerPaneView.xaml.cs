@@ -318,38 +318,73 @@ public partial class MobilePlayerPaneView : ContentView
     {
         double progressToMedium = Math.Clamp((height - MiniHeight) / (MediumHeight - MiniHeight), 0, 1);
 
-        //  CRITICAL OPTIMIZATION: Fix the ContentZone height so CollectionView never remeasures. 
-        // We let the parent Border's HeightRequest simply reveal the list via clipping.
-        if (ExpandedContentZone.HeightRequest < 0 || Math.Abs(ExpandedContentZone.HeightRequest - FullScreenHeight) > 1)
+        double fullHeight = FullScreenHeight;
+        double progressToFull = 0;
+        if (fullHeight > MediumHeight)
         {
-            ExpandedContentZone.HeightRequest = FullScreenHeight;
+            progressToFull = Math.Clamp((height - MediumHeight) / (fullHeight - MediumHeight), 0, 1);
+        }
+
+        if (ExpandedContentZone.HeightRequest < 0 || Math.Abs(ExpandedContentZone.HeightRequest - fullHeight) > 1)
+        {
+            ExpandedContentZone.HeightRequest = fullHeight;
         }
 
         double imgSize = 44 + (24 * progressToMedium);
         TrackImageBorder.WidthRequest = imgSize;
         TrackImageBorder.HeightRequest = imgSize;
 
+        // Smoothly shrink the right container from 84px (Mini) -> 40px (Medium & Full).
+        // This compensates for the image growing, giving the title text extra room so it never shortens.
+        double rightWidth = 84 - (44 * progressToMedium);
+        HeaderRightControls.WidthRequest = Math.Max(0, rightWidth);
+
         MiniControls.Opacity = Math.Clamp(1.0 - (progressToMedium / 0.3), 0, 1);
 
+        // Fade IN the overall Expanded controls container during Mini->Medium
         double expandedOpacity = Math.Clamp((progressToMedium - 0.3) / 0.7, 0, 1);
         ExpandedHeaderControls.Opacity = expandedOpacity;
+
+        // Crossfade between AutoLocate and Track Options during Medium->Full
+        double fullScreenFadeOut = Math.Clamp(1.0 - (progressToFull / 0.3), 0, 1);
+        AutoFollowBtn.Opacity = fullScreenFadeOut;
+
+        // Fade in Options button only when progressing to Full Screen
+        double optionsFadeIn = Math.Clamp(progressToFull / 0.3, 0, 1);
+        TrackOptionsBtn.Opacity = optionsFadeIn;
+
+        // Prevent clicking invisible buttons
+        AutoFollowBtn.InputTransparent = progressToFull > 0.5;
+        TrackOptionsBtn.InputTransparent = progressToFull <= 0.5;
+
         DragHandle.Opacity = expandedOpacity;
         ExpandedContentZone.Opacity = expandedOpacity;
 
-        double marginLr = 12 + (4 * progressToMedium);
+        // Keep horizontal margins constant so the text block bounds don't jitter
         double marginTop = 14 + (12 * progressToMedium);
         double marginBot = 14 - (6 * progressToMedium);
-        HeaderContentGrid.Margin = new Thickness(marginLr, marginTop, marginLr, marginBot);
+        HeaderContentGrid.Margin = new Thickness(16, marginTop, 16, marginBot);
 
-        // 🚀 GPU Optimization: Pushing the content down using Transforms instead of Grid Rows
-        double headerHeight = 72 + (30 * progressToMedium); // Margins + image size diff equates to +30px height diff
+        // 🚀 GPU Optimization
+        double headerHeight = 72 + (30 * progressToMedium);
         ExpandedContentZone.TranslationY = headerHeight;
 
-        double fullHeight = FullScreenHeight;
         if (fullHeight > MediumHeight && NoLyricsPrompt != null)
         {
-            double progressToFull = Math.Clamp((height - MediumHeight) / (fullHeight - MediumHeight), 0, 1);
             NoLyricsPrompt.Opacity = Math.Clamp(progressToFull * 2, 0, 1);
+        }
+    }
+
+
+
+    /// <summary>
+    /// Event handler to open the Bottom Sheet Context Menu for the current track.
+    /// </summary>
+    private void OnCurrentTrackOptionsClicked(object? sender, EventArgs e)
+    {
+        if (this.BindingContext is Musicthingy.ViewModels.MainViewModel vm && vm.CurrentTrack != null)
+        {
+            MenuHelper.ShowCurrentTrackOptions(vm.CurrentTrack, vm);
         }
     }
 }

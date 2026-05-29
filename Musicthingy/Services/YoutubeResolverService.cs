@@ -2,6 +2,9 @@
 using System.Diagnostics;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Net;
+using System.Net.Http;
+using System.Net.Sockets;
 using YoutubeExplode;
 using YoutubeExplode.Videos;
 using YoutubeExplode.Videos.Streams;
@@ -23,16 +26,55 @@ public class YouTubeResolverService
     private const string InnerTubeApiUrl = "https://music.youtube.com/youtubei/v1/player?key=AIzaSyA8eiZmM1FaDVjRy-df2KTyQ_vz_yYM39w&prettyPrint=false";
     private const string YouTubeOrigin = "https://music.youtube.com";
 
-    private readonly YoutubeClient _youtubeClient = new();
+    private readonly YoutubeClient _youtubeClient;
     private readonly ConcurrentDictionary<string, (string RawUrl, DateTime FetchedAt)> _streamUrlCache = new();
 
-    private static readonly HttpClient _innerTubeClient = new HttpClient(new HttpClientHandler
+    // Create a custom handler that forces IPv4 to bypass carrier IPv6 MTU black holes
+    private static readonly SocketsHttpHandler _ipv4Handler = new SocketsHttpHandler
     {
-        AutomaticDecompression = System.Net.DecompressionMethods.GZip | System.Net.DecompressionMethods.Deflate
-    });
+        AutomaticDecompression = DecompressionMethods.GZip | DecompressionMethods.Deflate,
+        ConnectCallback = async (context, cancellationToken) =>
+        {
+            IPAddress[] ipAddresses = await Dns.GetHostAddressesAsync(
+                context.DnsEndPoint.Host,
+                AddressFamily.InterNetwork,
+                cancellationToken);
+
+            if (ipAddresses.Length == 0)
+                throw new SocketException((int)SocketError.HostNotFound);
+
+            Socket socket = new Socket(
+                AddressFamily.InterNetwork,
+                SocketType.Stream,
+                ProtocolType.Tcp);
+
+            try
+            {
+                await socket.ConnectAsync(new IPEndPoint(ipAddresses[0], context.DnsEndPoint.Port), cancellationToken);
+                return new NetworkStream(socket, true);
+            }
+            catch
+            {
+                socket.Dispose();
+                throw;
+            }
+        }
+    };
+
+    private static readonly HttpClient _innerTubeClient = new HttpClient(_ipv4Handler);
+
+    // Expose the internal IPv4 handler so other components (like the local proxy) can reuse
+    // the same robust IPv4-only connect logic without duplicating the handler implementation.
+    public static SocketsHttpHandler Ipv4Handler => _ipv4Handler;
 
     private static string? _visitorData = null;
     private static readonly JsonSerializerOptions _jsonOptions = new() { DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull };
+
+    public YouTubeResolverService()
+    {
+        // Force YoutubeExplode to also use the IPv4 handler
+        _youtubeClient = new YoutubeClient(new HttpClient(_ipv4Handler));
+    }
 
     public async Task<string?> ResolveMediaSourceAsync(string trackUrl)
     {
@@ -130,25 +172,37 @@ public class YouTubeResolverService
             {
                 try
                 {
-                    HttpRequestMessage request = new HttpRequestMessage(HttpMethod.Post, InnerTubeApiUrl);
+                    // Fix 2: Target the correct API base depending on the client
+                    string baseUrl = clientConfig.Name.Contains("MUSIC") || clientConfig.Name == "WEB_REMIX"
+                        ? "https://music.youtube.com"
+                        : "https://www.youtube.com";
+
+                    string apiUrl = $"{baseUrl}/youtubei/v1/player?key=AIzaSyA8eiZmM1FaDVjRy-df2KTyQ_vz_yYM39w&prettyPrint=false";
+
+                    HttpRequestMessage request = new HttpRequestMessage(HttpMethod.Post, apiUrl);
                     request.Headers.Add("User-Agent", clientConfig.UA);
                     request.Headers.Add("Accept", "application/json");
                     request.Headers.Add("X-Goog-Api-Format-Version", "1");
                     request.Headers.Add("X-YouTube-Client-Name", clientConfig.Id);
                     request.Headers.Add("X-YouTube-Client-Version", clientConfig.Version);
-                    request.Headers.Add("X-Origin", YouTubeOrigin);
-                    request.Headers.Add("Referer", $"{YouTubeOrigin}/");
+
+                    // Fix 1: ONLY add Web headers if it's actually a Web client
+                    if (clientConfig.Name.StartsWith("WEB") || clientConfig.Name == "VISIONOS")
+                    {
+                        request.Headers.Add("X-Origin", baseUrl);
+                        request.Headers.Add("Referer", $"{baseUrl}/");
+                    }
 
                     if (!string.IsNullOrEmpty(_visitorData))
                         request.Headers.Add("X-Goog-Visitor-Id", _visitorData);
 
                     Dictionary<string, string> clientObj = new Dictionary<string, string>
-                    {
-                        { "clientName", clientConfig.Name },
-                        { "clientVersion", clientConfig.Version },
-                        { "hl", "en" },
-                        { "gl", "US" }
-                    };
+                     {
+                { "clientName", clientConfig.Name },
+                { "clientVersion", clientConfig.Version },
+                { "hl", "en" },
+                { "gl", "US" }
+            };
 
                     if (clientConfig.OsName != null) clientObj["osName"] = clientConfig.OsName;
                     if (clientConfig.OsVersion != null) clientObj["osVersion"] = clientConfig.OsVersion;

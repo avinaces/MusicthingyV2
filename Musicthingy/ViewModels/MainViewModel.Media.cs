@@ -18,12 +18,16 @@ public partial class MainViewModel
     // ideally inject this via constructor if DI is implemented for MainViewModel.
     private readonly YouTubeResolverService _youtubeResolver = new();
 
+    // Instantiate the local proxy using the robust IPv4 HttpClient we built earlier
+    private static readonly LocalStreamProxy _streamProxy = new(new HttpClient(YouTubeResolverService.Ipv4Handler));
+
     private Stopwatch? _playbackStartupSw;
     private CancellationTokenSource? _mediaLoadCts;
 
     private LibVLC? _libVLC;
     private MediaPlayer? _player;
     private static LibVLC? _probeVlc;
+    private Media? _currentMedia;
 
     private long _lastTimeUpdateTicks = 0;
     private string? _loadedMediaUrl;
@@ -34,9 +38,13 @@ public partial class MainViewModel
         if (_libVLC != null)
             return;
 
+        // Start the local proxy server
+        _streamProxy.Start();
+
         _libVLC = new LibVLC(
             "--no-video",
             "--http-reconnect",
+            "--no-ipv6", // FORCE LIBVLC TO USE IPV4 ONLY
             "--verbose=2"
         );
 
@@ -344,6 +352,20 @@ public partial class MainViewModel
         _player!.Stop();
         _loadedMediaUrl = null;
 
+        // --- DISPOSE OLD MEDIA TO RELEASE NATIVE SOCKETS ---
+        if (_currentMedia != null)
+        {
+            try
+            {
+                _currentMedia.Dispose();
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"[VLC] Error disposing previous media: {ex.Message}");
+            }
+            _currentMedia = null;
+        }
+
         CurrentPosition = TimeSpan.Zero;
         CurrentPositionSeconds = 0;
         SyncOSPlaybackState();
@@ -360,15 +382,35 @@ public partial class MainViewModel
             return;
         }
 
-        Media media = new Media(_libVLC!, new Uri(rawAudioUrl));
+        // --- REWRITE STREAM URL TO LOCALHOST LOOPBACK ---
+        string proxyUrl = _streamProxy.GetProxyUrl(rawAudioUrl);
+        _currentMedia = new Media(_libVLC!, new Uri(proxyUrl));
+        // ------------------------------------------------
 
-        media.AddOption(":network-caching=2000");
-        media.AddOption(":clock-jitter=0");
-        media.AddOption(":clock-synchro=0");
+        string spoofedUserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"; // Generic fallback
+
+        if (rawAudioUrl.Contains("c=VISIONOS") || rawAudioUrl.Contains("c=IOS"))
+        {
+            spoofedUserAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15";
+        }
+        else if (rawAudioUrl.Contains("c=ANDROID_VR"))
+        {
+            spoofedUserAgent = "com.google.android.apps.youtube.vr.oculus/1.37 (Linux; U; Android 12; en_US; Quest 3; Build/SQ3A.220605.009.A1; Cronet/107.0.5284.2)";
+        }
+        else if (rawAudioUrl.Contains("c=ANDROID"))
+        {
+            spoofedUserAgent = "com.google.android.youtube/19.29.37 (Linux; U; Android 11) gzip";
+        }
+
+        _currentMedia.AddOption($":http-user-agent={spoofedUserAgent}");
+
+        _currentMedia.AddOption(":network-caching=2000");
+        _currentMedia.AddOption(":clock-jitter=0");
+        _currentMedia.AddOption(":clock-synchro=0");
 
         if (newValue.StartTime.HasValue)
         {
-            media.AddOption($":start-time={newValue.StartTime.Value}");
+            _currentMedia.AddOption($":start-time={newValue.StartTime.Value}");
         }
 
         // We intentionally don't apply the stop-time anymore, so the network stream doesn't natively crash when tracking segments sequentially.
@@ -376,13 +418,13 @@ public partial class MainViewModel
         if (_initialRestorePosition > 0)
         {
             double absoluteRestore = _initialRestorePosition + (newValue.StartTime ?? 0);
-            media.AddOption($":start-time={absoluteRestore}");
+            _currentMedia.AddOption($":start-time={absoluteRestore}");
             _initialRestorePosition = 0;
         }
 
         _playbackStartupSw = Stopwatch.StartNew();
         _loadedMediaUrl = newValue.Url;
-        _player.Play(media);
+        _player.Play(_currentMedia);
 
         totalSw.Stop();
         Debug.WriteLine($"[Playback] ReloadMediaAsync completed in {totalSw.ElapsedMilliseconds}ms");
@@ -400,6 +442,9 @@ public partial class MainViewModel
 
     private async Task ResolvePlaylistDurationsAsync(Playlist playlist, CancellationToken cancellationToken = default)
     {
+
+        return; // <-- TEMP DISABLE TO AVOID YT HANGS WHILE I INVESTIGATE
+
         if (playlist == null)
             return;
 

@@ -176,7 +176,7 @@
                                 CornerRadius="2.5" HorizontalOptions="Center" VerticalOptions="Start"
                                 Margin="0,12,0,0" IsVisible="False" Opacity="0" />
 
-                <Grid x:Name="HeaderContentGrid" ColumnDefinitions="Auto, *, Auto" ColumnSpacing="12" Margin="12,14,12,14">
+                <Grid x:Name="HeaderContentGrid" ColumnDefinitions="Auto, *, Auto" ColumnSpacing="12" Margin="16,14,16,14">
 
                     <Border x:Name="TrackImageBorder" Grid.Column="0" WidthRequest="44" HeightRequest="44" StrokeThickness="0" VerticalOptions="Center">
                         <Border.StrokeShape>
@@ -190,33 +190,47 @@
                         <views:AutoMarqueeLabel Text="{Binding CurrentTrack.Artist, FallbackValue='Unknown Artist'}" TextColor="{DynamicResource MutedColor}" FontSize="13" />
                     </VerticalStackLayout>
 
-                    <!-- Mini Controls -->
-                    <HorizontalStackLayout x:Name="MiniControls" Grid.Column="2" Spacing="4" VerticalOptions="Center" HorizontalOptions="End">
-                        <Grid WidthRequest="40" HeightRequest="40">
-                            <ImageButton Source="{Binding PlayPauseIcon}" Command="{Binding TogglePlayCommand}" BackgroundColor="Transparent" Padding="8" CornerRadius="20"/>
+                    <!-- Controls Container (Shrinks during expansion to prevent the title text from shortening) -->
+                    <Grid x:Name="HeaderRightControls" Grid.Column="2" WidthRequest="84" VerticalOptions="Center" HorizontalOptions="End" IsClippedToBounds="True">
 
-                            <Border Background="{DynamicResource SurfaceScrimPanel}" StrokeThickness="0" IsVisible="{Binding IsLoadingMedia}">
-                                <Border.StrokeShape>
-                                    <RoundRectangle CornerRadius="20" />
-                                </Border.StrokeShape>
-                                <ActivityIndicator IsRunning="{Binding IsLoadingMedia}" Color="{DynamicResource AccentColor}" WidthRequest="20" HeightRequest="20" HorizontalOptions="Center" VerticalOptions="Center" />
-                            </Border>
+                        <!-- Mini Controls -->
+                        <HorizontalStackLayout x:Name="MiniControls" Spacing="4" HorizontalOptions="End">
+                            <Grid WidthRequest="40" HeightRequest="40">
+                                <ImageButton Source="{Binding PlayPauseIcon}" Command="{Binding TogglePlayCommand}" BackgroundColor="Transparent" Padding="8" CornerRadius="20"/>
+
+                                <Border Background="{DynamicResource SurfaceScrimPanel}" StrokeThickness="0" IsVisible="{Binding IsLoadingMedia}">
+                                    <Border.StrokeShape>
+                                        <RoundRectangle CornerRadius="20" />
+                                    </Border.StrokeShape>
+                                    <ActivityIndicator IsRunning="{Binding IsLoadingMedia}" Color="{DynamicResource AccentColor}" WidthRequest="20" HeightRequest="20" HorizontalOptions="Center" VerticalOptions="Center" />
+                                </Border>
+                            </Grid>
+                            <ImageButton Source="skip_forward_icon.png" Command="{Binding PlayNextCommand}" WidthRequest="40" HeightRequest="40" BackgroundColor="Transparent" Padding="8" CornerRadius="20"/>
+                        </HorizontalStackLayout>
+
+                        <!-- Expanded Header Controls (Overlapping Grid to save horizontal space) -->
+                        <Grid x:Name="ExpandedHeaderControls" HorizontalOptions="End" IsVisible="False" Opacity="0">
+
+                            <!-- AutoFollow Button (Visible in Medium state) -->
+                            <ImageButton x:Name="AutoFollowBtn" 
+                                         Source="{Binding AutoFollowIconSource}" 
+                                         Command="{Binding ToggleAutoFollowCommand}" 
+                                         WidthRequest="40" HeightRequest="40" BackgroundColor="Transparent" Padding="8" CornerRadius="20">
+                                <ImageButton.Behaviors>
+                                    <toolkit:IconTintColorBehavior BindingContext="{Binding BindingContext, Source={x:Reference AutoFollowBtn}}" 
+                                                                   TintColor="{Binding AutoFollowIconColor}" />
+                                </ImageButton.Behaviors>
+                            </ImageButton>
+
+                            <!-- Track Options Button (Visible in Full Screen state) -->
+                            <ImageButton x:Name="TrackOptionsBtn"
+                                         Source="ellipsis_vertical_icon.png" 
+                                         Clicked="OnCurrentTrackOptionsClicked" 
+                                         WidthRequest="40" HeightRequest="40" BackgroundColor="Transparent" Padding="8" CornerRadius="20"
+                                         Opacity="0" InputTransparent="True" />
                         </Grid>
-                        <ImageButton Source="skip_forward_icon.png" Command="{Binding PlayNextCommand}" WidthRequest="40" HeightRequest="40" BackgroundColor="Transparent" Padding="8" CornerRadius="20"/>
-                    </HorizontalStackLayout>
 
-                    <!-- Expanded Header Controls -->
-                    <HorizontalStackLayout x:Name="ExpandedHeaderControls" Grid.Column="2" Spacing="4" VerticalOptions="Center" HorizontalOptions="End" IsVisible="False" Opacity="0">
-                        <ImageButton x:Name="AutoFollowBtn" 
-                                     Source="{Binding AutoFollowIconSource}" 
-                                     Command="{Binding ToggleAutoFollowCommand}" 
-                                     WidthRequest="40" HeightRequest="40" BackgroundColor="Transparent" Padding="8" CornerRadius="20">
-                            <ImageButton.Behaviors>
-                                <toolkit:IconTintColorBehavior BindingContext="{Binding BindingContext, Source={x:Reference AutoFollowBtn}}" 
-                                                               TintColor="{Binding AutoFollowIconColor}" />
-                            </ImageButton.Behaviors>
-                        </ImageButton>
-                    </HorizontalStackLayout>
+                    </Grid>
                 </Grid>
             </Grid>
         </Grid>
