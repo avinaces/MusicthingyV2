@@ -3,15 +3,18 @@ using System.Diagnostics;
 using System.IO;
 using System.Net;
 using System.Net.Http;
+using System.Net.Sockets;
 using System.Threading.Tasks;
 
 namespace Musicthingy.Services;
 
 public class LocalStreamProxy
 {
+    private readonly object _lock = new(); // Thread-safety lock
     private HttpListener? _listener;
     private readonly HttpClient _httpClient;
     private const int ProxyPort = 8088;
+    private int _port = 0;
 
     public LocalStreamProxy(HttpClient httpClient)
     {
@@ -20,35 +23,77 @@ public class LocalStreamProxy
 
     public void Start()
     {
-        if (_listener != null) return;
+        lock (_lock)
+        {
+            if (_listener != null) return;
 
-        try
-        {
-            _listener = new HttpListener();
-            // Bind to loopback only (requires no admin privileges on Windows/Android)
-            _listener.Prefixes.Add($"http://127.0.0.1:{ProxyPort}/");
-            _listener.Start();
-            Task.Run(ListenLoop);
-            Debug.WriteLine($"[Proxy] Local loopback proxy started on port {ProxyPort}");
+            try
+            {
+                _listener = new HttpListener();
+
+                // Find a free ephemeral port to avoid collisions with other apps
+                _port = GetFreePort();
+
+                // Bind to loopback only (requires no admin privileges on Windows/Android)
+                _listener.Prefixes.Add($"http://127.0.0.1:{_port}/");
+                _listener.Start();
+                Task.Run(ListenLoop);
+                Debug.WriteLine($"[Proxy] Local loopback proxy started on port {_port}");
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"[Proxy] Failed to start local proxy: {ex.Message}");
+                try { _listener?.Close(); } catch { }
+                _listener = null;
+                _port = 0;
+            }
         }
-        catch (Exception ex)
+    }
+
+    public bool IsRunning
+    {
+        get
         {
-            Debug.WriteLine($"[Proxy] Failed to start local proxy: {ex.Message}");
+            lock (_lock)
+            {
+                return _listener != null && _listener.IsListening;
+            }
         }
+    }
+
+    public int Port => _port != 0 ? _port : ProxyPort;
+
+    private static int GetFreePort()
+    {
+        TcpListener l = new TcpListener(IPAddress.Loopback, 0);
+        l.Start();
+        int port = ((IPEndPoint)l.LocalEndpoint).Port;
+        l.Stop();
+        return port;
     }
 
     private async Task ListenLoop()
     {
-        while (_listener != null && _listener.IsListening)
+        while (true)
         {
+            HttpListener? activeListener;
+            lock (_lock)
+            {
+                activeListener = _listener;
+            }
+
+            if (activeListener == null || !activeListener.IsListening)
+                break;
+
             try
             {
-                HttpListenerContext context = await _listener.GetContextAsync();
+                HttpListenerContext context = await activeListener.GetContextAsync();
                 _ = Task.Run(() => HandleRequestAsync(context));
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"[Proxy] Listen error: {ex.Message}");
+                // Acceptable to catch on shutdown when GetContextAsync is aborted
+                Debug.WriteLine($"[Proxy] Listen loop interrupted: {ex.Message}");
             }
         }
     }
@@ -82,7 +127,7 @@ public class LocalStreamProxy
                 message.Headers.Add("User-Agent", context.Request.Headers["User-Agent"]);
             }
 
-            var response = await _httpClient.SendAsync(message, HttpCompletionOption.ResponseHeadersRead);
+            using var response = await _httpClient.SendAsync(message, HttpCompletionOption.ResponseHeadersRead);
 
             context.Response.StatusCode = (int)response.StatusCode;
             context.Response.ContentType = response.Content.Headers.ContentType?.ToString() ?? "audio/webm";
@@ -102,10 +147,19 @@ public class LocalStreamProxy
                 context.Response.Headers.Add("Content-Range", response.Content.Headers.ContentRange.ToString());
             }
 
-            using Stream sourceStream = await response.Content.ReadAsStreamAsync();
-            using Stream destStream = context.Response.OutputStream;
+            try
+            {
+                using Stream sourceStream = await response.Content.ReadAsStreamAsync();
+                using Stream destStream = context.Response.OutputStream;
 
-            await sourceStream.CopyToAsync(destStream);
+                // This will throw an exception the millisecond VLC disconnects/skips,
+                // which exits the method and disposes of the 'response' object, stopping the download.
+                await sourceStream.CopyToAsync(destStream);
+            }
+            catch (Exception ex) when (ex is IOException || ex is HttpListenerException)
+            {
+                Debug.WriteLine("[Proxy] Playback skipped or stopped by user. Upstream connection aborted.");
+            }
         }
         catch (Exception ex)
         {
@@ -120,16 +174,38 @@ public class LocalStreamProxy
 
     public string GetProxyUrl(string originalUrl)
     {
-        return $"http://127.0.0.1:{ProxyPort}/?url={Uri.EscapeDataString(originalUrl)}";
+        if (!IsRunning)
+        {
+            try
+            {
+                Start();
+            }
+            catch { }
+
+            if (!IsRunning)
+            {
+                // If the proxy cannot be started, fall back to the original URL
+                // to avoid causing immediate connection failures and rapid skipping.
+                return originalUrl;
+            }
+        }
+
+        return $"http://127.0.0.1:{Port}/?url={Uri.EscapeDataString(originalUrl)}";
     }
 
     public void Stop()
     {
-        try
+        lock (_lock)
         {
-            _listener?.Stop();
-            _listener = null;
+            try
+            {
+                // .Close() is safer than .Stop() because it forcibly releases all bound sockets 
+                // immediately instead of waiting for the TCP TIME_WAIT state to expire.
+                _listener?.Close();
+                _listener = null;
+                _port = 0;
+            }
+            catch { }
         }
-        catch { }
     }
 }
