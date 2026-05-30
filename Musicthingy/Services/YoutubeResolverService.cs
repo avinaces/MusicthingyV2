@@ -142,14 +142,74 @@ public class YouTubeResolverService
     public async Task<TimeSpan?> GetVideoDurationAsync(string trackUrl, CancellationToken cancellationToken)
     {
         VideoId? videoId = VideoId.TryParse(trackUrl);
+        if (videoId == null) return null;
 
-        if (videoId != null)
+        // Try InnerTube API to instantly grab duration without scraping logic
+        try
+        {
+            string apiUrl = $"https://www.youtube.com/youtubei/v1/player?key={InnerTubeApiKey}&prettyPrint=false";
+            HttpRequestMessage request = new HttpRequestMessage(HttpMethod.Post, apiUrl);
+
+            request.Headers.Add("User-Agent", "com.google.android.youtube/1.9 (Linux; U; Android 15; en_US; Pixel 9 Pro; Build/AP4A.250205.002) gzip");
+            request.Headers.Add("X-YouTube-Client-Name", "30"); // ANDROID_TESTSUITE
+            request.Headers.Add("X-YouTube-Client-Version", "1.9");
+
+            object payload = new
+            {
+                videoId = videoId.Value.Value,
+                context = new
+                {
+                    client = new
+                    {
+                        clientName = "ANDROID_TESTSUITE",
+                        clientVersion = "1.9",
+                        hl = "en",
+                        gl = "US",
+                        osName = "Android",
+                        osVersion = "15",
+                        deviceMake = "Google",
+                        deviceModel = "Pixel 9 Pro",
+                        androidSdkVersion = "35"
+                    }
+                }
+            };
+
+            string jsonString = JsonSerializer.Serialize(payload, _jsonOptions);
+            request.Content = new StringContent(jsonString, System.Text.Encoding.UTF8, "application/json");
+
+            HttpResponseMessage response = await _innerTubeClient.SendAsync(request, cancellationToken);
+            string json = await response.Content.ReadAsStringAsync(cancellationToken);
+
+            using JsonDocument doc = JsonDocument.Parse(json);
+            JsonElement root = doc.RootElement;
+
+            // Extract the fast videoDetails object
+            if (root.TryGetProperty("videoDetails", out JsonElement videoDetails) &&
+                videoDetails.TryGetProperty("lengthSeconds", out JsonElement lengthSeconds))
+            {
+                if (long.TryParse(lengthSeconds.GetString(), out long secs))
+                {
+                    return TimeSpan.FromSeconds(secs);
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"[InnerTube Duration] Error resolving duration for {trackUrl}: {ex.Message}");
+        }
+
+        // Fallback to YoutubeExplode
+        try
         {
             using CancellationTokenSource cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             cts.CancelAfter(TimeSpan.FromSeconds(VideoInfoFetchTimeoutSeconds));
 
             Video videoInfo = await _youtubeClient.Videos.GetAsync(videoId.Value, cts.Token);
             return videoInfo.Duration;
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"[YoutubeExplode Duration] Error: {ex.Message}");
         }
 
         return null;

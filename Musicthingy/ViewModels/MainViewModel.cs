@@ -6,7 +6,7 @@ using System.Collections.ObjectModel;
 
 namespace Musicthingy.ViewModels;
 
-public partial class MainViewModel : ObservableObject
+public partial class MainViewModel : ObservableObject, IDisposable
 {
     private static Action? _cleanupOldInstances;
 
@@ -63,7 +63,22 @@ public partial class MainViewModel : ObservableObject
         WeakReferenceMessenger.Default.Unregister<MediaControlMessage>(this);
 
         // UPDATE: Swapped _player for _playbackService
-        _playbackService.Stop();
+        try { _playbackService.Stop(); } catch { }
+
+        // Cancel any pending media load / preload tasks and dispose the CTS
+        try
+        {
+            if (_mediaLoadCts != null)
+            {
+                _mediaLoadCts.Cancel();
+                _mediaLoadCts.Dispose();
+                _mediaLoadCts = null;
+            }
+        }
+        catch { }
+
+        // Unsubscribe playback event handlers to avoid retaining this VM through event refs
+        try { UnsubscribePlaybackService(); } catch { }
 
         ReleaseTransientWakeLock();
 
@@ -77,6 +92,13 @@ public partial class MainViewModel : ObservableObject
         }
         catch { }
 #endif
+    }
+
+    public void Dispose()
+    {
+        // Ensure media is cleaned up and subscriptions removed when the VM is disposed.
+        try { CleanupMedia(); } catch { }
+        GC.SuppressFinalize(this);
     }
 
     partial void OnSelectedPlaylistChanged(Playlist? oldValue, Playlist? newValue)
