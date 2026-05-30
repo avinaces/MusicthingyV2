@@ -68,13 +68,14 @@ public class ExoPlayerMediaPlaybackService : Java.Lang.Object, IMediaPlaybackSer
     public void Play(string streamUrl, string userAgent, double startTimeMs)
     {
         CurrentMediaUrl = streamUrl;
-        string proxyUrl = _streamProxy.GetProxyUrl(streamUrl);
 
+        // BYPASS PROXY: Use streamUrl directly instead of _streamProxy.GetProxyUrl(streamUrl)
+        // ExoPlayer doesn't get blocked by ISP's or youtube's anti-bot measures, so the proxy is unnecessary and causes extra overhead.
         var dataSourceFactory = new DefaultHttpDataSource.Factory();
         dataSourceFactory.SetUserAgent(userAgent);
         dataSourceFactory.SetAllowCrossProtocolRedirects(true);
 
-        var mediaItem = MediaItem.FromUri(global::Android.Net.Uri.Parse(proxyUrl)!);
+        var mediaItem = MediaItem.FromUri(global::Android.Net.Uri.Parse(streamUrl)!);
         var mediaSource = new AndroidX.Media3.ExoPlayer.Source.DefaultMediaSourceFactory(dataSourceFactory)
             .CreateMediaSource(mediaItem);
 
