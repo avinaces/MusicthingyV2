@@ -1,10 +1,9 @@
 ﻿using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using CommunityToolkit.Mvvm.Messaging;
 using Musicthingy.Models;
-using Musicthingy;
 using System.Collections.ObjectModel;
 using System.Text.Json;
-using CommunityToolkit.Mvvm.Messaging;
 
 namespace Musicthingy.ViewModels;
 
@@ -262,18 +261,19 @@ public partial class MainViewModel
     [RelayCommand]
     private void TogglePlay()
     {
-        if (_player == null || IsLoadingMedia) return;
+        if (IsLoadingMedia) return;
 
         if (IsPlaying)
         {
-            _player.Pause();
+            _playbackService.Pause();
         }
         else
         {
             AcquireTransientWakeLock();
-            _player.Play();
+            _playbackService.Play(); // Resumes playback
         }
     }
+
     [RelayCommand]
     private void DragStarted()
     {
@@ -283,11 +283,10 @@ public partial class MainViewModel
     [RelayCommand]
     private void Seek()
     {
-        if (_player != null && _player.IsSeekable)
-        {
-            double startMs = (CurrentTrack?.StartTime ?? 0) * 1000.0;
-            _player.Time = (long)((CurrentPositionSeconds * 1000.0) + startMs);
-        }
+        // UPDATE: Replaced `_player` logic with the new `Seek()` wrapper
+        double startMs = (CurrentTrack?.StartTime ?? 0) * 1000.0;
+        _playbackService.Seek((CurrentPositionSeconds * 1000.0) + startMs);
+
         _isDragging = false;
         SyncOSPlaybackState();
     }
@@ -323,13 +322,14 @@ public partial class MainViewModel
         {
             ActiveTimedLyrics.Clear();
             HasNoLyrics = true;
-            _player?.Stop();
+
+            // UPDATE: Swapped _player for _playbackService
+            _playbackService.Stop();
+
             return;
         }
 
-
         ParseLyrics(newValue.Lyrics);
-        
 
         if (newValue.Playlist != null && !PlaybackQueue.Contains(newValue))
         {
@@ -354,8 +354,6 @@ public partial class MainViewModel
 
         if (oldValue != null) oldValue.IsSelected = false;
         newValue.IsSelected = true;
-
-
 
         _ = ReloadMediaAsync(newValue);
     }

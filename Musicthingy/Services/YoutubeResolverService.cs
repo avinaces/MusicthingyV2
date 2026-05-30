@@ -8,13 +8,11 @@ using System.Net.Sockets;
 using YoutubeExplode;
 using YoutubeExplode.Videos;
 using YoutubeExplode.Videos.Streams;
+using Musicthingy.Models;
+using Musicthingy.Helpers;
 
 namespace Musicthingy.Services;
 
-/// <summary>
-/// Service responsible for resolving direct media stream URLs and metadata from YouTube.
-/// Contains fallback strategies to emulate client behavior and bypass restrictions.
-/// </summary>
 public class YouTubeResolverService
 {
     private const double CacheExpiryHours = 2.0;
@@ -22,14 +20,14 @@ public class YouTubeResolverService
     private const int VideoInfoFetchTimeoutSeconds = 10;
     private const int MaxClientAttempts = 2;
     private const int PreferredAudioBitrateScore = 1000000;
+    private const int MaxCacheSize = 500;
 
-    private const string InnerTubeApiUrl = "https://music.youtube.com/youtubei/v1/player?key=AIzaSyA8eiZmM1FaDVjRy-df2KTyQ_vz_yYM39w&prettyPrint=false";
-    private const string YouTubeOrigin = "https://music.youtube.com";
+    private const string InnerTubeApiKey = "AIzaSyA8eiZmM1FaDVjRy-df2KTyQ_vz_yYM39w";
+    private const string DefaultUserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
 
     private readonly YoutubeClient _youtubeClient;
-    private readonly ConcurrentDictionary<string, (string RawUrl, DateTime FetchedAt)> _streamUrlCache = new();
+    private readonly ConcurrentDictionary<string, (ResolvedMedia Media, DateTime FetchedAt)> _streamUrlCache = new();
 
-    // Create a custom handler that forces IPv4 to bypass carrier IPv6 MTU black holes
     private static readonly SocketsHttpHandler _ipv4Handler = new SocketsHttpHandler
     {
         AutomaticDecompression = DecompressionMethods.GZip | DecompressionMethods.Deflate,
@@ -63,8 +61,6 @@ public class YouTubeResolverService
 
     private static readonly HttpClient _innerTubeClient = new HttpClient(_ipv4Handler);
 
-    // Expose the internal IPv4 handler so other components (like the local proxy) can reuse
-    // the same robust IPv4-only connect logic without duplicating the handler implementation.
     public static SocketsHttpHandler Ipv4Handler => _ipv4Handler;
 
     private static string? _visitorData = null;
@@ -72,36 +68,35 @@ public class YouTubeResolverService
 
     public YouTubeResolverService()
     {
-        // Force YoutubeExplode to also use the IPv4 handler
         _youtubeClient = new YoutubeClient(new HttpClient(_ipv4Handler));
     }
 
-    public async Task<string?> ResolveMediaSourceAsync(string trackUrl)
+    public async Task<ResolvedMedia?> ResolveMediaSourceAsync(string trackUrl)
     {
         if (string.IsNullOrEmpty(trackUrl))
             return null;
 
-        if (trackUrl.Contains("youtube.com") || trackUrl.Contains("youtu.be"))
+        if (MediaUrlHelper.IsYouTubeUrl(trackUrl))
         {
-            if (_streamUrlCache.TryGetValue(trackUrl, out (string RawUrl, DateTime FetchedAt) cached)
+            if (_streamUrlCache.TryGetValue(trackUrl, out (ResolvedMedia Media, DateTime FetchedAt) cached)
                 && (DateTime.Now - cached.FetchedAt).TotalHours < CacheExpiryHours)
             {
                 Debug.WriteLine($"[Resolve] CACHE HIT");
-                return cached.RawUrl;
+                return cached.Media;
             }
 
-            string? resolvedUrl = null;
+            ResolvedMedia? resolvedMedia = null;
             VideoId? videoId = VideoId.TryParse(trackUrl);
 
             if (videoId != null)
             {
-                resolvedUrl = await GetFastStreamUrlAsync(videoId.Value.Value);
+                resolvedMedia = await GetFastStreamUrlAsync(videoId.Value.Value);
 
-                if (string.IsNullOrEmpty(resolvedUrl))
+                if (resolvedMedia == null)
                 {
                     try
                     {
-                        resolvedUrl = await Task.Run(async () =>
+                        string? url = await Task.Run(async () =>
                         {
                             using CancellationTokenSource cts = new CancellationTokenSource(TimeSpan.FromSeconds(ManifestFetchTimeoutSeconds));
 
@@ -117,6 +112,9 @@ public class YouTubeResolverService
                         });
 
                         Debug.WriteLine($"[Resolve] YOUTUBE EXPLODE SUCCESS");
+
+                        if (!string.IsNullOrEmpty(url))
+                            resolvedMedia = new ResolvedMedia(url, DefaultUserAgent);
                     }
                     catch (Exception ex)
                     {
@@ -125,19 +123,20 @@ public class YouTubeResolverService
                 }
             }
 
-            if (string.IsNullOrEmpty(resolvedUrl))
+            if (resolvedMedia == null)
             {
-                resolvedUrl = trackUrl;
+                resolvedMedia = new ResolvedMedia(trackUrl, DefaultUserAgent);
             }
-            else if (resolvedUrl != trackUrl)
+            else if (resolvedMedia.Url != trackUrl)
             {
-                _streamUrlCache[trackUrl] = (resolvedUrl, DateTime.Now);
+                if (_streamUrlCache.Count >= MaxCacheSize) _streamUrlCache.Clear();
+                _streamUrlCache[trackUrl] = (resolvedMedia, DateTime.Now);
             }
 
-            return resolvedUrl;
+            return resolvedMedia;
         }
 
-        return trackUrl;
+        return new ResolvedMedia(trackUrl, DefaultUserAgent);
     }
 
     public async Task<TimeSpan?> GetVideoDurationAsync(string trackUrl, CancellationToken cancellationToken)
@@ -156,7 +155,7 @@ public class YouTubeResolverService
         return null;
     }
 
-    private async Task<string?> GetFastStreamUrlAsync(string videoId)
+    private async Task<ResolvedMedia?> GetFastStreamUrlAsync(string videoId)
     {
         InnerTubeClientInfo[] clients = new InnerTubeClientInfo[]
         {
@@ -172,12 +171,11 @@ public class YouTubeResolverService
             {
                 try
                 {
-                    // Fix 2: Target the correct API base depending on the client
                     string baseUrl = clientConfig.Name.Contains("MUSIC") || clientConfig.Name == "WEB_REMIX"
                         ? "https://music.youtube.com"
                         : "https://www.youtube.com";
 
-                    string apiUrl = $"{baseUrl}/youtubei/v1/player?key=AIzaSyA8eiZmM1FaDVjRy-df2KTyQ_vz_yYM39w&prettyPrint=false";
+                    string apiUrl = $"{baseUrl}/youtubei/v1/player?key={InnerTubeApiKey}&prettyPrint=false";
 
                     HttpRequestMessage request = new HttpRequestMessage(HttpMethod.Post, apiUrl);
                     request.Headers.Add("User-Agent", clientConfig.UA);
@@ -186,7 +184,6 @@ public class YouTubeResolverService
                     request.Headers.Add("X-YouTube-Client-Name", clientConfig.Id);
                     request.Headers.Add("X-YouTube-Client-Version", clientConfig.Version);
 
-                    // Fix 1: ONLY add Web headers if it's actually a Web client
                     if (clientConfig.Name.StartsWith("WEB") || clientConfig.Name == "VISIONOS")
                     {
                         request.Headers.Add("X-Origin", baseUrl);
@@ -197,12 +194,12 @@ public class YouTubeResolverService
                         request.Headers.Add("X-Goog-Visitor-Id", _visitorData);
 
                     Dictionary<string, string> clientObj = new Dictionary<string, string>
-                     {
-                { "clientName", clientConfig.Name },
-                { "clientVersion", clientConfig.Version },
-                { "hl", "en" },
-                { "gl", "US" }
-            };
+                    {
+                        { "clientName", clientConfig.Name },
+                        { "clientVersion", clientConfig.Version },
+                        { "hl", "en" },
+                        { "gl", "US" }
+                    };
 
                     if (clientConfig.OsName != null) clientObj["osName"] = clientConfig.OsName;
                     if (clientConfig.OsVersion != null) clientObj["osVersion"] = clientConfig.OsVersion;
@@ -211,14 +208,13 @@ public class YouTubeResolverService
                     if (clientConfig.Sdk != null) clientObj["androidSdkVersion"] = clientConfig.Sdk;
                     if (!string.IsNullOrEmpty(_visitorData)) clientObj["visitorData"] = _visitorData;
 
-                    Dictionary<string, object> payload = new Dictionary<string, object>
+                    object payload = new
                     {
-                        { "videoId", videoId },
-                        { "context", new Dictionary<string, object>
-                            {
-                                { "client", clientObj },
-                                { "user", new Dictionary<string, object>() }
-                            }
+                        videoId = videoId,
+                        context = new
+                        {
+                            client = clientObj,
+                            user = new { }
                         }
                     };
 
@@ -247,9 +243,7 @@ public class YouTubeResolverService
                         string statusStr = status.GetString()!;
 
                         if (attempt == 1 && statusStr == "LOGIN_REQUIRED" && !string.IsNullOrEmpty(_visitorData))
-                        {
                             continue;
-                        }
 
                         break;
                     }
@@ -275,10 +269,9 @@ public class YouTubeResolverService
                         if (bestAudio.ValueKind != JsonValueKind.Undefined && bestAudio.TryGetProperty("url", out JsonElement urlProp))
                         {
                             Debug.WriteLine($"[Resolve] FAST PATH SUCCESS! Resolved direct stream using client: {clientConfig.Name}");
-                            return urlProp.GetString();
+                            return new ResolvedMedia(urlProp.GetString()!, clientConfig.UA);
                         }
                     }
-
                     break;
                 }
                 catch (Exception)
@@ -287,7 +280,6 @@ public class YouTubeResolverService
                 }
             }
         }
-
         return null;
     }
 

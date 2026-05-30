@@ -11,22 +11,43 @@ namespace Musicthingy
     {
         public static MauiApp CreateMauiApp()
         {
-
-            // Initialize the native VLC C++ libraries
-            Core.Initialize();
+#if WINDOWS
+            // Only initialize native VLC C++ libraries on Windows now
+            LibVLCSharp.Shared.Core.Initialize();
+#endif
 
             var builder = MauiApp.CreateBuilder();
 
+            // Register Services
             builder.Services.AddSingleton<ThemeManager>();
+            builder.Services.AddSingleton<YouTubeResolverService>();
+
+            builder.Services.AddSingleton(sp => new HttpClient(YouTubeResolverService.Ipv4Handler));
+            builder.Services.AddSingleton<LocalStreamProxy>();
+
+            // ----------------------------------------------------
+            // PLATFORM SPECIFIC PLAYBACK ENGINE INJECTION
+            // ----------------------------------------------------
+#if ANDROID
+            // Use native ExoPlayer on Android
+            builder.Services.AddSingleton<IMediaPlaybackService, Platforms.Android.ExoPlayerMediaPlaybackService>();
+#elif WINDOWS
+            // Use LibVLC on Windows
+            builder.Services.AddSingleton<IMediaPlaybackService, VlcMediaPlaybackService>();
+#endif
+            // ----------------------------------------------------
+
             builder.Services.AddSingleton<MainViewModel>();
 
             // Register your platform-specific views
             builder.Services.AddTransient<Views.MobileMainPage>();
             builder.Services.AddTransient<AppShell>();
+
             builder.UseMauiApp<App>()
                 .UseMauiCommunityToolkit()
                 .UseMPowerKitListView()
                 .ConfigureFonts(fonts => { });
+
 #if DEBUG
             builder.Logging.AddDebug();
 #endif

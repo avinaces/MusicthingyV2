@@ -27,13 +27,22 @@ public partial class MainViewModel : ObservableObject
     public bool IsMediaSelected => CurrentTrack != null;
     public bool IsNotMediaSelected => CurrentTrack == null;
 
-    public MainViewModel(ThemeManager themeManager)
+    public MainViewModel(
+        ThemeManager themeManager,
+        YouTubeResolverService youtubeResolver,
+        IMediaPlaybackService playbackService)
     {
         _themeManager = themeManager;
+        _youtubeResolver = youtubeResolver;
+        _playbackService = playbackService;
+
         _cleanupOldInstances?.Invoke();
         _cleanupOldInstances = CleanupMedia;
 
         _dataService = new PlaylistDataService();
+
+        // UPDATE: Call the method from MainViewModel.Media.cs to hook up the playback events!
+        InitializePlaybackService();
 
         Task.Run(LoadStateAsync);
 
@@ -52,7 +61,10 @@ public partial class MainViewModel : ObservableObject
     private void CleanupMedia()
     {
         WeakReferenceMessenger.Default.Unregister<MediaControlMessage>(this);
-        _player?.Stop();
+
+        // UPDATE: Swapped _player for _playbackService
+        _playbackService.Stop();
+
         ReleaseTransientWakeLock();
 
 #if ANDROID
@@ -83,7 +95,4 @@ public partial class MainViewModel : ObservableObject
             _ = ResolvePlaylistDurationsAsync(newValue);
         }
     }
-
-
-
 }
