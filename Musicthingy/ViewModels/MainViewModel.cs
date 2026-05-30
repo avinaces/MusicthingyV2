@@ -30,11 +30,13 @@ public partial class MainViewModel : ObservableObject, IDisposable
     public MainViewModel(
         ThemeManager themeManager,
         YouTubeResolverService youtubeResolver,
-        IMediaPlaybackService playbackService)
+        IMediaPlaybackService playbackService,
+        IMediaProbingService mediaProbingService)
     {
         _themeManager = themeManager;
         _youtubeResolver = youtubeResolver;
         _playbackService = playbackService;
+        _mediaProbingService = mediaProbingService;
 
         _cleanupOldInstances?.Invoke();
         _cleanupOldInstances = CleanupMedia;

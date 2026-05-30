@@ -107,15 +107,15 @@
 
                                                 <!-- 3-dots Context Menu Trigger -->
                                                 <ImageButton Grid.Column="2" 
-             Source="ellipsis_vertical_icon.png" 
-             Clicked="OnTrackOptionsClicked" 
-             VerticalOptions="Center" 
-             HorizontalOptions="End" 
-             WidthRequest="40" 
-             HeightRequest="48" 
-             Padding="10,14" 
-             BackgroundColor="Transparent" 
-             CornerRadius="20" />
+                                                             Source="ellipsis_vertical_icon.png" 
+                                                             Clicked="OnTrackOptionsClicked" 
+                                                             VerticalOptions="Center" 
+                                                             HorizontalOptions="End" 
+                                                             WidthRequest="40" 
+                                                             HeightRequest="48" 
+                                                             Padding="10,14" 
+                                                             BackgroundColor="Transparent" 
+                                                             CornerRadius="20" />
                                             </Grid>
                                         </Border>
                                     </Grid>
@@ -153,23 +153,35 @@
         </BoxView>
 
         <!-- ========================================== -->
-        <!-- 3. CUSTOM LEFT DRAWER (Playlists)          -->
+        <!-- 3. FULL-SCREEN SIDEBAR (Playlists)         -->
         <!-- ========================================== -->
-        <!-- WidthRequest increased to 375 -->
-        <Grid x:Name="SidebarGrid" WidthRequest="360" HorizontalOptions="Start" TranslationX="-360" BackgroundColor="{DynamicResource BgColor}" ZIndex="51">
+        <Grid x:Name="SidebarGrid" HorizontalOptions="Fill" TranslationX="-5000" BackgroundColor="{DynamicResource BgColor}" ZIndex="51">
             <Grid.GestureRecognizers>
+                <!-- Panning applied to the parent gracefully follows the finger without swallowing list vertical scrolls -->
                 <PanGestureRecognizer PanUpdated="OnSidebarPanUpdated" />
             </Grid.GestureRecognizers>
 
             <Grid RowDefinitions="Auto, *">
-                <Grid Grid.Row="0" Padding="16,30,16,16" ColumnDefinitions="*, Auto">
-                    <Label Grid.Column="0" Text="Playlists" TextColor="{DynamicResource TitleColor}" FontSize="24" FontAttributes="Bold" VerticalOptions="Center" />
-                    <HorizontalStackLayout Grid.Column="1" Spacing="8" VerticalOptions="Center">
+                <Grid Grid.Row="0" Padding="12,12,16,16" ColumnDefinitions="Auto, *, Auto">
+                    <ImageButton Grid.Column="0" 
+                                 Source="arrow_left_icon.png" 
+                                 Clicked="OnCloseSidebarClicked" 
+                                 Margin="0,0,12,0" 
+                                 VerticalOptions="Center" 
+                                 WidthRequest="40" 
+                                 HeightRequest="40" 
+                                 CornerRadius="20" 
+                                 Padding="8" 
+                                 BackgroundColor="Transparent" />
+
+                    <Label Grid.Column="1" Text="Playlists" TextColor="{DynamicResource TitleColor}" FontSize="24" FontAttributes="Bold" VerticalOptions="Center" />
+                    <HorizontalStackLayout Grid.Column="2" Spacing="8" VerticalOptions="Center">
                         <ImageButton Source="download_icon.png" Command="{Binding ImportPlaylistCommand}" Style="{StaticResource IconImageButton}" />
                         <ImageButton Source="plus_icon.png" Command="{Binding AddNewPlaylistCommand}" Style="{StaticResource IconImageButton}" />
                     </HorizontalStackLayout>
                 </Grid>
 
+                <!-- Gestures stripped from the ListView itself so native vertical scrolling stays flawless -->
                 <mpowerkit:VirtualizeListView Grid.Row="1" ItemsSource="{Binding Playlists}" Scrolled="OnListScrolled">
                     <mpowerkit:VirtualizeListView.ItemTemplate>
                         <DataTemplate x:DataType="models:Playlist">
@@ -207,15 +219,15 @@
 
                                             <!-- 3-dots Context Menu Trigger -->
                                             <ImageButton Grid.Column="2" 
-             Source="ellipsis_vertical_icon.png" 
-             Clicked="OnPlaylistOptionsClicked" 
-             VerticalOptions="Center" 
-             HorizontalOptions="End" 
-             WidthRequest="40" 
-             HeightRequest="60" 
-             Padding="10,20" 
-             BackgroundColor="Transparent" 
-             CornerRadius="20" />
+                                                         Source="ellipsis_vertical_icon.png" 
+                                                         Clicked="OnPlaylistOptionsClicked" 
+                                                         VerticalOptions="Center" 
+                                                         HorizontalOptions="End" 
+                                                         WidthRequest="40" 
+                                                         HeightRequest="60" 
+                                                         Padding="10,20" 
+                                                         BackgroundColor="Transparent" 
+                                                         CornerRadius="20" />
                                         </Grid>
                                     </Border>
                                 </Grid>
@@ -251,7 +263,7 @@
         </Grid>
 
         <!-- ========================================== -->
-        <!-- 5. NATIVE SLIDE-UP SHEET (ZIndex=101)      -->
+        <!-- 5. SLIDE-UP SHEET (ZIndex=101)      -->
         <!-- ========================================== -->
         <views:SlideUpSheetHost x:Name="GlobalSheetHost" ZIndex="101" />
 

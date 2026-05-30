@@ -1,6 +1,4 @@
 ﻿using CommunityToolkit.Maui;
-using LibVLCSharp.Shared;
-using Microsoft.Extensions.Logging;
 using MPowerKit.VirtualizeListView;
 using Musicthingy.Services;
 using Musicthingy.ViewModels;
@@ -24,6 +22,13 @@ namespace Musicthingy
 
             builder.Services.AddSingleton(sp => new HttpClient(YouTubeResolverService.Ipv4Handler));
             builder.Services.AddSingleton<LocalStreamProxy>();
+
+
+#if WINDOWS
+            builder.Services.AddSingleton<Musicthingy.Services.IMediaProbingService, Musicthingy.Platforms.Windows.VlcMediaProbingService>();
+#elif ANDROID
+            builder.Services.AddSingleton<Musicthingy.Services.IMediaProbingService, Musicthingy.Platforms.Android.ExoPlayerMediaProbingService>();
+#endif
 
             // ----------------------------------------------------
             // PLATFORM SPECIFIC PLAYBACK ENGINE INJECTION

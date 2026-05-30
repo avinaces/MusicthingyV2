@@ -12,10 +12,16 @@ public partial class MobileMainPage : ContentPage
     private double _lastScrollY = 0;
     private CancellationTokenSource? _scrollCts;
 
-    // Custom Sidebar Panning variables
+    // Custom Sidebar interaction variables
     private double _panStartX = 0;
+    private double _sidebarVelocityX = 0;
+    private double _sidebarLastPanX = 0;
+    private DateTime _sidebarLastPanTime;
+    private bool _isSidebarOpen = false;
     private bool _isSidebarPanning = false;
-    private readonly double _sidebarWidth = 360;
+
+    // Dynamic width lookup handling full-screen bounds safely
+    private double SidebarWidth => this.Width > 0 ? this.Width : 360;
 
     public MobileMainPage(MainViewModel viewModel)
     {
@@ -24,7 +30,6 @@ public partial class MobileMainPage : ContentPage
 
         Services.SheetManager.Host = GlobalSheetHost;
 
-        // Listen for requests to scroll to the playing track
         WeakReferenceMessenger.Default.Register<ScrollToTrackMessage>(this, (r, m) =>
         {
             Task.Run(async () =>
@@ -47,6 +52,16 @@ public partial class MobileMainPage : ContentPage
         });
     }
 
+    protected override void OnSizeAllocated(double width, double height)
+    {
+        base.OnSizeAllocated(width, height);
+        // Safely snap layout out-of-bounds on init and rotation
+        if (!_isSidebarOpen && width > 0)
+        {
+            SidebarGrid.TranslationX = -width;
+        }
+    }
+
     private void ResetScrollDetection()
     {
         _scrollCts?.Cancel();
@@ -61,21 +76,15 @@ public partial class MobileMainPage : ContentPage
                 await Task.Delay(300, token);
                 _isProgrammaticScroll = false;
             }
-            catch (TaskCanceledException)
-            {
-            }
+            catch (TaskCanceledException) { }
         });
     }
 
-    // --- Custom Sidebar Pan & Interaction Logic ---
+    // --- Custom Sidebar Interaction Logic ---
 
+    // Combine pan gestures for drag-to-open and drag-to-close behavior
     private void OnEdgePanUpdated(object? sender, PanUpdatedEventArgs e) => HandleSidebarPan(e);
     private void OnSidebarPanUpdated(object? sender, PanUpdatedEventArgs e) => HandleSidebarPan(e);
-
-
-    private double _sidebarVelocityX = 0;
-    private double _sidebarLastPanX = 0;
-    private DateTime _sidebarLastPanTime;
 
     private void HandleSidebarPan(PanUpdatedEventArgs e)
     {
@@ -86,6 +95,9 @@ public partial class MobileMainPage : ContentPage
                 SidebarDarken.IsVisible = true;
                 EdgeSwipeZone.IsVisible = false;
                 _panStartX = SidebarGrid.TranslationX;
+
+                // Sanity check just in case translation somehow got stuck outside bounds
+                if (_panStartX < -SidebarWidth) _panStartX = -SidebarWidth;
 
                 _sidebarVelocityX = 0;
                 _sidebarLastPanX = 0;
@@ -107,30 +119,41 @@ public partial class MobileMainPage : ContentPage
 
                 double newTx = _panStartX + e.TotalX;
                 if (newTx > 0) newTx = 0;
-                if (newTx < -_sidebarWidth) newTx = -_sidebarWidth;
+                if (newTx < -SidebarWidth) newTx = -SidebarWidth;
 
                 SidebarGrid.TranslationX = newTx;
-                SidebarDarken.Opacity = (newTx + _sidebarWidth) / _sidebarWidth;
+
+                // Interpolate opacity so background gets darker as it pulls in
+                SidebarDarken.Opacity = (newTx + SidebarWidth) / SidebarWidth;
                 break;
 
             case GestureStatus.Completed:
             case GestureStatus.Canceled:
                 _isSidebarPanning = false;
 
-                if (SidebarGrid.TranslationX > -(_sidebarWidth * 0.5) || _sidebarVelocityX > 0.5)
-                {
-                    _ = OpenSidebarInternalAsync(_sidebarVelocityX);
-                }
+                bool shouldOpen = false;
+                if (_sidebarVelocityX > 0.5)
+                    shouldOpen = true;  // Fast swipe right
+                else if (_sidebarVelocityX < -0.5)
+                    shouldOpen = false; // Fast swipe left
                 else
-                {
+                    shouldOpen = SidebarGrid.TranslationX > -(SidebarWidth * 0.5); // Fallback to halfway rule
+
+                if (shouldOpen)
+                    _ = OpenSidebarInternalAsync(_sidebarVelocityX);
+                else
                     _ = CloseSidebarInternalAsync(_sidebarVelocityX);
-                }
                 break;
         }
     }
 
+    private void OnCloseSidebarClicked(object? sender, EventArgs e) => _ = CloseSidebarInternalAsync();
+    private void OnSidebarOverlayTapped(object? sender, TappedEventArgs e) => _ = CloseSidebarInternalAsync();
+    private void OnHamburgerTapped(object? sender, TappedEventArgs e) => _ = OpenSidebarInternalAsync();
+
     private async Task OpenSidebarInternalAsync(double velocityX = 0)
     {
+        _isSidebarOpen = true;
         SidebarDarken.IsVisible = true;
         EdgeSwipeZone.IsVisible = false;
 
@@ -144,23 +167,22 @@ public partial class MobileMainPage : ContentPage
 
     private async Task CloseSidebarInternalAsync(double velocityX = 0)
     {
+        _isSidebarOpen = false;
+
         uint duration = 250;
-        double distance = Math.Abs(-_sidebarWidth - SidebarGrid.TranslationX);
+        double distance = Math.Abs(-SidebarWidth - SidebarGrid.TranslationX);
         if (velocityX < -0.1) duration = (uint)Math.Clamp(distance / Math.Abs(velocityX), 100, 350);
 
         _ = SidebarDarken.FadeToAsync(0, duration, Easing.CubicIn);
-        await SidebarGrid.TranslateToAsync(-_sidebarWidth, 0, duration, Easing.CubicIn);
+        await SidebarGrid.TranslateToAsync(-SidebarWidth, 0, duration, Easing.CubicIn);
+
         SidebarDarken.IsVisible = false;
         EdgeSwipeZone.IsVisible = true;
     }
 
-    // Modify OnHamburgerTapped and OnSidebarOverlayTapped to pass '0' to velocity parameters:
-    private void OnHamburgerTapped(object? sender, TappedEventArgs e) => _ = OpenSidebarInternalAsync(0);
-    private void OnSidebarOverlayTapped(object? sender, TappedEventArgs e) => _ = CloseSidebarInternalAsync(0);
-
     protected override bool OnBackButtonPressed()
     {
-        if (SidebarDarken.IsVisible)
+        if (_isSidebarOpen)
         {
             _ = CloseSidebarInternalAsync();
             return true;
@@ -214,9 +236,6 @@ public partial class MobileMainPage : ContentPage
         _lastScrollY = e.ScrollY;
     }
 
-    /// <summary>
-    /// Event handler to open the Bottom Sheet Context Menu for a track.
-    /// </summary>
     private async void OnTrackOptionsClicked(object? sender, EventArgs e)
     {
         if (sender is BindableObject bindable && bindable.BindingContext is PlaylistItem track)
@@ -232,29 +251,29 @@ public partial class MobileMainPage : ContentPage
                 };
 
                 menuSheet.MenuItems = new List<ContextMenuItem>
-            {
-                new ContextMenuItem
                 {
-                    Title = "Edit Track",
-                    IconSource = "pencil_icon.png",
-                    Action = async () =>
+                    new ContextMenuItem
                     {
-                        _ = Services.SheetManager.Host!.HideAsync(menuSheet);
-                        vm.EditTrackCommand.Execute(track);
-                    }
-                },
-                new ContextMenuItem
-                {
-                    Title = "Delete from Playlist",
-                    IconSource = "trash_2_icon.png",
-                    IsDestructive = true,
-                    Action = async () =>
+                        Title = "Edit Track",
+                        IconSource = "pencil_icon.png",
+                        Action = async () =>
+                        {
+                            _ = Services.SheetManager.Host!.HideAsync(menuSheet);
+                            vm.EditTrackCommand.Execute(track);
+                        }
+                    },
+                    new ContextMenuItem
                     {
-                        _ = Services.SheetManager.Host!.HideAsync(menuSheet);
-                        vm.DeleteTrackCommand.Execute(track);
+                        Title = "Delete from Playlist",
+                        IconSource = "trash_2_icon.png",
+                        IsDestructive = true,
+                        Action = async () =>
+                        {
+                            _ = Services.SheetManager.Host!.HideAsync(menuSheet);
+                            vm.DeleteTrackCommand.Execute(track);
+                        }
                     }
-                }
-            };
+                };
 
                 if (Services.SheetManager.Host != null)
                 {
