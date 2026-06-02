@@ -4,10 +4,12 @@
              x:Class="Musicthingy.Views.EditPlaylistGeneralTab">
 
     <ScrollView VerticalScrollBarVisibility="Never">
-        <VerticalStackLayout Spacing="16" Padding="0,0,0,16">
 
-            <!-- Icon picker at the top center -->
-            <VerticalStackLayout HorizontalOptions="Center" Spacing="8">
+        <!-- FLATTENED GRID: reduces measure cycles compared to nested StackLayouts -->
+        <Grid RowDefinitions="Auto, Auto, Auto" ColumnDefinitions="*,*" RowSpacing="6" Padding="0,0,0,16">
+
+            <!-- 0: Icon picker -->
+            <VerticalStackLayout Grid.Row="0" Grid.ColumnSpan="2" HorizontalOptions="Center" Spacing="8" Margin="0,0,0,10">
                 <Border WidthRequest="110" HeightRequest="110" StrokeShape="RoundRectangle 16" Stroke="{DynamicResource BorderColor}" StrokeThickness="1" BackgroundColor="{DynamicResource SurfaceInput}">
                     <Image Source="{Binding ItemIconSource}" Aspect="AspectFill" />
                     <Border.GestureRecognizers>
@@ -18,23 +20,20 @@
                 <Button Text="Reset" Command="{Binding ResetIconCommand}" BackgroundColor="Transparent" TextColor="{DynamicResource Danger}" HeightRequest="32" Padding="8,0" />
             </VerticalStackLayout>
 
-            <!-- Name -->
-            <VerticalStackLayout Spacing="6">
-                <Label Text="Playlist Name" TextColor="{DynamicResource TextColor}" FontSize="14"/>
-                <Border BackgroundColor="{DynamicResource SurfaceInput}" Stroke="{DynamicResource InputBorderColor}" StrokeThickness="1" StrokeShape="RoundRectangle 8" Padding="12,0">
-                    <Entry Text="{Binding EditName}" TextColor="{DynamicResource TextColor}" BackgroundColor="Transparent" HeightRequest="48"/>
-                </Border>
-            </VerticalStackLayout>
+            <!-- 1 & 2: Name -->
+            <Label Grid.Row="1" Grid.ColumnSpan="2" Text="Playlist Name" TextColor="{DynamicResource TextColor}" FontSize="14" Margin="0,6,0,0"/>
+            <Border Grid.Row="2" Grid.ColumnSpan="2" BackgroundColor="{DynamicResource SurfaceInput}" Stroke="{DynamicResource InputBorderColor}" StrokeThickness="1" StrokeShape="RoundRectangle 8" Padding="12,0">
+                <Entry Text="{Binding EditName}" TextColor="{DynamicResource TextColor}" BackgroundColor="Transparent" HeightRequest="48"/>
+            </Border>
 
-            <!-- Source -->
+            <!-- Source (optional) - keep commented for future use -->
             <!--
-            <VerticalStackLayout Spacing="6">
-                <Label Text="Source URL (Optional)" TextColor="{DynamicResource TextColor}" FontSize="14"/>
-                <Border BackgroundColor="{DynamicResource SurfaceInput}" Stroke="{DynamicResource InputBorderColor}" StrokeThickness="1" StrokeShape="RoundRectangle 8" Padding="12,0">
-                    <Entry Text="{Binding EditSource}" TextColor="{DynamicResource TextColor}" BackgroundColor="Transparent" HeightRequest="48"/>
-                </Border>
-            </VerticalStackLayout>
+            <Label Grid.Row="3" Grid.ColumnSpan="2" Text="Source URL (Optional)" TextColor="{DynamicResource TextColor}" FontSize="14" Margin="0,6,0,0"/>
+            <Border Grid.Row="4" Grid.ColumnSpan="2" BackgroundColor="{DynamicResource SurfaceInput}" Stroke="{DynamicResource InputBorderColor}" StrokeThickness="1" StrokeShape="RoundRectangle 8" Padding="12,0">
+                <Entry Text="{Binding EditSource}" TextColor="{DynamicResource TextColor}" BackgroundColor="Transparent" HeightRequest="48"/>
+            </Border>
             -->
-        </VerticalStackLayout>
+
+        </Grid>
     </ScrollView>
 </ContentView>

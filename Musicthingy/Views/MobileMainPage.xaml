@@ -236,6 +236,13 @@
                     </mpowerkit:VirtualizeListView.ItemTemplate>
                 </mpowerkit:VirtualizeListView>
             </Grid>
+
+            <!-- Edge Swipe Zone for closing the sidebar -->
+            <ContentView WidthRequest="25" HorizontalOptions="End" VerticalOptions="Fill" BackgroundColor="Transparent">
+                <ContentView.GestureRecognizers>
+                    <PanGestureRecognizer PanUpdated="OnSidebarPanUpdated" />
+                </ContentView.GestureRecognizers>
+            </ContentView>
         </Grid>
 
         <!-- ========================================== -->

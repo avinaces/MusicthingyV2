@@ -3,6 +3,7 @@ using Musicthingy.Models;
 using MPowerKit.VirtualizeListView;
 using Microsoft.Maui.Controls;
 using Musicthingy.ViewModels;
+using Musicthingy.Helpers;
 
 namespace Musicthingy.Views;
 
@@ -14,11 +15,10 @@ public partial class MobileMainPage : ContentPage
 
     // Custom Sidebar interaction variables
     private double _panStartX = 0;
-    private double _sidebarVelocityX = 0;
-    private double _sidebarLastPanX = 0;
-    private DateTime _sidebarLastPanTime;
     private bool _isSidebarOpen = false;
     private bool _isSidebarPanning = false;
+
+    private readonly PanVelocityTracker _sidebarVelocityTracker = new();
 
     // Dynamic width lookup handling full-screen bounds safely
     private double SidebarWidth => this.Width > 0 ? this.Width : 360;
@@ -99,23 +99,13 @@ public partial class MobileMainPage : ContentPage
                 // Sanity check just in case translation somehow got stuck outside bounds
                 if (_panStartX < -SidebarWidth) _panStartX = -SidebarWidth;
 
-                _sidebarVelocityX = 0;
-                _sidebarLastPanX = 0;
-                _sidebarLastPanTime = DateTime.UtcNow;
+                _sidebarVelocityTracker.Start();
                 break;
 
             case GestureStatus.Running:
                 if (!_isSidebarPanning) return;
 
-                var now = DateTime.UtcNow;
-                var dt = (now - _sidebarLastPanTime).TotalMilliseconds;
-                if (dt > 0)
-                {
-                    double cv = (e.TotalX - _sidebarLastPanX) / dt;
-                    _sidebarVelocityX = (_sidebarVelocityX == 0) ? cv : (_sidebarVelocityX * 0.2 + cv * 0.8);
-                }
-                _sidebarLastPanX = e.TotalX;
-                _sidebarLastPanTime = now;
+                _sidebarVelocityTracker.Update(e.TotalX, 0);
 
                 double newTx = _panStartX + e.TotalX;
                 if (newTx > 0) newTx = 0;
@@ -131,18 +121,21 @@ public partial class MobileMainPage : ContentPage
             case GestureStatus.Canceled:
                 _isSidebarPanning = false;
 
+                double velX = _sidebarVelocityTracker.VelocityX;
+                double movedX = SidebarGrid.TranslationX - _panStartX;
+
                 bool shouldOpen = false;
-                if (_sidebarVelocityX > 0.5)
+                if (velX > 1.0 && movedX > 40)
                     shouldOpen = true;  // Fast swipe right
-                else if (_sidebarVelocityX < -0.5)
+                else if (velX < -1.0 && movedX < -40)
                     shouldOpen = false; // Fast swipe left
                 else
                     shouldOpen = SidebarGrid.TranslationX > -(SidebarWidth * 0.5); // Fallback to halfway rule
 
                 if (shouldOpen)
-                    _ = OpenSidebarInternalAsync(_sidebarVelocityX);
+                    _ = OpenSidebarInternalAsync(velX);
                 else
-                    _ = CloseSidebarInternalAsync(_sidebarVelocityX);
+                    _ = CloseSidebarInternalAsync(velX);
                 break;
         }
     }
@@ -173,8 +166,9 @@ public partial class MobileMainPage : ContentPage
         double distance = Math.Abs(-SidebarWidth - SidebarGrid.TranslationX);
         if (velocityX < -0.1) duration = (uint)Math.Clamp(distance / Math.Abs(velocityX), 100, 350);
 
-        _ = SidebarDarken.FadeToAsync(0, duration, Easing.CubicIn);
-        await SidebarGrid.TranslateToAsync(-SidebarWidth, 0, duration, Easing.CubicIn);
+        // Changed to CubicOut to preserve the drag momentum
+        _ = SidebarDarken.FadeToAsync(0, duration, Easing.CubicOut);
+        await SidebarGrid.TranslateToAsync(-SidebarWidth, 0, duration, Easing.CubicOut);
 
         SidebarDarken.IsVisible = false;
         EdgeSwipeZone.IsVisible = true;

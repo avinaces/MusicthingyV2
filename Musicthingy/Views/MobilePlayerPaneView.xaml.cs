@@ -3,6 +3,7 @@ using Microsoft.Maui.Controls;
 using Musicthingy.Models;
 using System;
 using System.Linq;
+using Musicthingy.Helpers;
 
 namespace Musicthingy.Views;
 
@@ -21,11 +22,7 @@ public partial class MobilePlayerPaneView : ContentView
     private const double MiniHeight = 72;
     private const double MediumHeight = 280;
 
-    private double _velocityX;
-    private double _velocityY;
-    private double _lastPanX;
-    private double _lastPanY;
-    private DateTime _lastPanTime;
+    private readonly PanVelocityTracker _velocityTracker = new();
 
     public MobilePlayerPaneView()
     {
@@ -86,29 +83,12 @@ public partial class MobilePlayerPaneView : ContentView
                 _startPanHeight = PlayerRoot.Height;
                 _currentGesture = GestureIntent.None;
 
-                _velocityX = 0;
-                _velocityY = 0;
-                _lastPanX = 0;
-                _lastPanY = 0;
-                _lastPanTime = DateTime.UtcNow;
-
+                _velocityTracker.Start();
                 PrepareVisibilityForAnimation();
                 break;
 
             case GestureStatus.Running:
-                // Velocity calculation
-                var now = DateTime.UtcNow;
-                var dt = (now - _lastPanTime).TotalMilliseconds;
-                if (dt > 0)
-                {
-                    double cvX = (e.TotalX - _lastPanX) / dt;
-                    double cvY = (e.TotalY - _lastPanY) / dt;
-                    _velocityX = (_velocityX == 0) ? cvX : (_velocityX * 0.2 + cvX * 0.8);
-                    _velocityY = (_velocityY == 0) ? cvY : (_velocityY * 0.2 + cvY * 0.8);
-                }
-                _lastPanX = e.TotalX;
-                _lastPanY = e.TotalY;
-                _lastPanTime = now;
+                _velocityTracker.Update(e.TotalX, e.TotalY);
 
                 if (_currentGesture == GestureIntent.None)
                 {
@@ -153,31 +133,31 @@ public partial class MobilePlayerPaneView : ContentView
                 if (_currentGesture == GestureIntent.ClosingRight)
                 {
                     // Require at least 40px of panning to count as a flick close
-                    if (PlayerRoot.TranslationX > 120 || (_velocityX > 1.0 && PlayerRoot.TranslationX > 40)) ClosePlayer(true, _velocityX);
+                    if (PlayerRoot.TranslationX > 120 || (_velocityTracker.VelocityX > 1.0 && PlayerRoot.TranslationX > 40)) ClosePlayer(true, _velocityTracker.VelocityX);
                     else
                     {
                         uint duration = 250;
-                        if (_velocityX < -0.1) duration = (uint)Math.Clamp(Math.Abs(PlayerRoot.TranslationX / _velocityX), 100, 350);
+                        if (_velocityTracker.VelocityX < -0.1) duration = (uint)Math.Clamp(Math.Abs(PlayerRoot.TranslationX / _velocityTracker.VelocityX), 100, 350);
                         PlayerRoot.TranslateToAsync(0, 0, duration, Easing.CubicOut);
-                        SnapToBestState(_velocityY, 0);
+                        SnapToBestState(_velocityTracker.VelocityY, 0);
                     }
                 }
                 else if (_currentGesture == GestureIntent.ClosingDown)
                 {
                     // Require at least 40px of panning to count as a flick close
-                    if (PlayerRoot.TranslationY > 50 || (_velocityY > 1.0 && PlayerRoot.TranslationY > 40)) ClosePlayer(false, _velocityY);
+                    if (PlayerRoot.TranslationY > 50 || (_velocityTracker.VelocityY > 1.0 && PlayerRoot.TranslationY > 40)) ClosePlayer(false, _velocityTracker.VelocityY);
                     else
                     {
                         uint duration = 250;
-                        if (_velocityY < -0.1) duration = (uint)Math.Clamp(Math.Abs(PlayerRoot.TranslationY / _velocityY), 100, 350);
+                        if (_velocityTracker.VelocityY < -0.1) duration = (uint)Math.Clamp(Math.Abs(PlayerRoot.TranslationY / _velocityTracker.VelocityY), 100, 350);
                         PlayerRoot.TranslateToAsync(0, 0, duration, Easing.CubicOut);
-                        SnapToBestState(_velocityY, 0);
+                        SnapToBestState(_velocityTracker.VelocityY, 0);
                     }
                 }
                 else
                 {
                     // Pass the total distance the height was altered to verify it was a real drag
-                    SnapToBestState(_velocityY, Math.Abs(PlayerRoot.Height - _startPanHeight));
+                    SnapToBestState(_velocityTracker.VelocityY, Math.Abs(PlayerRoot.Height - _startPanHeight));
                 }
 
                 _currentGesture = GestureIntent.None;
@@ -258,12 +238,12 @@ public partial class MobilePlayerPaneView : ContentView
         if (isHorizontal)
         {
             if (velocity > 0.1) length = (uint)Math.Clamp((1000 - PlayerRoot.TranslationX) / velocity, 100, 350);
-            await PlayerRoot.TranslateToAsync(1000, 0, length, Easing.CubicIn);
+            await PlayerRoot.TranslateToAsync(1000, 0, length, Easing.CubicOut); // Fixed Easing
         }
         else
         {
             if (velocity > 0.1) length = (uint)Math.Clamp((MiniHeight + 100 - PlayerRoot.TranslationY) / velocity, 100, 350);
-            await PlayerRoot.TranslateToAsync(0, MiniHeight + 100, length, Easing.CubicIn);
+            await PlayerRoot.TranslateToAsync(0, MiniHeight + 100, length, Easing.CubicOut); // Fixed Easing
         }
 
         if (this.BindingContext is Musicthingy.ViewModels.MainViewModel vm)

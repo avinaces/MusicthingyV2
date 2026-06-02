@@ -1,5 +1,7 @@
 using Microsoft.Maui.Controls;
 using System;
+using System.Threading.Tasks;
+using Musicthingy.Helpers;
 
 namespace Musicthingy.Views;
 
@@ -18,9 +20,7 @@ public partial class BottomSheetContainer : ContentView
 
     public event EventHandler? CloseRequested;
 
-    private double _velocityY;
-    private double _lastPanY;
-    private DateTime _lastPanTime;
+    private readonly PanVelocityTracker _velocityTracker = new();
 
     private const float BACKDROP_OPACITY = 0.3f;
 
@@ -62,21 +62,11 @@ public partial class BottomSheetContainer : ContentView
         switch (e.StatusType)
         {
             case GestureStatus.Started:
-                _velocityY = 0;
-                _lastPanY = 0;
-                _lastPanTime = DateTime.UtcNow;
+                _velocityTracker.Start();
                 break;
 
             case GestureStatus.Running:
-                var now = DateTime.UtcNow;
-                var dt = (now - _lastPanTime).TotalMilliseconds;
-                if (dt > 0)
-                {
-                    double currentV = (e.TotalY - _lastPanY) / dt;
-                    _velocityY = (_velocityY == 0) ? currentV : (_velocityY * 0.2 + currentV * 0.8);
-                }
-                _lastPanY = e.TotalY;
-                _lastPanTime = now;
+                _velocityTracker.Update(0, e.TotalY);
 
                 if (e.TotalY > 0)
                 {
@@ -89,23 +79,41 @@ public partial class BottomSheetContainer : ContentView
 
             case GestureStatus.Completed:
             case GestureStatus.Canceled:
-                if (sheetParent.TranslationY > 100 || (_velocityY > 1.0 && sheetParent.TranslationY > 40))
+                if (sheetParent.TranslationY > 100 || (_velocityTracker.VelocityY > 1.0 && sheetParent.TranslationY > 40))
                 {
-                    Close();
+                    _ = CloseWithVelocityAsync(_velocityTracker.VelocityY, sheetParent);
                 }
                 else
                 {
                     uint duration = 250;
-                    if (_velocityY < -0.1)
+                    if (_velocityTracker.VelocityY < -0.1)
                     {
-                        duration = (uint)Math.Clamp(Math.Abs(sheetParent.TranslationY / _velocityY), 100, 350);
+                        duration = (uint)Math.Clamp(Math.Abs(sheetParent.TranslationY / _velocityTracker.VelocityY), 100, 350);
                     }
 
                     _ = sheetParent.TranslateToAsync(0, 0, duration, Easing.CubicOut);
-
                     _ = OverlayBox.FadeToAsync(BACKDROP_OPACITY, duration, Easing.CubicOut);
                 }
                 break;
         }
+    }
+
+    private async Task CloseWithVelocityAsync(double velocity, View sheetParent)
+    {
+        uint duration = 250;
+
+        // Target exactly the height of the sheet (with a fallback just in case), 
+        // so it doesn't calculate a massive speed just to reach 1500px off-screen.
+        double targetTranslation = sheetParent.Height > 0 ? sheetParent.Height : 800;
+        double distance = targetTranslation - sheetParent.TranslationY;
+
+        if (velocity > 0.1)
+            duration = (uint)Math.Clamp(distance / velocity, 100, 350);
+
+
+        _ = OverlayBox.FadeToAsync(0, duration, Easing.CubicOut);
+        await sheetParent.TranslateToAsync(0, targetTranslation, duration, Easing.CubicOut);
+
+        Close();
     }
 }
