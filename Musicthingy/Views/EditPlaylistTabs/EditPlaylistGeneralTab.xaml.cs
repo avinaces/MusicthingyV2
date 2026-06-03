@@ -24,6 +24,8 @@ public partial class EditPlaylistForm : ObservableObject
 
     [ObservableProperty] public partial ImageSource? ItemIconSource { get; set; }
 
+    private const int ICON_SIZE = 256;
+
     public EditPlaylistForm(Playlist playlist)
     {
         EditName = playlist.Name ?? string.Empty;
@@ -44,9 +46,9 @@ public partial class EditPlaylistForm : ObservableObject
                 byte[]? finalBytes = null;
 
 #if ANDROID
-                finalBytes = await CropAndResizeImageAndroidAsync(stream, 256);
+                finalBytes = await CropAndResizeImageAndroidAsync(stream, ICON_SIZE);
 #elif WINDOWS
-                finalBytes = await CropAndResizeImageWindowsAsync(stream, 256);
+                finalBytes = await CropAndResizeImageWindowsAsync(stream, ICON_SIZE);
 #else
                 using MemoryStream ms = new MemoryStream();
                 await stream.CopyToAsync(ms);

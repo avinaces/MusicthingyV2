@@ -132,8 +132,8 @@ public partial class Playlist : ObservableObject
                     return;
                 }
 
-                const int playlistIconUiSize = 110;
-                const int playlistIconLogicalSize = 12;
+                const int playlistIconUiSize = 110; // TODO: make this dynamic based on actual UI size
+                const int playlistGeneratedIconLogicalSize = 12;
 
                 byte[]? imageBytes = null;
                 bool isGenerator = false;
@@ -157,7 +157,6 @@ public partial class Playlist : ObservableObject
                     isFileFallback = true;
                 }
 
-                // Push ImageSource creation to UI Thread
                 MainThread.BeginInvokeOnMainThread(async () =>
                 {
                     try
@@ -166,7 +165,7 @@ public partial class Playlist : ObservableObject
 
                         if (isGenerator)
                         {
-                            source = IconGenerator.GenerateIcon(Name, playlistIconLogicalSize, playlistIconUiSize);
+                            source = IconGenerator.GenerateIcon(Name, playlistGeneratedIconLogicalSize, playlistIconUiSize);
                         }
                         else if (imageBytes != null)
                         {

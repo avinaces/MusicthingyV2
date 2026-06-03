@@ -3,6 +3,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
              xmlns:models="clr-namespace:Musicthingy.Models"
              xmlns:views="clr-namespace:Musicthingy.Views"
+             xmlns:viewmodels="clr-namespace:Musicthingy.ViewModels"
              xmlns:mpowerkit="clr-namespace:MPowerKit.VirtualizeListView;assembly=MPowerKit.VirtualizeListView"
              x:Class="Musicthingy.Views.MobileMainPage"
              x:Name="RootPage"
@@ -35,18 +36,108 @@
             <!-- Detail Grid (Tracks + Bottom Player) -->
             <Grid Grid.Row="1">
                 <Grid RowDefinitions="Auto, *, Auto">
-                    <Grid Grid.Row="0" Margin="12,12,12,12" ColumnDefinitions="*, Auto">
+
+                    <!-- ========================================== -->
+                    <!-- TOP BAR AREA (Kept for future additions)   -->
+                    <!-- ========================================== -->
+                    <Grid Grid.Row="0" Margin="12,12,12,12" ColumnDefinitions="*, Auto" MinimumHeightRequest="40">
                         <VerticalStackLayout Grid.Column="0" VerticalOptions="Center">
-                            <Label Text="{Binding SelectedPlaylist.ItemCount, StringFormat='{0} tracks'}" TextColor="{DynamicResource MutedColor}" FontSize="13" />
-                            <Label Text="{Binding SelectedPlaylist.DisplayDuration}" TextColor="{DynamicResource MutedColor}" FontSize="12" />
+                            <!-- Placeholder text to keep the visual space reserved -->
+                            <Label Text="Reserved for future toolbar items..." TextColor="{DynamicResource MutedColor}" FontSize="12" Opacity="0.5" />
                         </VerticalStackLayout>
                         <HorizontalStackLayout Grid.Column="1" Spacing="8">
-                            <ImageButton Source="shuffle_icon.png" Command="{Binding ShufflePlaylistCommand}" Style="{StaticResource IconImageButton}" />
-                            <ImageButton Source="play_icon.png" Command="{Binding PlayPlaylistCommand}" Style="{StaticResource IconImageButton}"/>
+                            <!-- You can drop your Search/Filter ImageButtons back in here later -->
                         </HorizontalStackLayout>
                     </Grid>
 
-                    <mpowerkit:VirtualizeListView x:Name="TracksListView" Grid.Row="1" ItemsSource="{Binding SelectedPlaylist.Items}" Scrolled="OnListScrolled">
+                    <mpowerkit:VirtualizeListView x:Name="TracksListView" 
+                                                  Grid.Row="1" 
+                                                  ItemsSource="{Binding SelectedPlaylist.Items}" 
+                                                  Scrolled="OnListScrolled"
+                                                  Header="{Binding .}">
+
+                        <!-- ========================================== -->
+                        <!-- BIG PLAYLIST HEADER (Scrolls with list)    -->
+                        <!-- ========================================== -->
+                        <mpowerkit:VirtualizeListView.HeaderTemplate>
+                            <DataTemplate x:DataType="viewmodels:MainViewModel">
+                                <VerticalStackLayout Padding="16,16,16,32" Spacing="12" HorizontalOptions="Fill">
+
+                                    <!-- 1. Playlist Icon Image -->
+                                    <Image Source="{Binding SelectedPlaylist.IconImageSource}" 
+                                           WidthRequest="220" 
+                                           HeightRequest="220" 
+                                           Aspect="AspectFill" 
+                                           HorizontalOptions="Center">
+                                        <Image.Clip>
+                                            <RoundRectangleGeometry CornerRadius="16" Rect="0,0,220,220" />
+                                        </Image.Clip>
+                                    </Image>
+
+                                    <!-- 2. Playlist Name -->
+                                    <Label Text="{Binding SelectedPlaylist.Name}" 
+                                           TextColor="{DynamicResource TitleColor}" 
+                                           FontSize="26" 
+                                           FontAttributes="Bold" 
+                                           HorizontalOptions="Center" 
+                                           HorizontalTextAlignment="Center" 
+                                           LineBreakMode="WordWrap"
+                                           Margin="0,6,0,0"/>
+
+                                    <!-- 3. Playlist Info (Date, Tracks, Length) -->
+                                    <HorizontalStackLayout HorizontalOptions="Center" Spacing="6">
+                                        <Label Text="{Binding SelectedPlaylist.CreatedAt, StringFormat='{0:yyyy}'}" TextColor="{DynamicResource MutedColor}" FontSize="14" />
+                                        <Label Text="•" TextColor="{DynamicResource MutedColor}" FontSize="14" />
+                                        <Label Text="{Binding SelectedPlaylist.ItemCount, StringFormat='{0} tracks'}" TextColor="{DynamicResource MutedColor}" FontSize="14" />
+                                        <Label Text="•" TextColor="{DynamicResource MutedColor}" FontSize="14" />
+                                        <Label Text="{Binding SelectedPlaylist.DisplayDuration}" TextColor="{DynamicResource MutedColor}" FontSize="14" />
+                                    </HorizontalStackLayout>
+
+                                    <!-- 4. Play, Shuffle, and Options Buttons -->
+                                    <Grid ColumnDefinitions="*, *, 48" ColumnSpacing="8" Margin="8,8,8,0">
+
+                                        <!-- Play Button (Stretches to fit) -->
+                                        <ImageButton Grid.Column="0"
+                                                     Source="play_icon.png" 
+                                                     Command="{Binding PlayPlaylistCommand}" 
+                                                     HeightRequest="48" 
+                                                     HorizontalOptions="Fill"
+                                                     CornerRadius="24" 
+                                                     BackgroundColor="{DynamicResource CardColor}" 
+                                                     BorderColor="{DynamicResource BorderColor}" 
+                                                     BorderWidth="1" 
+                                                     Padding="12" />
+
+                                        <!-- Shuffle Button (Stretches to fit) -->
+                                        <ImageButton Grid.Column="1"
+                                                     Source="shuffle_icon.png" 
+                                                     Command="{Binding ShufflePlaylistCommand}" 
+                                                     HeightRequest="48" 
+                                                     HorizontalOptions="Fill"
+                                                     CornerRadius="24" 
+                                                     BackgroundColor="{DynamicResource CardColor}" 
+                                                     BorderColor="{DynamicResource BorderColor}" 
+                                                     BorderWidth="1" 
+                                                     Padding="12" />
+
+                                        <!-- Options Button on the right (Fixed 48x48 width/height) -->
+                                        <ImageButton Grid.Column="2"
+                                                     Source="ellipsis_vertical_icon.png" 
+                                                     BindingContext="{Binding SelectedPlaylist}"
+                                                     Clicked="OnPlaylistOptionsClicked" 
+                                                     WidthRequest="48" 
+                                                     HeightRequest="48" 
+                                                     CornerRadius="24" 
+                                                     BackgroundColor="{DynamicResource CardColor}" 
+                                                     BorderColor="{DynamicResource BorderColor}" 
+                                                     BorderWidth="1" 
+                                                     Padding="12" />
+                                    </Grid>
+                                </VerticalStackLayout>
+                            </DataTemplate>
+                        </mpowerkit:VirtualizeListView.HeaderTemplate>
+
+                        <!-- Track Items -->
                         <mpowerkit:VirtualizeListView.ItemTemplate>
                             <DataTemplate x:DataType="models:PlaylistItem">
                                 <mpowerkit:VirtualizeListViewCell>
@@ -59,7 +150,6 @@
                                                 </DataTrigger>
                                             </Border.Triggers>
 
-                                            <!-- Restructured for simple Tap and Options button -->
                                             <Grid ColumnDefinitions="Auto, *, Auto" ColumnSpacing="10" Padding="10" BackgroundColor="Transparent">
                                                 <Grid.GestureRecognizers>
                                                     <TapGestureRecognizer Tapped="OnTrackTapped" />
@@ -105,7 +195,6 @@
                                                     </Grid>
                                                 </VerticalStackLayout>
 
-                                                <!-- 3-dots Context Menu Trigger -->
                                                 <ImageButton Grid.Column="2" 
                                                              Source="ellipsis_vertical_icon.png" 
                                                              Clicked="OnTrackOptionsClicked" 
@@ -157,7 +246,6 @@
         <!-- ========================================== -->
         <Grid x:Name="SidebarGrid" HorizontalOptions="Fill" TranslationX="-5000" BackgroundColor="{DynamicResource BgColor}" ZIndex="51">
             <Grid.GestureRecognizers>
-                <!-- Panning applied to the parent gracefully follows the finger without swallowing list vertical scrolls -->
                 <PanGestureRecognizer PanUpdated="OnSidebarPanUpdated" />
             </Grid.GestureRecognizers>
 
@@ -181,7 +269,6 @@
                     </HorizontalStackLayout>
                 </Grid>
 
-                <!-- Gestures stripped from the ListView itself so native vertical scrolling stays flawless -->
                 <mpowerkit:VirtualizeListView Grid.Row="1" ItemsSource="{Binding Playlists}" Scrolled="OnListScrolled">
                     <mpowerkit:VirtualizeListView.ItemTemplate>
                         <DataTemplate x:DataType="models:Playlist">
@@ -195,7 +282,6 @@
                                             </DataTrigger>
                                         </Border.Triggers>
 
-                                        <!-- Restructured for simple Tap and Options button -->
                                         <Grid ColumnDefinitions="Auto, *, Auto" ColumnSpacing="12" Padding="12" BackgroundColor="Transparent">
                                             <Grid.GestureRecognizers>
                                                 <TapGestureRecognizer Tapped="OnPlaylistTapped" />
@@ -217,7 +303,6 @@
                                                 <Label Text="{Binding CreatedAt, StringFormat='CREATED {0:MMM dd, yyyy}'}" FontSize="10" TextColor="{DynamicResource MutedColor}" TextTransform="Uppercase" />
                                             </VerticalStackLayout>
 
-                                            <!-- 3-dots Context Menu Trigger -->
                                             <ImageButton Grid.Column="2" 
                                                          Source="ellipsis_vertical_icon.png" 
                                                          Clicked="OnPlaylistOptionsClicked" 
@@ -237,7 +322,6 @@
                 </mpowerkit:VirtualizeListView>
             </Grid>
 
-            <!-- Edge Swipe Zone for closing the sidebar -->
             <ContentView WidthRequest="25" HorizontalOptions="End" VerticalOptions="Fill" BackgroundColor="Transparent">
                 <ContentView.GestureRecognizers>
                     <PanGestureRecognizer PanUpdated="OnSidebarPanUpdated" />
