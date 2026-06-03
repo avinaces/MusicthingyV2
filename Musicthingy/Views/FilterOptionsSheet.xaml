@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentView xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             xmlns:local="clr-namespace:Musicthingy.Views"
+             xmlns:toolkit="http://schemas.microsoft.com/dotnet/2022/maui/toolkit"
+             xmlns:viewmodels="clr-namespace:Musicthingy.ViewModels"
+             x:Class="Musicthingy.Views.FilterOptionsSheet"
+             BackgroundColor="Transparent">
+
+    <local:BottomSheetContainer Title="Filter by Tags" CloseRequested="OnCloseRequested">
+        <local:BottomSheetContainer.Body>
+            <VerticalStackLayout Spacing="16" Padding="0,0,0,16">
+
+                <HorizontalStackLayout HorizontalOptions="End" Padding="16,0" Spacing="8" IsVisible="{Binding IsFilterActive}">
+                    <Button Text="Clear Filters" 
+                            Command="{Binding ClearFilterCommand}"
+                            BackgroundColor="{DynamicResource CardColor}" 
+                            TextColor="{DynamicResource TextColor}" 
+                            BorderColor="{DynamicResource BorderColor}"
+                            BorderWidth="1"
+                            CornerRadius="8" 
+                            HeightRequest="40"
+                            Padding="16,0" />
+                </HorizontalStackLayout>
+
+                <ScrollView VerticalScrollBarVisibility="Never" MaximumHeightRequest="400">
+                    <FlexLayout Direction="Row" Wrap="Wrap" AlignItems="Start" AlignContent="Start" BindableLayout.ItemsSource="{Binding CurrentFilterTags}">
+                        <BindableLayout.ItemTemplate>
+                            <DataTemplate x:DataType="viewmodels:FilterTag">
+                                <Border BackgroundColor="{Binding BackgroundColor}" Stroke="{Binding BorderColor}" StrokeThickness="1" HeightRequest="36" Padding="14,0" Margin="2,4">
+                                    <Border.StrokeShape>
+                                        <RoundRectangle CornerRadius="18"/>
+                                    </Border.StrokeShape>
+                                    <Border.GestureRecognizers>
+                                        <TapGestureRecognizer Command="{Binding BindingContext.ToggleFilterTagCommand, Source={RelativeSource AncestorType={x:Type local:FilterOptionsSheet}}}" CommandParameter="{Binding .}" />
+                                    </Border.GestureRecognizers>
+                                    <HorizontalStackLayout Spacing="6" VerticalOptions="Center">
+                                        <Image Source="check_icon.png" WidthRequest="14" HeightRequest="14" IsVisible="{Binding IsIncluded}" VerticalOptions="Center">
+                                            <Image.Behaviors>
+                                                <toolkit:IconTintColorBehavior TintColor="{Binding TextColor}" />
+                                            </Image.Behaviors>
+                                        </Image>
+                                        <Image Source="x_icon.png" WidthRequest="14" HeightRequest="14" IsVisible="{Binding IsExcluded}" VerticalOptions="Center">
+                                            <Image.Behaviors>
+                                                <toolkit:IconTintColorBehavior TintColor="{Binding TextColor}" />
+                                            </Image.Behaviors>
+                                        </Image>
+                                        <Label Text="{Binding Name}" TextColor="{Binding TextColor}" FontSize="14" FontAttributes="Bold" VerticalOptions="Center" VerticalTextAlignment="Center"/>
+                                    </HorizontalStackLayout>
+                                </Border>
+                            </DataTemplate>
+                        </BindableLayout.ItemTemplate>
+                        <BindableLayout.EmptyViewTemplate>
+                            <DataTemplate>
+                                <Label Text="No tags found in this playlist." TextColor="{DynamicResource MutedColor}" HorizontalOptions="Center" Margin="0,16,0,0" />
+                            </DataTemplate>
+                        </BindableLayout.EmptyViewTemplate>
+                    </FlexLayout>
+                </ScrollView>
+            </VerticalStackLayout>
+        </local:BottomSheetContainer.Body>
+    </local:BottomSheetContainer>
+</ContentView>

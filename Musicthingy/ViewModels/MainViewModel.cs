@@ -5,6 +5,14 @@ using Musicthingy.Models;
 using Musicthingy.Services;
 using System.Collections.ObjectModel;
 using System.Collections.Specialized;
+using Musicthingy.ViewModels;
+using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
+using System.Collections.Generic;
+using Microsoft.Maui;
+using Microsoft.Maui.Controls;
+using System;
 
 namespace Musicthingy.ViewModels;
 
@@ -30,6 +38,105 @@ public partial class MainViewModel : ObservableObject, IDisposable
     [ObservableProperty] public partial Playlist? SelectedPlaylist { get; set; }
 
     [ObservableProperty] public partial ObservableCollection<PlaylistItem> DisplayedItems { get; set; } = new();
+
+    // ==========================================
+    // TAG FILTERING LOGIC
+    // ==========================================
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsFilterActive))]
+    [NotifyPropertyChangedFor(nameof(FilterIconColor))]
+    public partial ObservableCollection<FilterTag> CurrentFilterTags { get; set; } = new();
+
+    public bool IsFilterActive => CurrentFilterTags.Any(t => t.State != FilterState.Neutral);
+    public Microsoft.Maui.Graphics.Color FilterIconColor => IsFilterActive ? ThemeResources.Color("AccentColor") : ThemeResources.Color("MutedColor");
+
+    [RelayCommand]
+    private async Task OpenFilterSheet()
+    {
+        var sheet = new Views.FilterOptionsSheet(this);
+        if (Services.SheetManager.Host != null)
+        {
+            await Services.SheetManager.Host.ShowAsync(sheet);
+        }
+    }
+
+    [RelayCommand]
+    private void ToggleFilterTag(FilterTag tag)
+    {
+        tag.State = tag.State switch
+        {
+            FilterState.Neutral => FilterState.Included,
+            FilterState.Included => FilterState.Excluded,
+            FilterState.Excluded => FilterState.Neutral,
+            _ => FilterState.Neutral
+        };
+
+        OnPropertyChanged(nameof(IsFilterActive));
+        OnPropertyChanged(nameof(FilterIconColor));
+        RefreshDisplayedItems();
+    }
+
+    [RelayCommand]
+    private void ClearFilter()
+    {
+        foreach (FilterTag tag in CurrentFilterTags)
+        {
+            tag.State = FilterState.Neutral;
+        }
+        OnPropertyChanged(nameof(IsFilterActive));
+        OnPropertyChanged(nameof(FilterIconColor));
+        RefreshDisplayedItems();
+    }
+
+    public void UpdateFilterTags()
+    {
+        if (SelectedPlaylist == null) return;
+
+        HashSet<string> allTagsInPlaylist = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        if (SelectedPlaylist.Tags != null)
+        {
+            foreach (string t in SelectedPlaylist.Tags) allTagsInPlaylist.Add(t);
+        }
+        foreach (PlaylistItem item in SelectedPlaylist.Items)
+        {
+            if (item.Tags != null)
+            {
+                foreach (string t in item.Tags) allTagsInPlaylist.Add(t);
+            }
+        }
+
+        HashSet<string> currentTagNames = new HashSet<string>(CurrentFilterTags.Select(t => t.Name), StringComparer.OrdinalIgnoreCase);
+
+        bool changed = false;
+        foreach (string tag in allTagsInPlaylist)
+        {
+            if (!currentTagNames.Contains(tag))
+            {
+                CurrentFilterTags.Add(new FilterTag { Name = tag, State = FilterState.Neutral });
+                changed = true;
+            }
+        }
+
+        for (int i = CurrentFilterTags.Count - 1; i >= 0; i--)
+        {
+            if (!allTagsInPlaylist.Contains(CurrentFilterTags[i].Name))
+            {
+                CurrentFilterTags.RemoveAt(i);
+                changed = true;
+            }
+        }
+
+        if (changed)
+        {
+            List<FilterTag> sorted = CurrentFilterTags.OrderBy(t => t.Name).ToList();
+            CurrentFilterTags.Clear();
+            foreach (FilterTag t in sorted) CurrentFilterTags.Add(t);
+
+            OnPropertyChanged(nameof(IsFilterActive));
+            OnPropertyChanged(nameof(FilterIconColor));
+        }
+    }
 
     // ==========================================
     // UNIVERSAL SORTING LOGIC & UI HELPERS
@@ -194,6 +301,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
 
     private void SelectedPlaylistItems_CollectionChanged(object? sender, NotifyCollectionChangedEventArgs e)
     {
+        UpdateFilterTags();
         RefreshDisplayedItems();
     }
 
@@ -206,6 +314,26 @@ public partial class MainViewModel : ObservableObject, IDisposable
         }
 
         IEnumerable<PlaylistItem> query = SelectedPlaylist.Items;
+        // Apply tag filtering
+        List<string> includedTags = CurrentFilterTags.Where(t => t.State == FilterState.Included).Select(t => t.Name).ToList();
+        List<string> excludedTags = CurrentFilterTags.Where(t => t.State == FilterState.Excluded).Select(t => t.Name).ToList();
+
+        if (includedTags.Count > 0 || excludedTags.Count > 0)
+        {
+            query = query.Where(item => 
+            {
+                List<string> itemTags = (SelectedPlaylist.Tags ?? Enumerable.Empty<string>())
+                    .Concat(item.Tags ?? new ObservableCollection<string>())
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .ToList();
+
+                bool hasAllIncluded = includedTags.All(inc => itemTags.Contains(inc, StringComparer.OrdinalIgnoreCase));
+                bool hasAnyExcluded = excludedTags.Any(exc => itemTags.Contains(exc, StringComparer.OrdinalIgnoreCase));
+
+                return hasAllIncluded && !hasAnyExcluded;
+            });
+        }
+
 
         // Apply universal sorting
         if (CurrentSortField != SortField.Custom)
@@ -213,29 +341,47 @@ public partial class MainViewModel : ObservableObject, IDisposable
             switch (CurrentSortField)
             {
                 case SortField.Title:
-                    query = IsSortAscending 
-                        ? query.OrderBy(x => x.Title) 
+                    query = IsSortAscending
+                        ? query.OrderBy(x => x.Title)
                         : query.OrderByDescending(x => x.Title);
                     break;
                 case SortField.Duration:
-                    query = IsSortAscending 
-                        ? query.OrderBy(x => x.Duration) 
+                    query = IsSortAscending
+                        ? query.OrderBy(x => x.Duration)
                         : query.OrderByDescending(x => x.Duration);
                     break;
                 case SortField.LastPlayed:
-                    // By defaulting nulls to DateTime.MinValue (infinitely old):
-                    // Descending puts Most Recent at the top, and Never Played at the very bottom.
-                    // Ascending puts Never Played at the top, and Most Recent at the very bottom.
-                    query = IsSortAscending 
-                        ? query.OrderBy(x => x.LastPlayedAt ?? DateTime.MinValue) 
+                    query = IsSortAscending
+                        ? query.OrderBy(x => x.LastPlayedAt ?? DateTime.MinValue)
                         : query.OrderByDescending(x => x.LastPlayedAt ?? DateTime.MinValue);
                     break;
             }
         }
 
+        var newItems = query.ToList();
+
         MainThread.BeginInvokeOnMainThread(() =>
         {
-            DisplayedItems = new ObservableCollection<PlaylistItem>(query);
+            // If the item count has changed (e.g., switching playlists or adding/removing a track),
+            // a full reset is necessary.
+            if (DisplayedItems.Count != newItems.Count)
+            {
+                DisplayedItems = new ObservableCollection<PlaylistItem>(newItems);
+            }
+            else
+            {
+                // By replacing the items in-place, the collection never fires a full "Reset",
+                // meaning the VirtualizeListView never collapses to 0 height. 
+                // This keeps your current scroll viewport perfectly still!
+                for (int i = 0; i < newItems.Count; i++)
+                {
+                    // Only trigger UI updates for items that actually swapped places
+                    if (DisplayedItems[i] != newItems[i])
+                    {
+                        DisplayedItems[i] = newItems[i];
+                    }
+                }
+            }
         });
     }
 }

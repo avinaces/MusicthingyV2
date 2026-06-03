@@ -51,7 +51,20 @@
                     </HorizontalStackLayout>
 
                     <HorizontalStackLayout Grid.Column="1" Spacing="8" VerticalOptions="Center" HorizontalOptions="End">
-                        <!-- Drop future buttons here -->
+                        <!-- FILTER CONTROLS -->
+                        <Border BackgroundColor="Transparent" Stroke="Transparent" Padding="8,6" VerticalOptions="Center">
+                            <Border.GestureRecognizers>
+                                <TapGestureRecognizer Command="{Binding OpenFilterSheetCommand}" />
+                            </Border.GestureRecognizers>
+                            <HorizontalStackLayout Spacing="6" VerticalOptions="Center">
+                                <Image Source="filter_icon.png" WidthRequest="16" HeightRequest="16" VerticalOptions="Center">
+                                    <Image.Behaviors>
+                                        <toolkit:IconTintColorBehavior TintColor="{Binding FilterIconColor}" />
+                                    </Image.Behaviors>
+                                </Image>
+                                <Label Text="Filter" TextColor="{Binding FilterIconColor}" FontSize="13" FontAttributes="Bold" VerticalOptions="Center" />
+                            </HorizontalStackLayout>
+                        </Border>
                     </HorizontalStackLayout>
                 </Grid>
             </Grid>

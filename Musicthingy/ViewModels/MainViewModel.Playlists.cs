@@ -219,6 +219,8 @@ public partial class MainViewModel
 
         if (result)
         {
+            UpdateFilterTags();
+            RefreshDisplayedItems();
             RequestSaveLibrary();
         }
     }
@@ -236,6 +238,8 @@ public partial class MainViewModel
 
         if (result)
         {
+            UpdateFilterTags();
+            RefreshDisplayedItems();
             RequestSaveLibrary();
         }
     }
