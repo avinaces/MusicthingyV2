@@ -23,6 +23,9 @@ public partial class MobileMainPage : ContentPage
     // Dynamic width lookup handling full-screen bounds safely
     private double SidebarWidth => this.Width > 0 ? this.Width : 360;
 
+    // Tracks the height of the playlist header for sticky toolbar logic
+    private double _playlistHeaderHeight = 0;
+
     public MobileMainPage(MainViewModel viewModel)
     {
         InitializeComponent();
@@ -55,7 +58,6 @@ public partial class MobileMainPage : ContentPage
     protected override void OnSizeAllocated(double width, double height)
     {
         base.OnSizeAllocated(width, height);
-        // Safely snap layout out-of-bounds on init and rotation
         if (!_isSidebarOpen && width > 0)
         {
             SidebarGrid.TranslationX = -width;
@@ -80,9 +82,30 @@ public partial class MobileMainPage : ContentPage
         });
     }
 
+    // --- Sticky Toolbar Calculations ---
+
+    private void OnPlaylistInfoSizeChanged(object? sender, EventArgs e)
+    {
+        if (sender is View view && view.Height > 0)
+        {
+            _playlistHeaderHeight = view.Height;
+            UpdateStickyToolbar();
+        }
+    }
+
+    private void UpdateStickyToolbar()
+    {
+        if (_playlistHeaderHeight > 0)
+        {
+            // If the scroll position goes past the bottom of the playlist info, 
+            // the inline toolbar hits the top of the screen. We hide the inline one 
+            // by scrolling past it naturally, and make the Sticky one visible to take its place!
+            StickyToolbar.IsVisible = _lastScrollY >= _playlistHeaderHeight;
+        }
+    }
+
     // --- Custom Sidebar Interaction Logic ---
 
-    // Combine pan gestures for drag-to-open and drag-to-close behavior
     private void OnEdgePanUpdated(object? sender, PanUpdatedEventArgs e) => HandleSidebarPan(e);
     private void OnSidebarPanUpdated(object? sender, PanUpdatedEventArgs e) => HandleSidebarPan(e);
 
@@ -96,7 +119,6 @@ public partial class MobileMainPage : ContentPage
                 EdgeSwipeZone.IsVisible = false;
                 _panStartX = SidebarGrid.TranslationX;
 
-                // Sanity check just in case translation somehow got stuck outside bounds
                 if (_panStartX < -SidebarWidth) _panStartX = -SidebarWidth;
 
                 _sidebarVelocityTracker.Start();
@@ -112,8 +134,6 @@ public partial class MobileMainPage : ContentPage
                 if (newTx < -SidebarWidth) newTx = -SidebarWidth;
 
                 SidebarGrid.TranslationX = newTx;
-
-                // Interpolate opacity so background gets darker as it pulls in
                 SidebarDarken.Opacity = (newTx + SidebarWidth) / SidebarWidth;
                 break;
 
@@ -126,11 +146,11 @@ public partial class MobileMainPage : ContentPage
 
                 bool shouldOpen = false;
                 if (velX > 1.0 && movedX > 40)
-                    shouldOpen = true;  // Fast swipe right
+                    shouldOpen = true;
                 else if (velX < -1.0 && movedX < -40)
-                    shouldOpen = false; // Fast swipe left
+                    shouldOpen = false;
                 else
-                    shouldOpen = SidebarGrid.TranslationX > -(SidebarWidth * 0.5); // Fallback to halfway rule
+                    shouldOpen = SidebarGrid.TranslationX > -(SidebarWidth * 0.5);
 
                 if (shouldOpen)
                     _ = OpenSidebarInternalAsync(velX);
@@ -166,7 +186,6 @@ public partial class MobileMainPage : ContentPage
         double distance = Math.Abs(-SidebarWidth - SidebarGrid.TranslationX);
         if (velocityX < -0.1) duration = (uint)Math.Clamp(distance / Math.Abs(velocityX), 100, 350);
 
-        // Changed to CubicOut to preserve the drag momentum
         _ = SidebarDarken.FadeToAsync(0, duration, Easing.CubicOut);
         await SidebarGrid.TranslateToAsync(-SidebarWidth, 0, duration, Easing.CubicOut);
 
@@ -216,6 +235,7 @@ public partial class MobileMainPage : ContentPage
         {
             _lastScrollY = e.ScrollY;
             ResetScrollDetection();
+            UpdateStickyToolbar();
             return;
         }
 
@@ -228,6 +248,7 @@ public partial class MobileMainPage : ContentPage
         }
 
         _lastScrollY = e.ScrollY;
+        UpdateStickyToolbar();
     }
 
     private async void OnTrackOptionsClicked(object? sender, EventArgs e)
@@ -333,4 +354,18 @@ public partial class MobileMainPage : ContentPage
             }
         }
     }
+
+    private async void OnSortOptionsClicked(object? sender, EventArgs e)
+    {
+        if (BindingContext is ViewModels.MainViewModel vm)
+        {
+            var sortSheet = new SortOptionsSheet(vm);
+
+            if (Services.SheetManager.Host != null)
+            {
+                await Services.SheetManager.Host.ShowAsync(sortSheet);
+            }
+        }
+    }
+
 }

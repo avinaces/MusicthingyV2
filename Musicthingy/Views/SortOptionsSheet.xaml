@@ -1,0 +1,102 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentView xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             xmlns:local="clr-namespace:Musicthingy.Views"
+             xmlns:toolkit="http://schemas.microsoft.com/dotnet/2022/maui/toolkit"
+             x:Class="Musicthingy.Views.SortOptionsSheet"
+             BackgroundColor="Transparent">
+
+    <local:BottomSheetContainer Title="Sort By" CloseRequested="OnCloseRequested">
+        <local:BottomSheetContainer.Body>
+
+            <VerticalStackLayout Spacing="16" Padding="0,0,0,8">
+                <Border BackgroundColor="{DynamicResource BorderColor}" Stroke="{DynamicResource BorderColor}" StrokeThickness="1" StrokeShape="RoundRectangle 16">
+                    <VerticalStackLayout Spacing="1" BackgroundColor="{DynamicResource BorderColor}">
+
+                        <!-- 1. Custom Order Row -->
+                        <Grid HeightRequest="56">
+                            <Button BackgroundColor="{DynamicResource CardColor}" CornerRadius="0" Clicked="OnSortFieldClicked" CommandParameter="Custom" Margin="0" Padding="0" />
+
+                            <HorizontalStackLayout InputTransparent="True" Padding="16,0" Spacing="16" VerticalOptions="Center">
+                                <Image Source="list_icon.png" WidthRequest="20" HeightRequest="20">
+                                    <Image.Behaviors>
+                                        <toolkit:IconTintColorBehavior TintColor="{DynamicResource MutedColor}" />
+                                    </Image.Behaviors>
+                                </Image>
+                                <Label Text="Custom Order" TextColor="{DynamicResource TextColor}" FontSize="16" VerticalOptions="Center" />
+                            </HorizontalStackLayout>
+
+                            <Image Source="check_icon.png" HorizontalOptions="End" WidthRequest="20" HeightRequest="20" Margin="0,0,16,0" IsVisible="{Binding IsSortCustom}" InputTransparent="True">
+                                <Image.Behaviors>
+                                    <toolkit:IconTintColorBehavior TintColor="{DynamicResource AccentColor}" />
+                                </Image.Behaviors>
+                            </Image>
+                        </Grid>
+
+                        <!-- 2. Title Row -->
+                        <Grid HeightRequest="56">
+                            <Button BackgroundColor="{DynamicResource CardColor}" CornerRadius="0" Clicked="OnSortFieldClicked" CommandParameter="Title" Margin="0" Padding="0" />
+
+                            <HorizontalStackLayout InputTransparent="True" Padding="16,0" Spacing="16" VerticalOptions="Center">
+                                <Image Source="type_icon.png" WidthRequest="20" HeightRequest="20">
+                                    <Image.Behaviors>
+                                        <toolkit:IconTintColorBehavior TintColor="{DynamicResource MutedColor}" />
+                                    </Image.Behaviors>
+                                </Image>
+                                <Label Text="Title" TextColor="{DynamicResource TextColor}" FontSize="16" VerticalOptions="Center" />
+                            </HorizontalStackLayout>
+
+                            <Image Source="check_icon.png" HorizontalOptions="End" WidthRequest="20" HeightRequest="20" Margin="0,0,16,0" IsVisible="{Binding IsSortTitle}" InputTransparent="True">
+                                <Image.Behaviors>
+                                    <toolkit:IconTintColorBehavior TintColor="{DynamicResource AccentColor}" />
+                                </Image.Behaviors>
+                            </Image>
+                        </Grid>
+
+                        <!-- 3. Duration Row -->
+                        <Grid HeightRequest="56">
+                            <Button BackgroundColor="{DynamicResource CardColor}" CornerRadius="0" Clicked="OnSortFieldClicked" CommandParameter="Duration" Margin="0" Padding="0" />
+
+                            <HorizontalStackLayout InputTransparent="True" Padding="16,0" Spacing="16" VerticalOptions="Center">
+                                <Image Source="clock_icon.png" WidthRequest="20" HeightRequest="20">
+                                    <Image.Behaviors>
+                                        <toolkit:IconTintColorBehavior TintColor="{DynamicResource MutedColor}" />
+                                    </Image.Behaviors>
+                                </Image>
+                                <Label Text="Duration" TextColor="{DynamicResource TextColor}" FontSize="16" VerticalOptions="Center" />
+                            </HorizontalStackLayout>
+
+                            <Image Source="check_icon.png" HorizontalOptions="End" WidthRequest="20" HeightRequest="20" Margin="0,0,16,0" IsVisible="{Binding IsSortDuration}" InputTransparent="True">
+                                <Image.Behaviors>
+                                    <toolkit:IconTintColorBehavior TintColor="{DynamicResource AccentColor}" />
+                                </Image.Behaviors>
+                            </Image>
+                        </Grid>
+
+                        <!-- 4. Last Played Row -->
+                        <Grid HeightRequest="56">
+                            <Button BackgroundColor="{DynamicResource CardColor}" CornerRadius="0" Clicked="OnSortFieldClicked" CommandParameter="LastPlayed" Margin="0" Padding="0" />
+
+                            <HorizontalStackLayout InputTransparent="True" Padding="16,0" Spacing="16" VerticalOptions="Center">
+                                <Image Source="history_icon.png" WidthRequest="20" HeightRequest="20">
+                                    <Image.Behaviors>
+                                        <toolkit:IconTintColorBehavior TintColor="{DynamicResource MutedColor}" />
+                                    </Image.Behaviors>
+                                </Image>
+                                <Label Text="Last Played" TextColor="{DynamicResource TextColor}" FontSize="16" VerticalOptions="Center" />
+                            </HorizontalStackLayout>
+
+                            <Image Source="check_icon.png" HorizontalOptions="End" WidthRequest="20" HeightRequest="20" Margin="0,0,16,0" IsVisible="{Binding IsSortLastPlayed}" InputTransparent="True">
+                                <Image.Behaviors>
+                                    <toolkit:IconTintColorBehavior TintColor="{DynamicResource AccentColor}" />
+                                </Image.Behaviors>
+                            </Image>
+                        </Grid>
+
+                    </VerticalStackLayout>
+                </Border>
+            </VerticalStackLayout>
+
+        </local:BottomSheetContainer.Body>
+    </local:BottomSheetContainer>
+</ContentView>

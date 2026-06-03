@@ -300,8 +300,8 @@ public partial class MainViewModel
         else
         {
             // 2. Fallback for Windows or older Android: Use saved preferences
-            string savedHex = Preferences.Get("AppThemeSeedColor", "#6EA0D6");
-            seedColor = Color.FromArgb(savedHex);
+            string savedHex = Preferences.Get("AppThemeSeedColor", "#005dff");
+            seedColor = Color.FromArgb("#005dff");
         }
 
         // Apply it using your existing perfectly-tuned OKLCH logic!
