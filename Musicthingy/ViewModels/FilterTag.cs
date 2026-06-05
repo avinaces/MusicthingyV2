@@ -38,6 +38,7 @@ public partial class FilterTag : ObservableObject
 
     public bool IsIncluded => State == FilterState.Included;
     public bool IsExcluded => State == FilterState.Excluded;
+    public bool IsNeutral => State == FilterState.Neutral;
 
     partial void OnStateChanged(FilterState value)
     {
@@ -46,5 +47,6 @@ public partial class FilterTag : ObservableObject
         OnPropertyChanged(nameof(TextColor));
         OnPropertyChanged(nameof(IsIncluded));
         OnPropertyChanged(nameof(IsExcluded));
+        OnPropertyChanged(nameof(IsNeutral));
     }
 }

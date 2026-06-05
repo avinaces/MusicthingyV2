@@ -183,21 +183,21 @@ public partial class PlaylistItem : ObservableObject
                     isFileFallback = true;
                 }
 
-                // CRITICAL FIX: ImageSource is a BindableObject. Creating it on a background 
-                // thread creates orphaned JNI references that crash the app. Pass it to the UI Thread!
                 MainThread.BeginInvokeOnMainThread(async () =>
                 {
                     try
                     {
+                        const int iconUiSize = 44; // TODO: make this dynamic based on actual UI size
+                        const int generatedIconLogicalSize = 8;
                         ImageSource? source = null;
 
                         if (isGenerator)
                         {
-                            source = IconGenerator.GenerateIcon(Title, 8, 36);
+                            source = IconGenerator.GenerateIcon(Title, generatedIconLogicalSize, iconUiSize);
                         }
                         else if (imageBytes != null)
                         {
-                            source = await ImageScalingService.ScaleIfSmallAsync(imageBytes, 36)
+                            source = await ImageScalingService.ScaleIfSmallAsync(imageBytes, iconUiSize)
                                      ?? ImageSource.FromStream(() => new MemoryStream(imageBytes));
                         }
                         else if (isFileFallback)

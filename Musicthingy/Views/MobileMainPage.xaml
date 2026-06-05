@@ -14,57 +14,71 @@
     <ContentPage.Resources>
         <ControlTemplate x:Key="SharedToolbarTemplate">
             <Grid BackgroundColor="{DynamicResource BgColor}">
-                <Grid Margin="12,0" ColumnDefinitions="Auto, *">
+                <Grid Margin="16,0" ColumnDefinitions="Auto, *">
 
                     <!-- SORTING CONTROLS -->
                     <HorizontalStackLayout Grid.Column="0" Spacing="0" VerticalOptions="Center">
 
-                        <!-- 1. Sort Direction Arrow (Hidden when using Custom sort) -->
+                        <!-- 1. Sort Direction Arrow -->
                         <ImageButton Source="{Binding SortDirectionIcon}" 
                                      Command="{Binding ToggleSortDirectionCommand}" 
                                      IsVisible="{Binding IsDirectionToggleVisible}"
-                                     WidthRequest="44" HeightRequest="44" 
+                                     WidthRequest="48" HeightRequest="48" 
                                      Padding="12"
-                                     CornerRadius="22"
+                                     CornerRadius="24"
                                      BackgroundColor="Transparent"
                                      VerticalOptions="Center">
                             <ImageButton.Behaviors>
-                                <toolkit:IconTintColorBehavior TintColor="{DynamicResource TextColor}" />
+                                <toolkit:IconTintColorBehavior TintColor="{Binding BindingContext.TextColor, Source={x:Reference RootPage}}" />
                             </ImageButton.Behaviors>
                         </ImageButton>
 
                         <!-- 2. Sort Field Picker Button -->
-                        <Border BackgroundColor="Transparent" Stroke="Transparent" Padding="8,6" VerticalOptions="Center">
+                        <Border BackgroundColor="Transparent" Stroke="Transparent" Padding="0,8" VerticalOptions="Center">
                             <Border.GestureRecognizers>
                                 <TapGestureRecognizer Tapped="OnSortOptionsClicked" />
                             </Border.GestureRecognizers>
-                            <HorizontalStackLayout Spacing="6" VerticalOptions="Center">
-                                <Image Source="list_icon.png" WidthRequest="16" HeightRequest="16" VerticalOptions="Center" IsVisible="{Binding IsSortCustom}">
+                            <HorizontalStackLayout Spacing="8" VerticalOptions="Center">
+                                <Image Source="list_icon.png" WidthRequest="24" HeightRequest="24" VerticalOptions="Center" IsVisible="{Binding IsSortCustom}">
                                     <Image.Behaviors>
-                                        <toolkit:IconTintColorBehavior TintColor="{DynamicResource MutedColor}" />
+                                        <toolkit:IconTintColorBehavior TintColor="{DynamicResource TextColor}" />
                                     </Image.Behaviors>
                                 </Image>
-                                <Label Text="{Binding CurrentSortModeText}" TextColor="{DynamicResource MutedColor}" FontSize="13" FontAttributes="Bold" VerticalOptions="Center" />
+                                <Label Text="{Binding CurrentSortModeText}" TextColor="{DynamicResource TextColor}" FontSize="15" FontAttributes="Bold" VerticalOptions="Center" />
                             </HorizontalStackLayout>
                         </Border>
 
                     </HorizontalStackLayout>
 
-                    <HorizontalStackLayout Grid.Column="1" Spacing="8" VerticalOptions="Center" HorizontalOptions="End">
+                    <HorizontalStackLayout Grid.Column="1" Spacing="0" VerticalOptions="Center" HorizontalOptions="End">
+
                         <!-- FILTER CONTROLS -->
-                        <Border BackgroundColor="Transparent" Stroke="Transparent" Padding="8,6" VerticalOptions="Center">
-                            <Border.GestureRecognizers>
-                                <TapGestureRecognizer Command="{Binding OpenFilterSheetCommand}" />
-                            </Border.GestureRecognizers>
-                            <HorizontalStackLayout Spacing="6" VerticalOptions="Center">
-                                <Image Source="filter_icon.png" WidthRequest="16" HeightRequest="16" VerticalOptions="Center">
-                                    <Image.Behaviors>
-                                        <toolkit:IconTintColorBehavior TintColor="{Binding FilterIconColor}" />
-                                    </Image.Behaviors>
-                                </Image>
-                                <Label Text="Filter" TextColor="{Binding FilterIconColor}" FontSize="13" FontAttributes="Bold" VerticalOptions="Center" />
-                            </HorizontalStackLayout>
-                        </Border>
+                        <HorizontalStackLayout Spacing="0" VerticalOptions="Center">
+
+                            <!-- The Text: ALWAYS opens the sheet, so you can still edit active filters -->
+                            <ContentView Padding="0,8" VerticalOptions="Center">
+                                <ContentView.GestureRecognizers>
+                                    <TapGestureRecognizer Command="{Binding OpenFilterSheetCommand}" />
+                                </ContentView.GestureRecognizers>
+                                <Label Text="Filter" TextColor="{Binding FilterIconColor}" FontSize="15" FontAttributes="Bold" VerticalOptions="Center" />
+                            </ContentView>
+
+                            <!-- The Icon: Clears filter when active, opens sheet when inactive -->
+                            <ImageButton Source="{Binding FilterToolbarIcon}" 
+                                         Command="{Binding ToolbarFilterIconActionCommand}"
+                                         WidthRequest="48" HeightRequest="48"
+                                         Padding="12"
+                                         CornerRadius="24"
+                                         BackgroundColor="Transparent"
+                                         VerticalOptions="Center">
+                                <ImageButton.Behaviors>
+                                    <!-- Explicitly route the BindingContext using the RootPage reference -->
+                                    <toolkit:IconTintColorBehavior TintColor="{Binding BindingContext.FilterIconColor, Source={x:Reference RootPage}}" />
+                                </ImageButton.Behaviors>
+                            </ImageButton>
+
+                        </HorizontalStackLayout>
+
                     </HorizontalStackLayout>
                 </Grid>
             </Grid>
@@ -127,7 +141,7 @@
                                         </Grid>
                                     </VerticalStackLayout>
 
-                                    <!-- NATIVE INLINE TOOLBAR -->
+                                    <!-- NATIVE INLINE TOOLBAR (Changed HeightRequest to 48) -->
                                     <Grid HeightRequest="48">
                                         <BoxView HeightRequest="1" Color="{DynamicResource BorderColor}" VerticalOptions="Start" ZIndex="1" />
                                         <ContentView ControlTemplate="{StaticResource SharedToolbarTemplate}" />
@@ -149,15 +163,16 @@
                                                 </DataTrigger>
                                             </Border.Triggers>
 
-                                            <Grid ColumnDefinitions="Auto, *, Auto" ColumnSpacing="10" Padding="10" BackgroundColor="Transparent">
+                                            
+                                            <Grid ColumnDefinitions="Auto, *, Auto" ColumnSpacing="12" Padding="7" BackgroundColor="Transparent">
                                                 <Grid.GestureRecognizers>
                                                     <TapGestureRecognizer Tapped="OnTrackTapped" />
                                                 </Grid.GestureRecognizers>
 
-                                                <Grid Grid.Column="0" WidthRequest="36" HeightRequest="36" VerticalOptions="Center">
+                                                <Grid Grid.Column="0" WidthRequest="44" HeightRequest="44" VerticalOptions="Center">
                                                     <Image Source="{Binding ItemIconSource}" Aspect="AspectFill">
                                                         <Image.Clip>
-                                                            <RoundRectangleGeometry CornerRadius="6" Rect="0,0,36,36" />
+                                                            <RoundRectangleGeometry CornerRadius="7" Rect="0,0,44,44" />
                                                         </Image.Clip>
                                                     </Image>
                                                 </Grid>
@@ -194,7 +209,7 @@
                                                     </Grid>
                                                 </VerticalStackLayout>
 
-                                                <ImageButton Grid.Column="2" Source="ellipsis_vertical_icon.png" Clicked="OnTrackOptionsClicked" VerticalOptions="Center" HorizontalOptions="End" WidthRequest="40" HeightRequest="48" Padding="10,14" BackgroundColor="Transparent" CornerRadius="20" />
+                                                <ImageButton Grid.Column="2" Source="ellipsis_vertical_icon.png" Clicked="OnTrackOptionsClicked" VerticalOptions="Center" HorizontalOptions="End" WidthRequest="44" HeightRequest="44" Padding="12" BackgroundColor="Transparent" CornerRadius="22" />
                                             </Grid>
                                         </Border>
                                     </Grid>
@@ -203,7 +218,7 @@
                         </mpowerkit:VirtualizeListView.ItemTemplate>
                     </mpowerkit:VirtualizeListView>
 
-                    <!-- STICKY TOOLBAR -->
+                    <!-- STICKY TOOLBAR (Changed HeightRequest to 48) -->
                     <Grid x:Name="StickyToolbar" VerticalOptions="Start" HeightRequest="48" IsVisible="False" ZIndex="5">
                         <ContentView ControlTemplate="{StaticResource SharedToolbarTemplate}" />
                         <BoxView HeightRequest="1" Color="{DynamicResource BorderColor}" VerticalOptions="End" />

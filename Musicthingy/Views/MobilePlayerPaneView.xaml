@@ -180,7 +180,7 @@
 
                     <Border x:Name="TrackImageBorder" Grid.Column="0" WidthRequest="44" HeightRequest="44" StrokeThickness="0" VerticalOptions="Center">
                         <Border.StrokeShape>
-                            <RoundRectangle CornerRadius="8" />
+                            <RoundRectangle CornerRadius="7" />
                         </Border.StrokeShape>
                         <Image Source="{Binding CurrentTrack.ItemIconSource}" Aspect="AspectFill" />
                     </Border>

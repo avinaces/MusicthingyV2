@@ -13,12 +13,12 @@
 
 				<!-- 1. Header Card (Image, Title, Subtitle) -->
 				<Border BackgroundColor="{DynamicResource CardColor}" Stroke="{DynamicResource BorderColor}" StrokeThickness="1" StrokeShape="RoundRectangle 16" 
-						Padding="16" IsVisible="{Binding HasHeader, Source={x:Reference Root}}">
+						Padding="12" IsVisible="{Binding HasHeader, Source={x:Reference Root}}">
 					<Grid ColumnDefinitions="Auto, *" ColumnSpacing="16">
 						<Image Grid.Column="0" Source="{Binding HeaderImageSource, Source={x:Reference Root}}" 
-							   WidthRequest="48" HeightRequest="48" Aspect="AspectFill" VerticalOptions="Center">
+							   WidthRequest="56" HeightRequest="56" Aspect="AspectFill" VerticalOptions="Center">
 							<Image.Clip>
-								<RoundRectangleGeometry CornerRadius="8" Rect="0,0,48,48" />
+								<RoundRectangleGeometry CornerRadius="8" Rect="0,0,56,56" />
 							</Image.Clip>
 						</Image>
 
@@ -41,10 +41,8 @@
 
                                     <HorizontalStackLayout InputTransparent="True" Spacing="16" Padding="16,0" VerticalOptions="Center">
 
-                                        <!-- 1. Give the image a name (e.g. x:Name="MenuIcon") -->
                                         <Image x:Name="MenuIcon" Source="{Binding IconSource}" WidthRequest="20" HeightRequest="20" VerticalOptions="Center">
                                             <Image.Behaviors>
-                                                <!-- 2. Force the binding to route through the Image's BindingContext -->
                                                 <toolkit:IconTintColorBehavior TintColor="{Binding BindingContext.TextColor, Source={x:Reference MenuIcon}}" />
                                             </Image.Behaviors>
                                         </Image>
