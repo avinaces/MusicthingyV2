@@ -1,11 +1,12 @@
 ﻿using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using CommunityToolkit.Mvvm.Messaging;
+using Microsoft.Maui.Graphics;
+using Musicthingy.Helpers;
 using Musicthingy.Models;
 using Musicthingy.Services;
 using System.Collections.ObjectModel;
 using System.Collections.Specialized;
-using Microsoft.Maui.Graphics;
 
 namespace Musicthingy.ViewModels;
 
@@ -349,8 +350,8 @@ public partial class MainViewModel : ObservableObject, IDisposable
         }
 
         // Snapshot current items to avoid collection modified exceptions on Playlist.Items
-        var sourceItems = currentPlaylist.Items.ToList(); 
-        var playlistTagsSnapshot = currentPlaylist.Tags?.ToList() ?? new List<string>();
+        List<PlaylistItem> sourceItems = currentPlaylist.Items.ToList();
+        List<string> playlistTagsSnapshot = currentPlaylist.Tags?.ToList() ?? new List<string>();
 
         // Push ALL filtering logic to the MainThread. This guarantees CurrentFilterTags 
         // won't be modified by a playlist switch at the exact moment we are iterating it.
@@ -364,9 +365,9 @@ public partial class MainViewModel : ObservableObject, IDisposable
 
             if (includedTags.Count > 0 || excludedTags.Count > 0)
             {
-                query = query.Where(item => 
+                query = query.Where(item =>
                 {
-                    var itemTags = new HashSet<string>(playlistTagsSnapshot, StringComparer.OrdinalIgnoreCase);
+                    HashSet<string> itemTags = new HashSet<string>(playlistTagsSnapshot, StringComparer.OrdinalIgnoreCase);
                     if (item.Tags != null)
                     {
                         foreach (string t in item.Tags) itemTags.Add(t);
@@ -386,8 +387,8 @@ public partial class MainViewModel : ObservableObject, IDisposable
                 {
                     case SortField.Title:
                         query = IsSortAscending
-                            ? query.OrderBy(x => x.Title)
-                            : query.OrderByDescending(x => x.Title);
+                            ? query.OrderBy(x => x.Title, NaturalTitleComparer.Instance)
+                            : query.OrderByDescending(x => x.Title, NaturalTitleComparer.Instance);
                         break;
                     case SortField.Duration:
                         query = IsSortAscending
@@ -402,7 +403,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
                 }
             }
 
-            var newItems = query.ToList();
+            List<PlaylistItem> newItems = query.ToList();
 
             if (forceReset || DisplayedItems.Count != newItems.Count)
             {
