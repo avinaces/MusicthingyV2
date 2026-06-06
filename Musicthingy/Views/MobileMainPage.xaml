@@ -134,9 +134,34 @@
                                             <Label Text="{Binding SelectedPlaylist.DisplayDuration}" TextColor="{DynamicResource MutedColor}" FontSize="14" />
                                         </HorizontalStackLayout>
 
-                                        <Grid ColumnDefinitions="*, *, 48" ColumnSpacing="8" Margin="8,8,8,0">
-                                            <ImageButton Grid.Column="0" Source="play_icon.png" Command="{Binding PlayPlaylistCommand}" HeightRequest="48" HorizontalOptions="Fill" CornerRadius="24" BackgroundColor="{DynamicResource CardColor}" BorderColor="{DynamicResource BorderColor}" BorderWidth="1" Padding="12" />
-                                            <ImageButton Grid.Column="1" Source="shuffle_icon.png" Command="{Binding ShufflePlaylistCommand}" HeightRequest="48" HorizontalOptions="Fill" CornerRadius="24" BackgroundColor="{DynamicResource CardColor}" BorderColor="{DynamicResource BorderColor}" BorderWidth="1" Padding="12" />
+                                        <Grid ColumnDefinitions="3*, 2*, 48" ColumnSpacing="8" Margin="8,8,8,0">
+
+                                            <!-- PLAY & SHUFFLE UNITED -->
+                                            <!-- The Border naturally clips its inner content to the RoundRectangle shape -->
+                                            <Border Grid.Column="0" Background="{DynamicResource CardColor}" Stroke="{DynamicResource BorderColor}" StrokeThickness="1" StrokeShape="RoundRectangle 24" Padding="0" HeightRequest="48">
+                                                <Grid ColumnDefinitions="*, 1, *">
+                                                    <!-- CornerRadius 0 makes the inner side perfectly flat -->
+                                                    <ImageButton Grid.Column="0" Source="play_icon.png" Command="{Binding PlayPlaylistCommand}" HeightRequest="48" HorizontalOptions="Fill" CornerRadius="0" BackgroundColor="Transparent" Padding="12" />
+
+                                                    <!-- Vertical Separator Line -->
+                                                    <BoxView Grid.Column="1" BackgroundColor="{DynamicResource BorderColor}" WidthRequest="1" Margin="0,12" VerticalOptions="Fill" />
+
+                                                    <!-- CornerRadius 0 makes the inner side perfectly flat -->
+                                                    <ImageButton Grid.Column="2" Source="shuffle_icon.png" Command="{Binding ShufflePlaylistCommand}" HeightRequest="48" HorizontalOptions="Fill" CornerRadius="0" BackgroundColor="Transparent" Padding="12" />
+                                                </Grid>
+                                            </Border>
+
+                                            <!-- ADD ITEM BUTTON -->
+                                            <!-- Hidden BoxView to resolve the DynamicResource inside a DataTemplate -->
+                                            <BoxView x:Name="AddIconColorHelper" Color="{DynamicResource PrimaryButtonText}" IsVisible="False" />
+
+                                            <ImageButton Grid.Column="1" Source="plus_icon.png" Command="{Binding AddNewTrackCommand}" HeightRequest="48" HorizontalOptions="Fill" CornerRadius="24" BackgroundColor="{DynamicResource PrimaryButtonColor}" BorderColor="{DynamicResource PrimaryButtonBorder}" BorderWidth="1" Padding="12">
+                                                <ImageButton.Behaviors>
+                                                    <toolkit:IconTintColorBehavior TintColor="{Binding Color, Source={x:Reference AddIconColorHelper}}" />
+                                                </ImageButton.Behaviors>
+                                            </ImageButton>
+
+                                            <!-- ELLIPSIS -->
                                             <ImageButton Grid.Column="2" Source="ellipsis_vertical_icon.png" BindingContext="{Binding SelectedPlaylist}" Clicked="OnPlaylistOptionsClicked" WidthRequest="48" HeightRequest="48" CornerRadius="24" BackgroundColor="{DynamicResource CardColor}" BorderColor="{DynamicResource BorderColor}" BorderWidth="1" Padding="12" />
                                         </Grid>
                                     </VerticalStackLayout>

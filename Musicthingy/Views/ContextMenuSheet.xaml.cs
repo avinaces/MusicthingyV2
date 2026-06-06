@@ -1,3 +1,4 @@
+using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Microsoft.Maui.Controls;
 using Microsoft.Maui.Graphics;
@@ -27,17 +28,58 @@ public partial class ContextMenuSheet : ContentView, IBottomSheet
     public static readonly BindableProperty HeaderImageSourceProperty = BindableProperty.Create(nameof(HeaderImageSource), typeof(ImageSource), typeof(ContextMenuSheet));
     public ImageSource HeaderImageSource { get => (ImageSource)GetValue(HeaderImageSourceProperty); set => SetValue(HeaderImageSourceProperty, value); }
 
-    // Menu Items
-    public static readonly BindableProperty MenuItemsProperty = BindableProperty.Create(nameof(MenuItems), typeof(IEnumerable<ContextMenuItem>), typeof(ContextMenuSheet));
-    public IEnumerable<ContextMenuItem> MenuItems { get => (IEnumerable<ContextMenuItem>)GetValue(MenuItemsProperty); set => SetValue(MenuItemsProperty, value); }
+    // Multi-group support (Allows grouped distinct cards, like an isolated Delete button)
+    public static readonly BindableProperty MenuGroupsProperty = BindableProperty.Create(
+        nameof(MenuGroups),
+        typeof(IEnumerable<ContextMenuGroup>),
+        typeof(ContextMenuSheet),
+        propertyChanged: OnMenuGroupsChanged);
+
+    public IEnumerable<ContextMenuGroup> MenuGroups
+    {
+        get => (IEnumerable<ContextMenuGroup>)GetValue(MenuGroupsProperty);
+        set => SetValue(MenuGroupsProperty, value);
+    }
+
+    private static void OnMenuGroupsChanged(BindableObject bindable, object oldValue, object newValue)
+    {
+        if (newValue is IEnumerable<ContextMenuGroup> groups)
+        {
+            foreach (ContextMenuGroup group in groups)
+            {
+                // Auto-hide the separator line for the last item in every group block
+                for (int i = 0; i < group.Count; i++)
+                {
+                    group[i].IsSeparatorVisible = (i < group.Count - 1);
+                }
+            }
+        }
+    }
+
+    // Legacy fallback property: automatically wraps a single list into a group to prevent breaking existing usages
+    public static readonly BindableProperty MenuItemsProperty = BindableProperty.Create(
+        nameof(MenuItems),
+        typeof(IEnumerable<ContextMenuItem>),
+        typeof(ContextMenuSheet),
+        propertyChanged: (b, o, n) =>
+        {
+            if (b is ContextMenuSheet sheet && n is IEnumerable<ContextMenuItem> items)
+            {
+                sheet.MenuGroups = new List<ContextMenuGroup> { new ContextMenuGroup(items) };
+            }
+        });
+
+    public IEnumerable<ContextMenuItem> MenuItems
+    {
+        get => (IEnumerable<ContextMenuItem>)GetValue(MenuItemsProperty);
+        set => SetValue(MenuItemsProperty, value);
+    }
 
     public Action<object?>? CloseAction { get; set; }
 
     public ContextMenuSheet()
     {
         InitializeComponent();
-
-        // Wire up the interface action so SlideUpSheetHost can natively trigger a close when tapping the dark background
         CloseAction = _ => _ = CloseSheetAsync();
     }
 
@@ -56,21 +98,34 @@ public partial class ContextMenuSheet : ContentView, IBottomSheet
 }
 
 /// <summary>
+/// A collection of contextual items meant to be displayed together inside a single visual container.
+/// </summary>
+public class ContextMenuGroup : List<ContextMenuItem>
+{
+    public ContextMenuGroup() { }
+    public ContextMenuGroup(IEnumerable<ContextMenuItem> items) : base(items) { }
+}
+
+/// <summary>
 /// Represents a single actionable item within the ContextMenuSheet.
 /// </summary>
-public class ContextMenuItem
+public class ContextMenuItem : ObservableObject
 {
     public string Title { get; set; } = string.Empty;
     public string IconSource { get; set; } = string.Empty;
     public bool IsDestructive { get; set; }
     public Action? Action { get; set; }
 
+    // Automatically managed by the MenuGroups dependency property setter
+    private bool _isSeparatorVisible = true;
+    public bool IsSeparatorVisible
+    {
+        get => _isSeparatorVisible;
+        set => SetProperty(ref _isSeparatorVisible, value);
+    }
+
     private ICommand? _itemCommand;
-    /// <summary>
-    /// The command bound to the native Button that executes the provided Action.
-    /// </summary>
     public ICommand ItemCommand => _itemCommand ??= new RelayCommand(() => Action?.Invoke());
 
-    // Muted, softer red for destructive actions to blend better with the dark theme.
     public Color TextColor => IsDestructive ? ThemeResources.Color("Danger") : ThemeResources.Color("TextColor");
 }

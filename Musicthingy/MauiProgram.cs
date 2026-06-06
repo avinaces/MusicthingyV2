@@ -10,7 +10,7 @@ namespace Musicthingy
         public static MauiApp CreateMauiApp()
         {
 #if WINDOWS
-            // Only initialize native VLC C++ libraries on Windows now
+            // Only initialize native VLC C++ libraries on Windows
             LibVLCSharp.Shared.Core.Initialize();
 #endif
 

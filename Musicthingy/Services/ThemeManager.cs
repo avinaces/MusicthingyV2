@@ -27,7 +27,11 @@ public class ThemeManager
         "Outline", "InputOutline", "OutlineStrong", "DragHandleColor",
         "OnSurface", "OnSurfaceMuted", "OnSurfaceStrong", "TitleColor",
         "TextColor", "MutedColor", "BorderColor", "InputBorderColor",
-        "TagBgColor", "TagTextColor", "IconSelectedColor"
+        "TagBgColor", "TagTextColor", "IconSelectedColor",
+
+        // Button Colors
+        "PrimaryButtonColor", "PrimaryButtonText", "PrimaryButtonBorder",
+        "SecondaryButtonColor", "SecondaryButtonText", "SecondaryButtonBorder"
     };
 
     private void CacheBaseColors()

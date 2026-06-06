@@ -207,6 +207,34 @@ public partial class MainViewModel
     }
 
     [RelayCommand]
+    private async Task AddNewTrackAsync()
+    {
+        if (SelectedPlaylist == null) return;
+
+        // 1. Create the temporary new track
+        var newTrack = new PlaylistItem
+        {
+            Playlist = SelectedPlaylist
+        };
+
+        var allTags = GetAllKnownTags();
+
+        // 2. Open the edit options for that item
+        var sheet = new Views.EditTrackSheet(newTrack, allTags);
+        var result = await Services.SheetManager.ShowAsync<bool>(sheet);
+
+        // 3. If the user saved their edits, append it to the active playlist
+        if (result)
+        {
+            SelectedPlaylist.Items.Add(newTrack);
+
+            UpdateFilterTags();
+            RefreshDisplayedItems();
+            RequestSaveLibrary();
+        }
+    }
+
+    [RelayCommand]
     private async Task EditTrackAsync(PlaylistItem track)
     {
         var allTags = GetAllKnownTags();

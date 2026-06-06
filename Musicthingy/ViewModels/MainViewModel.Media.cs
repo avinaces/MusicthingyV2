@@ -13,8 +13,6 @@ public partial class MainViewModel
     private const int ParseDelayTimeoutMs = 5000;
     private const int MaxSeekDesyncToleranceMs = 1500;
 
-    // These services should be injected into the MainViewModel constructor via DI.
-    // e.g. public MainViewModel(YouTubeResolverService youtubeResolver, IMediaPlaybackService playbackService) { ... }
     private readonly YouTubeResolverService _youtubeResolver;
     private readonly IMediaPlaybackService _playbackService;
     private readonly IMediaProbingService _mediaProbingService;

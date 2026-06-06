@@ -1,9 +1,7 @@
 using CommunityToolkit.Mvvm.Messaging;
-using Musicthingy.Models;
-using MPowerKit.VirtualizeListView;
-using Microsoft.Maui.Controls;
-using Musicthingy.ViewModels;
 using Musicthingy.Helpers;
+using Musicthingy.Models;
+using Musicthingy.ViewModels;
 
 namespace Musicthingy.Views;
 
@@ -251,105 +249,37 @@ public partial class MobileMainPage : ContentPage
         UpdateStickyToolbar();
     }
 
-    private async void OnTrackOptionsClicked(object? sender, EventArgs e)
+    private void OnTrackOptionsClicked(object? sender, EventArgs e)
     {
         if (sender is BindableObject bindable && bindable.BindingContext is PlaylistItem track)
         {
             if (BindingContext is ViewModels.MainViewModel vm)
             {
-                ContextMenuSheet menuSheet = new ContextMenuSheet
+                if (track == vm.CurrentTrack)
                 {
-                    HasHeader = true,
-                    HeaderTitle = track.Title,
-                    HeaderSubtitle = vm.SelectedPlaylist?.Name ?? "Track",
-                    HeaderImageSource = track.ItemIconSource
-                };
-
-                menuSheet.MenuItems = new List<ContextMenuItem>
+                    MenuHelper.ShowCurrentTrackOptions(track, vm);
+                }
+                else
                 {
-                    new ContextMenuItem
-                    {
-                        Title = "Edit Track",
-                        IconSource = "pencil_icon.png",
-                        Action = async () =>
-                        {
-                            _ = Services.SheetManager.Host!.HideAsync(menuSheet);
-                            vm.EditTrackCommand.Execute(track);
-                        }
-                    },
-                    new ContextMenuItem
-                    {
-                        Title = "Delete from Playlist",
-                        IconSource = "trash_2_icon.png",
-                        IsDestructive = true,
-                        Action = async () =>
-                        {
-                            _ = Services.SheetManager.Host!.HideAsync(menuSheet);
-                            vm.DeleteTrackCommand.Execute(track);
-                        }
-                    }
-                };
-
-                if (Services.SheetManager.Host != null)
-                {
-                    _ = Services.SheetManager.Host.ShowAsync(menuSheet);
+                    MenuHelper.ShowTrackOptions(track, vm);
                 }
             }
         }
     }
 
-    private async void OnPlaylistOptionsClicked(object? sender, EventArgs e)
+    private void OnPlaylistOptionsClicked(object? sender, EventArgs e)
     {
         if (sender is BindableObject bindable && bindable.BindingContext is Playlist playlist)
         {
             if (BindingContext is ViewModels.MainViewModel vm)
             {
-                ContextMenuSheet menuSheet = new ContextMenuSheet
+                if (playlist == vm.CurrentTrack?.Playlist)
                 {
-                    HasHeader = true,
-                    HeaderTitle = playlist.Name,
-                    HeaderSubtitle = $"{playlist.ItemCount} tracks • {playlist.DisplayDuration}",
-                    HeaderImageSource = playlist.IconImageSource
-                };
-
-                menuSheet.MenuItems = new List<ContextMenuItem>
+                    MenuHelper.ShowCurrentPlaylistOptions(playlist, vm);
+                }
+                else
                 {
-                    new ContextMenuItem
-                    {
-                        Title = "Edit Playlist",
-                        IconSource = "pencil_icon.png",
-                        Action = async () =>
-                        {
-                            _ = Services.SheetManager.Host!.HideAsync(menuSheet);
-                            vm.EditPlaylistCommand.Execute(playlist);
-                        }
-                    },
-                    new ContextMenuItem
-                    {
-                        Title = "Export Playlist",
-                        IconSource = "upload_icon.png",
-                        Action = async () =>
-                        {
-                            _ = Services.SheetManager.Host!.HideAsync(menuSheet);
-                            vm.ExportPlaylistCommand.Execute(playlist);
-                        }
-                    },
-                    new ContextMenuItem
-                    {
-                        Title = "Delete Playlist",
-                        IconSource = "trash_2_icon.png",
-                        IsDestructive = true,
-                        Action = async () =>
-                        {
-                            _ = Services.SheetManager.Host!.HideAsync(menuSheet);
-                            vm.DeletePlaylistCommand.Execute(playlist);
-                        }
-                    }
-                };
-
-                if (Services.SheetManager.Host != null)
-                {
-                    await Services.SheetManager.Host.ShowAsync(menuSheet);
+                    MenuHelper.ShowPlaylistOptions(playlist, vm);
                 }
             }
         }

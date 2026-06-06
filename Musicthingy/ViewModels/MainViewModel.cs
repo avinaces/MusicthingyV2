@@ -37,8 +37,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
     // TAG FILTERING LOGIC
     // ==========================================
 
-    [ObservableProperty]
-    public partial ObservableCollection<FilterTag> CurrentFilterTags { get; set; } = new();
+    public ObservableCollection<FilterTag> CurrentFilterTags { get; set; } = new();
 
     public bool IsFilterActive => CurrentFilterTags.Any(t => t.State != FilterState.Neutral);
 

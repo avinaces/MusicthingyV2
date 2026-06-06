@@ -1,15 +1,14 @@
-﻿using System.Collections.Concurrent;
+﻿using Musicthingy.Helpers;
+using Musicthingy.Models;
+using System.Collections.Concurrent;
 using System.Diagnostics;
+using System.Net;
+using System.Net.Sockets;
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using System.Net;
-using System.Net.Http;
-using System.Net.Sockets;
 using YoutubeExplode;
 using YoutubeExplode.Videos;
 using YoutubeExplode.Videos.Streams;
-using Musicthingy.Models;
-using Musicthingy.Helpers;
 
 namespace Musicthingy.Services;
 

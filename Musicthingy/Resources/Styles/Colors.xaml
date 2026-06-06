@@ -109,4 +109,22 @@
 
     <Color x:Key="SwipeEditColor">#315F88</Color>
     <Color x:Key="SwipeDeleteColor">#74313A</Color>
+
+    <!-- Button Colors -->
+
+    <!-- Primary Button (Material Design Dark Mode Standard) -->
+    <!-- The background is a light, desaturated version of the accent (Tone 80) -->
+    <Color x:Key="PrimaryButtonColor">#A6C8FF</Color>
+    <!-- The text/icon is a very dark version of the accent (Tone 20) -->
+    <Color x:Key="PrimaryButtonText">#003060</Color>
+    <!-- Border matches the background -->
+    <Color x:Key="PrimaryButtonBorder">#A6C8FF</Color>
+
+    <!-- Secondary Button (Matches Card/Neutral roles) -->
+    <!-- Soft, dark surface color -->
+    <Color x:Key="SecondaryButtonColor">#18191C</Color>
+    <!-- Light, muted text -->
+    <Color x:Key="SecondaryButtonText">#D6D8DB</Color>
+    <!-- Slightly lighter border to define the shape -->
+    <Color x:Key="SecondaryButtonBorder">#373A3F</Color>
 </ResourceDictionary>

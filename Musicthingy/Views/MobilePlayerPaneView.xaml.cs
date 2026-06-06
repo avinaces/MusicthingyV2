@@ -345,7 +345,6 @@ public partial class MobilePlayerPaneView : ContentView
         double marginBot = 14 - (6 * progressToMedium);
         HeaderContentGrid.Margin = new Thickness(16, marginTop, 16, marginBot);
 
-        // 🚀 GPU Optimization
         double headerHeight = 72 + (30 * progressToMedium);
         ExpandedContentZone.TranslationY = headerHeight;
 

@@ -59,12 +59,16 @@ public partial class EditLyricsForm : ObservableObject
             }
             else
             {
-                await Shell.Current.DisplayAlertAsync("Not Found", "Could not find lyrics matching these exact filters.", "OK");
+                var page = Application.Current?.Windows?.Count > 0 ? Application.Current.Windows[0].Page : null;
+                if (page != null)
+                    await page.DisplayAlertAsync("Not Found", "Could not find lyrics matching these exact filters.", "OK");
             }
         }
         catch (Exception ex)
         {
-            await Shell.Current.DisplayAlertAsync("Error", ex.Message, "OK");
+            var page = Application.Current?.Windows?.Count > 0 ? Application.Current.Windows[0].Page : null;
+            if (page != null)
+                await page.DisplayAlertAsync("Error", ex.Message, "OK");
         }
         finally
         {

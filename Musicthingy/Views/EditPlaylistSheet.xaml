@@ -26,8 +26,8 @@
 
         <local:BottomSheetContainer.Footer>
             <HorizontalStackLayout HorizontalOptions="End" Spacing="12">
-                <Button Text="Cancel" Clicked="OnCancelClicked" BackgroundColor="{DynamicResource SurfaceRaised}" TextColor="{DynamicResource TextColor}" BorderColor="{DynamicResource BorderColor}" BorderWidth="1" CornerRadius="8" HeightRequest="44" Padding="16,0" />
-                <Button Text="Save" Clicked="OnSaveClicked" BackgroundColor="{DynamicResource AccentFill}" TextColor="{DynamicResource OnAccent}" CornerRadius="8" HeightRequest="44" Padding="24,0" />
+                <Button Text="Cancel" Clicked="OnCancelClicked" BackgroundColor="{DynamicResource SecondaryButtonColor}" TextColor="{DynamicResource SecondaryButtonText}" BorderColor="{DynamicResource SecondaryButtonBorder}" BorderWidth="1" CornerRadius="8" HeightRequest="44" Padding="16,0" />
+                <Button Text="Save" Clicked="OnSaveClicked" BackgroundColor="{DynamicResource PrimaryButtonColor}" TextColor="{DynamicResource PrimaryButtonText}" CornerRadius="8" HeightRequest="44" Padding="24,0" />
             </HorizontalStackLayout>
         </local:BottomSheetContainer.Footer>
     </local:BottomSheetContainer>
