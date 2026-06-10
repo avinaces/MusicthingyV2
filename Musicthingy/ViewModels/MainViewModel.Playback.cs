@@ -404,17 +404,37 @@ public partial class MainViewModel
             bool isModified = false;
 
             // Failsafe for app restarts
-            if (_unshuffledQueue.Count == 0 && PlaybackQueue.Count > 0) _unshuffledQueue = PlaybackQueue.ToList();
+            if (_unshuffledQueue.Count == 0 && PlaybackQueue.Count > 0)
+                _unshuffledQueue = PlaybackQueue.ToList();
+
+            // Determine where we currently are in the queue
+            int currentIndex = CurrentTrack != null ? PlaybackQueue.IndexOf(CurrentTrack) : -1;
 
             foreach (PlaylistItem item in items)
             {
-                if (item.Playlist == null || item == CurrentTrack) continue;
+                if (item.Playlist == null) continue;
 
                 if (!PlaybackQueue.Contains(item))
                 {
-                    PlaybackQueue.Add(item);
-                    // Also append to our shadow queue so it survives un-shuffling
-                    if (!_unshuffledQueue.Contains(item)) _unshuffledQueue.Add(item);
+                    if (IsShuffleEnabled && currentIndex != -1)
+                    {
+                        // Distribute the new track randomly ANYWHERE after the current playing track
+                        // +1 allows it to potentially be placed at the very end as well
+                        int insertIndex = Random.Shared.Next(currentIndex + 1, PlaybackQueue.Count + 1);
+                        PlaybackQueue.Insert(insertIndex, item);
+                    }
+                    else
+                    {
+                        // If shuffle is off (or nothing is playing), just add to the end
+                        PlaybackQueue.Add(item);
+                    }
+
+                    // Always append to our shadow queue so it survives un-shuffling in standard order
+                    if (!_unshuffledQueue.Contains(item))
+                    {
+                        _unshuffledQueue.Add(item);
+                    }
+
                     isModified = true;
                 }
             }
