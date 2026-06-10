@@ -97,13 +97,13 @@ public static class SystemThemeHelper
 {
     public static Color? GetAndroidSystemAccentColor()
     {
-#if ANDROID
+#if ANDROID31_0_OR_GREATER
         // Material You dynamic colors are only available on Android 12 (API 31) and higher
         if (Android.OS.Build.VERSION.SdkInt >= Android.OS.BuildVersionCodes.S)
         {
             var context = Android.App.Application.Context;
 
-            // "SystemAccent1500" is the standard vibrant primary color generated from the wallpaper
+            // "SystemAccent1500" is the standard vibrant primary color
             int colorResId = Android.Resource.Color.SystemAccent1500;
             var androidColor = new Android.Graphics.Color(context.Resources.GetColor(colorResId, context.Theme));
 

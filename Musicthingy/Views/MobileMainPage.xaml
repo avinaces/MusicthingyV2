@@ -328,7 +328,7 @@
         </Grid>
 
         <Grid IsVisible="{Binding IsModalVisible}" ZIndex="100">
-            <BoxView BackgroundColor="{DynamicResource SurfaceScrim}">
+            <BoxView BackgroundColor="{DynamicResource ModalSurfaceScrim}">
                 <BoxView.GestureRecognizers>
                     <TapGestureRecognizer Command="{Binding ModalBackgroundTappedCommand}" />
                 </BoxView.GestureRecognizers>
@@ -339,8 +339,8 @@
                     <Label Text="{Binding ModalMessage}" TextColor="{DynamicResource TextColor}" IsVisible="{Binding IsModalMessageVisible}" />
                     <Entry Text="{Binding ModalInputText}" IsVisible="{Binding IsModalInputVisible}" Placeholder="Type here..." BackgroundColor="{DynamicResource SurfaceInput}" TextColor="{DynamicResource TextColor}" />
                     <HorizontalStackLayout HorizontalOptions="End" Spacing="12" Margin="0,8,0,0">
-                        <Button Text="Cancel" Command="{Binding ModalCancelCommand}" BackgroundColor="{DynamicResource CardColor}" TextColor="{DynamicResource TextColor}" BorderColor="{DynamicResource BorderColor}" BorderWidth="1" CornerRadius="8" />
-                        <Button Text="{Binding ModalConfirmText}" Command="{Binding ModalConfirmCommand}" BackgroundColor="{Binding ModalConfirmColor}" TextColor="{DynamicResource OnAccent}" CornerRadius="8" />
+                        <Button Text="Cancel" Command="{Binding ModalCancelCommand}" BackgroundColor="{DynamicResource SecondaryButtonColor}" TextColor="{DynamicResource SecondaryButtonText}" BorderColor="{DynamicResource SecondaryButtonBorder}" BorderWidth="1" CornerRadius="8" />
+                        <Button Text="{Binding ModalConfirmText}" Command="{Binding ModalConfirmCommand}" BackgroundColor="{Binding ModalConfirmColor}" TextColor="{Binding ModalConfirmTextColor}" CornerRadius="8" />
                     </HorizontalStackLayout>
                 </VerticalStackLayout>
             </Border>

@@ -25,6 +25,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
     private CancellationTokenSource? _playlistResolutionCts;
 
     private readonly PlaylistDataService _dataService;
+    private readonly ColorExtractionService _colorExtractionService;
 
     [ObservableProperty] public partial bool IsLoadingMedia { get; set; }
     [ObservableProperty] public partial double MediaDownloadProgress { get; set; }
@@ -178,12 +179,14 @@ public partial class MainViewModel : ObservableObject, IDisposable
         ThemeManager themeManager,
         YouTubeResolverService youtubeResolver,
         IMediaPlaybackService playbackService,
-        IMediaProbingService mediaProbingService)
+        IMediaProbingService mediaProbingService,
+        ColorExtractionService colorExtractionService)
     {
         _themeManager = themeManager;
         _youtubeResolver = youtubeResolver;
         _playbackService = playbackService;
         _mediaProbingService = mediaProbingService;
+        _colorExtractionService = colorExtractionService;
 
         _cleanupOldInstances?.Invoke();
         _cleanupOldInstances = CleanupMedia;

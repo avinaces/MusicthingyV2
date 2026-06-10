@@ -13,6 +13,32 @@ public partial class MainViewModel
     private static readonly string[] androidFileTypeJSON = ["application/json"];
     private static readonly string[] windowsFileTypeJSON = [".json"];
 
+
+    partial void OnSelectedPlaylistChanged(Playlist? value)
+    {
+        return; // Disable dynamic theming for now, as it can cause jank and isn't the most important feature. Will revisit later.
+        Task.Run(async () =>
+        {
+            if (value != null)
+            {
+                var extractedColor = await _colorExtractionService.ExtractDominantColorAsync(value);
+
+                if (extractedColor != null)
+                {
+                    // Apply the new playlist theme!
+                    MainThread.BeginInvokeOnMainThread(() => _themeManager.ApplyTheme(extractedColor));
+                }
+                else
+                {
+                    // No icon/color found? Revert to the standard system accent color
+                    var fallbackColor = Services.SystemThemeHelper.GetAndroidSystemAccentColor();
+                    if (fallbackColor != null)
+                        MainThread.BeginInvokeOnMainThread(() => _themeManager.ApplyTheme(fallbackColor));
+                }
+            }
+        });
+    }
+
     [RelayCommand]
     private void AddNewPlaylist()
     {
@@ -81,14 +107,23 @@ public partial class MainViewModel
         }
         catch (Exception ex)
         {
-            await MainThread.InvokeOnMainThreadAsync(() =>
-                Shell.Current.DisplayAlertAsync("Error", $"Failed to import: {ex.Message}", "OK"));
+            // Use your custom overlay system
+            await MainThread.InvokeOnMainThreadAsync(async () =>
+            {
+                await ShowConfirmAsync(
+                    title: "Error",
+                    message: $"Failed to import: {ex.Message}",
+                    confirmText: "OK",
+                    bgBehavior: ModalBackgroundTapBehavior.Confirm);
+            });
         }
     }
 
     [RelayCommand]
     private async Task ExportPlaylistAsync(Playlist playlist)
     {
+        if (playlist == null) return;
+
         try
         {
             // 1. Map current Playlist to safe DTO
@@ -101,8 +136,10 @@ public partial class MainViewModel
                 createdAt = playlist.CreatedAt,
                 updatedAt = playlist.UpdatedAt,
                 duration = playlist.Duration,
-                tags = playlist.Tags.ToList(),
-                items = playlist.Items.Select(i => new PlaylistItemDto
+
+                // Safe navigation with "?." and fallback to empty collections "?? []"
+                tags = playlist.Tags?.ToList() ?? [],
+                items = playlist.Items?.Select(i => new PlaylistItemDto
                 {
                     title = i.Title,
                     url = i.Url,
@@ -110,17 +147,18 @@ public partial class MainViewModel
                     endTime = i.EndTime,
                     duration = i.Duration,
                     icon = i.IconUrl,
-                    tags = i.Tags.ToList(),
+                    tags = i.Tags?.ToList() ?? [],
                     lyrics = i.Lyrics,
                     lastPlayedAt = i.LastPlayedAt
-                }).ToList()
+                }).ToList() ?? []
             };
 
             // 2. Serialize to pretty JSON
             string json = JsonSerializer.Serialize(dto, new JsonSerializerOptions { WriteIndented = true });
 
-            // 3. Clean invalid file name chars
-            string cleanName = string.Join("_", playlist.Name.Split(Path.GetInvalidFileNameChars()));
+            // 3. Clean invalid file name chars safely
+            string safeName = string.IsNullOrWhiteSpace(playlist.Name) ? "Playlist" : playlist.Name;
+            string cleanName = string.Join("_", safeName.Split(Path.GetInvalidFileNameChars()));
             string fileName = $"{cleanName}.json";
 
             // 4. Save file natively
@@ -129,16 +167,28 @@ public partial class MainViewModel
 
             if (fileSaverResult.IsSuccessful)
             {
-                // CRITICAL FIX: Push the UI alert back to the Main Thread
-                await MainThread.InvokeOnMainThreadAsync(() =>
-                    Shell.Current.DisplayAlertAsync("Success", $"Playlist exported to:\n{fileSaverResult.FilePath}", "OK"));
+                // Use your custom overlay system
+                await MainThread.InvokeOnMainThreadAsync(async () =>
+                {
+                    await ShowConfirmAsync(
+                        title: "Success",
+                        message: $"Playlist exported to:\n{fileSaverResult.FilePath}",
+                        confirmText: "OK",
+                        bgBehavior: ModalBackgroundTapBehavior.Confirm);
+                });
             }
         }
         catch (Exception ex)
         {
-            // CRITICAL FIX: Push the UI alert back to the Main Thread
-            await MainThread.InvokeOnMainThreadAsync(() =>
-                Shell.Current.DisplayAlertAsync("Export Failed", ex.Message, "OK"));
+            // Use your custom overlay system
+            await MainThread.InvokeOnMainThreadAsync(async () =>
+            {
+                await ShowConfirmAsync(
+                    title: "Export Failed",
+                    message: ex.Message,
+                    confirmText: "OK",
+                    bgBehavior: ModalBackgroundTapBehavior.Confirm);
+            });
         }
     }
 

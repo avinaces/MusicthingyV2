@@ -23,6 +23,7 @@
     <Color x:Key="SurfaceSelectedStrong">#344456</Color>
 
     <Color x:Key="SurfaceScrim">#050506</Color>
+    <Color x:Key="ModalSurfaceScrim">#8C050506</Color>
     <Color x:Key="SurfaceScrimStrong">#020202</Color>
     <Color x:Key="SurfaceScrimPanel">#16171A</Color>
 
@@ -50,6 +51,7 @@
     <Color x:Key="OnAccentContainer">#D9EDFF</Color>
 
     <!-- Danger states (Typically remain red, excluded from theming) -->
+    <Color x:Key="DangerLight">#F2B8B5</Color>
     <Color x:Key="Danger">#D86A73</Color>
     <Color x:Key="DangerFill">#74313A</Color>
     <Color x:Key="DangerFillHover">#8A3A44</Color>

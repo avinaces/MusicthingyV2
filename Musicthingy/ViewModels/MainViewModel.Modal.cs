@@ -20,7 +20,8 @@ public partial class MainViewModel
 	[ObservableProperty] public partial string ModalInputText { get; set; } = string.Empty;
 	[ObservableProperty] public partial bool IsModalInputVisible { get; set; }
 	[ObservableProperty] public partial string ModalConfirmText { get; set; } = "OK";
-	[ObservableProperty] public partial Color ModalConfirmColor { get; set; } = ThemeResources.Color("AccentFill");
+	[ObservableProperty] public partial Color ModalConfirmColor { get; set; } = ThemeResources.Color("PrimaryButtonColor");
+	[ObservableProperty] public partial Color ModalConfirmTextColor { get; set; } = ThemeResources.Color("PrimaryButtonText");
 
 	private ModalBackgroundTapBehavior _backgroundTapBehavior;
 	private TaskCompletionSource<(bool IsConfirmed, string Input)>? _modalTcs;
@@ -63,7 +64,8 @@ public partial class MainViewModel
 		IsModalMessageVisible = true;
 		IsModalInputVisible = false;
 		ModalConfirmText = confirmText;
-		ModalConfirmColor = isDanger ? ThemeResources.Color("DangerFill") : ThemeResources.Color("AccentFill");
+		ModalConfirmColor = isDanger ? ThemeResources.Color("DangerFill") : ThemeResources.Color("PrimaryButtonColor");
+		ModalConfirmTextColor = isDanger ? ThemeResources.Color("SecondaryButtonText") : ThemeResources.Color("PrimaryButtonText");
 		_backgroundTapBehavior = bgBehavior;
 
 		IsModalVisible = true;
@@ -79,7 +81,7 @@ public partial class MainViewModel
 		IsModalMessageVisible = false;
 		IsModalInputVisible = true;
 		ModalConfirmText = confirmText;
-		ModalConfirmColor = ThemeResources.Color("AccentFill");
+		ModalConfirmColor = ThemeResources.Color("PrimaryButtonColor");
 		_backgroundTapBehavior = bgBehavior;
 
 		IsModalVisible = true;

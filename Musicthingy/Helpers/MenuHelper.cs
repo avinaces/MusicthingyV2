@@ -1,12 +1,18 @@
-﻿using Microsoft.Maui.Controls;
-using Musicthingy.Models;
+﻿using Musicthingy.Models;
 using Musicthingy.ViewModels;
-using System.Collections.Generic;
 
 namespace Musicthingy.Views;
 
 public static class MenuHelper
 {
+
+    public static void HideContextMenu(ContextMenuSheet menuSheet)
+    {
+        if (Services.SheetManager.Host != null)
+        {
+            _ = Services.SheetManager.Host.HideAsync(menuSheet);
+        }
+    }
     public static void ShowTrackOptions(PlaylistItem track, MainViewModel vm)
     {
         ContextMenuSheet menuSheet = new ContextMenuSheet
@@ -14,7 +20,7 @@ public static class MenuHelper
             HasHeader = true,
             HeaderTitle = track.Title,
             HeaderSubtitle = vm.SelectedPlaylist?.Name ?? "Track",
-            HeaderImageSource = track.ItemIconSource
+            HeaderImageSource = track.ItemIconSource!
         };
 
         // Switch to MenuGroups to separate the destructive action into its own card
@@ -29,7 +35,77 @@ public static class MenuHelper
                     IconSource = "pencil_icon.png",
                     Action = () =>
                     {
-                        _ = Services.SheetManager.Host!.HideAsync(menuSheet);
+                        HideContextMenu(menuSheet);
+                        vm.EditTrackCommand.Execute(track);
+                    }
+                },
+                new ContextMenuItem
+                {
+                    Title = "Play Next",
+                    IconSource = "list_video_icon.png",
+                    Action = () =>
+                    {
+                        HideContextMenu(menuSheet);
+                        vm.PlayNextInQueue(track);
+                    }
+                },
+                new ContextMenuItem
+                {
+                    Title = "Add to Queue",
+                    IconSource = "list_music_icon.png",
+                    Action = () =>
+                    {
+                        HideContextMenu(menuSheet);
+                        vm.AddToPlaybackQueue(track);
+                    }
+                }
+            },
+            // Second group: Destructive actions isolated
+            new ContextMenuGroup
+            {
+                new ContextMenuItem
+                {
+                    Title = "Delete from Playlist",
+                    IconSource = "trash_2_icon.png",
+                    IsDestructive = true,
+                    Action = () =>
+                    {
+                        HideContextMenu(menuSheet);
+                        vm.DeleteTrackCommand.Execute(track);
+                    }
+                }
+            }
+        };
+
+        if (Services.SheetManager.Host != null)
+        {
+            _ = Services.SheetManager.Host.ShowAsync(menuSheet);
+        }
+    }
+
+    public static void ShowCurrentTrackOptions(PlaylistItem track, MainViewModel vm)
+    {
+        ContextMenuSheet menuSheet = new ContextMenuSheet
+        {
+            HasHeader = true,
+            HeaderTitle = track.Title,
+            HeaderSubtitle = vm.SelectedPlaylist?.Name ?? "Track",
+            HeaderImageSource = track.ItemIconSource!
+        };
+
+        // Switch to MenuGroups to separate the destructive action into its own card
+        menuSheet.MenuGroups = new List<ContextMenuGroup>
+        {
+            // First group: Safe actions
+            new ContextMenuGroup
+            {
+                new ContextMenuItem
+                {
+                    Title = "Edit Track",
+                    IconSource = "pencil_icon.png",
+                    Action = () =>
+                    {
+                        HideContextMenu(menuSheet);
                         vm.EditTrackCommand.Execute(track);
                     }
                 }
@@ -44,7 +120,7 @@ public static class MenuHelper
                     IsDestructive = true,
                     Action = () =>
                     {
-                        _ = Services.SheetManager.Host!.HideAsync(menuSheet);
+                        HideContextMenu(menuSheet);
                         vm.DeleteTrackCommand.Execute(track);
                     }
                 }
@@ -57,15 +133,6 @@ public static class MenuHelper
         }
     }
 
-    /// <summary>
-    /// Separate method for the currently playing track's options.
-    /// Currently mirrors ShowTrackOptions, but allows divergence later.
-    /// </summary>
-    public static void ShowCurrentTrackOptions(PlaylistItem track, MainViewModel vm)
-    {
-        ShowTrackOptions(track, vm);
-    }
-
     public static void ShowPlaylistOptions(Playlist playlist, MainViewModel vm)
     {
         ContextMenuSheet menuSheet = new ContextMenuSheet
@@ -73,7 +140,7 @@ public static class MenuHelper
             HasHeader = true,
             HeaderTitle = playlist.Name,
             HeaderSubtitle = $"{playlist.ItemCount} tracks • {playlist.DisplayDuration}",
-            HeaderImageSource = playlist.IconImageSource
+            HeaderImageSource = playlist.IconImageSource!
         };
 
         menuSheet.MenuGroups = new List<ContextMenuGroup>
@@ -87,17 +154,40 @@ public static class MenuHelper
                     IconSource = "pencil_icon.png",
                     Action = () =>
                     {
-                        _ = Services.SheetManager.Host!.HideAsync(menuSheet);
+                        HideContextMenu(menuSheet);
                         vm.EditPlaylistCommand.Execute(playlist);
                     }
                 },
+                new ContextMenuItem
+                {
+                    Title = "Play Next",
+                    IconSource = "list_video_icon.png",
+                    Action = () =>
+                    {
+                        HideContextMenu(menuSheet);
+                        vm.PlayNextInQueue(playlist);
+                    }
+                },
+                new ContextMenuItem
+                {
+                    Title = "Add to Queue",
+                    IconSource = "list_music_icon.png",
+                    Action = () =>
+                    {
+                        HideContextMenu(menuSheet);
+                        vm.AddToPlaybackQueue(playlist);
+                    }
+                }
+            },
+            new ContextMenuGroup
+            {
                 new ContextMenuItem
                 {
                     Title = "Export Playlist",
                     IconSource = "upload_icon.png",
                     Action = () =>
                     {
-                        _ = Services.SheetManager.Host!.HideAsync(menuSheet);
+                        HideContextMenu(menuSheet);
                         vm.ExportPlaylistCommand.Execute(playlist);
                     }
                 }
@@ -112,7 +202,7 @@ public static class MenuHelper
                     IsDestructive = true,
                     Action = () =>
                     {
-                        _ = Services.SheetManager.Host!.HideAsync(menuSheet);
+                        HideContextMenu(menuSheet);
                         vm.DeletePlaylistCommand.Execute(playlist);
                     }
                 }
@@ -125,12 +215,8 @@ public static class MenuHelper
         }
     }
 
-    /// <summary>
-    /// Separate method for Current Playlist options. Currently mirrors ShowPlaylistOptions, 
-    /// but allows divergence later (e.g. preventing deletion of the currently playing playlist).
-    /// </summary>
     public static void ShowCurrentPlaylistOptions(Playlist playlist, MainViewModel vm)
     {
-        ShowPlaylistOptions(playlist, vm);
+        ShowPlaylistOptions(playlist, vm); // For now, the options are the same as regular playlists
     }
 }

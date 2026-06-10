@@ -18,6 +18,7 @@ namespace Musicthingy
 
             // Register Services
             builder.Services.AddSingleton<ThemeManager>();
+            builder.Services.AddSingleton<ColorExtractionService>();
             builder.Services.AddSingleton<YouTubeResolverService>();
 
             builder.Services.AddSingleton(sp => new HttpClient(YouTubeResolverService.Ipv4Handler));
@@ -53,9 +54,6 @@ namespace Musicthingy
                 .UseMPowerKitListView()
                 .ConfigureFonts(fonts => { });
 
-#if DEBUG
-            builder.Logging.AddDebug();
-#endif
 
             return builder.Build();
         }

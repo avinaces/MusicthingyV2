@@ -1,9 +1,11 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Microsoft.Maui.Controls;
+using Musicthingy.Helpers;
 using Musicthingy.Models;
 using System;
 using System.IO;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace Musicthingy.Views;
@@ -27,6 +29,17 @@ public partial class EditTrackForm : ObservableObject
     [ObservableProperty] public partial ImageSource? ItemIconSource { get; set; }
     [ObservableProperty] public partial string LastPlayedText { get; set; } = string.Empty;
 
+    // --- Validation Properties ---
+    [ObservableProperty] public partial string TitleError { get; set; } = string.Empty;
+    [ObservableProperty] public partial bool HasTitleError { get; set; }
+
+    [ObservableProperty] public partial string UrlError { get; set; } = string.Empty;
+    [ObservableProperty] public partial bool HasUrlError { get; set; }
+
+    [ObservableProperty] public partial bool IsCheckingUrl { get; set; }
+
+    private CancellationTokenSource? _urlCheckCts;
+
     public EditTrackForm(PlaylistItem track)
     {
         EditTitle = track.Title;
@@ -40,7 +53,152 @@ public partial class EditTrackForm : ObservableObject
         {
             LastPlayedText = track.LastPlayedAt.Value.ToString("M/dd/yyyy, h:mm:ss tt");
         }
+
+        // Run initial validation so errors populate if creating a totally blank track
+        ValidateTitleFast(EditTitle);
+        ValidateUrlFast(EditUrl);
     }
+
+    // Automatically fired by MVVM toolkit when EditTitle changes
+    partial void OnEditTitleChanged(string value) => ValidateTitleFast(value);
+
+    private void ValidateTitleFast(string title)
+    {
+        HasTitleError = string.IsNullOrWhiteSpace(title);
+        TitleError = HasTitleError ? "Name is required." : string.Empty;
+    }
+
+    // Automatically fired by MVVM toolkit when EditUrl changes
+    partial void OnEditUrlChanged(string value)
+    {
+        ValidateUrlFast(value);
+
+        if (!HasUrlError && !string.IsNullOrWhiteSpace(value))
+        {
+            // Debounce / rate limit the network check to prevent spamming while typing
+            _urlCheckCts?.Cancel();
+            _urlCheckCts = new CancellationTokenSource();
+            _ = DebouncedUrlCheckAsync(value, _urlCheckCts.Token);
+        }
+    }
+
+    private void ValidateUrlFast(string url)
+    {
+        if (string.IsNullOrWhiteSpace(url))
+        {
+            HasUrlError = true;
+            UrlError = "URL is required.";
+            return;
+        }
+
+        bool isHttp = Uri.TryCreate(url, UriKind.Absolute, out Uri? uriResult)
+                      && (uriResult.Scheme == Uri.UriSchemeHttp || uriResult.Scheme == Uri.UriSchemeHttps);
+        bool isLocalFile = File.Exists(url);
+
+        if (!isHttp && !isLocalFile)
+        {
+            HasUrlError = true;
+            UrlError = "Must be a valid HTTP(S) URL or local file path.";
+        }
+        else
+        {
+            HasUrlError = false;
+            UrlError = string.Empty;
+        }
+    }
+
+    private async Task DebouncedUrlCheckAsync(string url, CancellationToken token)
+    {
+        try
+        {
+            IsCheckingUrl = true;
+
+            // Wait 800ms before actually doing the network call
+            await Task.Delay(800, token);
+
+            // Ask the helper to verify the URL and extract metadata
+            (bool isSuccess, string errorMessage, string? fetchedTitle, string? fetchedImageUrl) =
+                await NetworkHelper.CheckMediaUrlAsync(url, token);
+
+            MainThread.BeginInvokeOnMainThread(() =>
+            {
+                if (!isSuccess)
+                {
+                    HasUrlError = true;
+                    UrlError = errorMessage;
+                }
+                else
+                {
+                    HasUrlError = false;
+                    UrlError = string.Empty;
+
+                    // AUTO-FILL TITLE if the user hasn't typed one yet
+                    if (!string.IsNullOrWhiteSpace(fetchedTitle) && string.IsNullOrWhiteSpace(EditTitle))
+                    {
+                        EditTitle = fetchedTitle;
+                    }
+                }
+            });
+
+            // AUTO-FILL ICON: Do this outside the MainThread block so downloading/cropping doesn't lag the UI
+            if (isSuccess && !string.IsNullOrWhiteSpace(fetchedImageUrl) && string.IsNullOrWhiteSpace(EditIconUrl))
+            {
+                await ProcessAndSetFetchedIconAsync(fetchedImageUrl, token);
+            }
+        }
+        catch (TaskCanceledException) { /* Ignored, user is still typing */ }
+        finally
+        {
+            MainThread.BeginInvokeOnMainThread(() => IsCheckingUrl = false);
+        }
+    }
+
+    // Downloads the remote image and pushes it through the native croppers
+    private async Task ProcessAndSetFetchedIconAsync(string imageUrl, CancellationToken token)
+    {
+        try
+        {
+            using var client = new HttpClient { Timeout = TimeSpan.FromSeconds(10) };
+            using var response = await client.GetAsync(imageUrl, HttpCompletionOption.ResponseHeadersRead, token);
+
+            if (response.IsSuccessStatusCode)
+            {
+                using var stream = await response.Content.ReadAsStreamAsync(token);
+                byte[]? finalBytes = null;
+
+#if ANDROID
+                finalBytes = await CropAndResizeImageAndroidAsync(stream, 256);
+#elif WINDOWS
+                finalBytes = await CropAndResizeImageWindowsAsync(stream, 256);
+#else
+                using var ms = new MemoryStream();
+                await stream.CopyToAsync(ms, token);
+                finalBytes = ms.ToArray();
+#endif
+
+                if (finalBytes != null)
+                {
+                    MainThread.BeginInvokeOnMainThread(() =>
+                    {
+                        // Double check the user didn't manually pick an icon while we were downloading
+                        if (string.IsNullOrWhiteSpace(EditIconUrl))
+                        {
+                            string base64String = Convert.ToBase64String(finalBytes);
+                            EditIconUrl = $"data:image/png;base64,{base64String}";
+                            ItemIconSource = ImageSource.FromStream(() => new MemoryStream(finalBytes));
+                        }
+                    });
+                }
+            }
+        }
+        catch (TaskCanceledException) { /* User kept typing, abort download */ }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Failed to download/crop fetched icon: {ex.Message}");
+        }
+    }
+
+    // ------------- IMAGE HANDLING LOGIC -------------
 
     [RelayCommand]
     private async Task PickIconAsync()
@@ -135,9 +293,9 @@ public partial class EditTrackForm : ObservableObject
                 writer.DetachStream();
             }
             ras.Seek(0);
-            
+
             Windows.Graphics.Imaging.BitmapDecoder decoder = await Windows.Graphics.Imaging.BitmapDecoder.CreateAsync(ras);
-            
+
             uint originalWidth = decoder.PixelWidth;
             uint originalHeight = decoder.PixelHeight;
             uint minDim = Math.Min(originalWidth, originalHeight);
@@ -152,7 +310,7 @@ public partial class EditTrackForm : ObservableObject
 
             using Windows.Storage.Streams.InMemoryRandomAccessStream outStream = new Windows.Storage.Streams.InMemoryRandomAccessStream();
             Windows.Graphics.Imaging.BitmapEncoder encoder = await Windows.Graphics.Imaging.BitmapEncoder.CreateAsync(Windows.Graphics.Imaging.BitmapEncoder.PngEncoderId, outStream);
-            
+
             Windows.Graphics.Imaging.BitmapTransform transform = new Windows.Graphics.Imaging.BitmapTransform 
             { 
                 ScaledWidth = scaledW, 
@@ -174,12 +332,12 @@ public partial class EditTrackForm : ObservableObject
                 (uint)targetSize, (uint)targetSize, decoder.DpiX, decoder.DpiY, pixels.DetachPixelData());
 
             await encoder.FlushAsync();
-            
+
             byte[] outBytes = new byte[outStream.Size];
             using Windows.Storage.Streams.DataReader reader = new Windows.Storage.Streams.DataReader(outStream.GetInputStreamAt(0));
             await reader.LoadAsync((uint)outStream.Size);
             reader.ReadBytes(outBytes);
-            
+
             return outBytes;
         }
         catch (Exception ex)

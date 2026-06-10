@@ -1,7 +1,8 @@
 <?xml version="1.0" encoding="utf-8" ?>
 <ContentView xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
              xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
-             x:Class="Musicthingy.Views.EditTrackGeneralTab">
+             x:Class="Musicthingy.Views.EditTrackGeneralTab"
+             xmlns:views="clr-namespace:Musicthingy.Views">
 
     <ScrollView VerticalScrollBarVisibility="Never">
 
@@ -19,15 +20,33 @@
                 <Button Text="Reset" Command="{Binding ResetIconCommand}" BackgroundColor="Transparent" TextColor="{DynamicResource Danger}" HeightRequest="32" Padding="8,0" />
             </VerticalStackLayout>
 
-            <!-- 1 & 2: Title -->
-            <Label Grid.Row="1" Grid.ColumnSpan="2" Text="Title" TextColor="{DynamicResource TextColor}" FontSize="14" Margin="0,6,0,0"/>
+            <!-- 1 & 2: Title Validation & Input -->
+            <Grid Grid.Row="1" Grid.ColumnSpan="2" Margin="0,6,0,0" ColumnDefinitions="Auto,*" ColumnSpacing="8">
+                <Label Text="Title *" TextColor="{DynamicResource TextColor}" FontSize="14" VerticalOptions="Center" />
+                <views:AutoMarqueeLabel Grid.Column="1" Text="{Binding TitleError}" TextColor="{DynamicResource Danger}" FontSize="12" VerticalOptions="Center" HorizontalOptions="Fill" IsVisible="{Binding HasTitleError}" />
+            </Grid>
             <Border Grid.Row="2" Grid.ColumnSpan="2" BackgroundColor="{DynamicResource SurfaceInput}" Stroke="{DynamicResource InputBorderColor}" StrokeThickness="1" StrokeShape="RoundRectangle 8" Padding="12,0">
+                <Border.Triggers>
+                    <DataTrigger TargetType="Border" Binding="{Binding HasTitleError}" Value="True">
+                        <Setter Property="Stroke" Value="{DynamicResource Danger}"/>
+                    </DataTrigger>
+                </Border.Triggers>
                 <Entry Text="{Binding EditTitle}" TextColor="{DynamicResource TextColor}" BackgroundColor="Transparent" HeightRequest="48"/>
             </Border>
 
-            <!-- 3 & 4: URL -->
-            <Label Grid.Row="3" Grid.ColumnSpan="2" Text="Stream URL / Path" TextColor="{DynamicResource TextColor}" FontSize="14" Margin="0,6,0,0"/>
+            <!-- 3 & 4: URL Validation & Input -->
+            <Grid Grid.Row="3" Grid.ColumnSpan="2" Margin="0,6,0,0" ColumnDefinitions="Auto,Auto,*" ColumnSpacing="8">
+                <Label Text="Stream URL / Path *" TextColor="{DynamicResource TextColor}" FontSize="14" VerticalOptions="Center" />
+                <!-- Loading Spinner for debounced network check -->
+                <ActivityIndicator Grid.Column="1" IsRunning="{Binding IsCheckingUrl}" IsVisible="{Binding IsCheckingUrl}" Color="{DynamicResource Accent}" WidthRequest="14" HeightRequest="14" VerticalOptions="Center" />
+                <views:AutoMarqueeLabel Grid.Column="2" Text="{Binding UrlError}" TextColor="{DynamicResource Danger}" FontSize="12" VerticalOptions="Center" HorizontalOptions="Fill" IsVisible="{Binding HasUrlError}" />
+            </Grid>
             <Border Grid.Row="4" Grid.ColumnSpan="2" BackgroundColor="{DynamicResource SurfaceInput}" Stroke="{DynamicResource InputBorderColor}" StrokeThickness="1" StrokeShape="RoundRectangle 8" Padding="12,0">
+                <Border.Triggers>
+                    <DataTrigger TargetType="Border" Binding="{Binding HasUrlError}" Value="True">
+                        <Setter Property="Stroke" Value="{DynamicResource Danger}"/>
+                    </DataTrigger>
+                </Border.Triggers>
                 <Entry Text="{Binding EditUrl}" TextColor="{DynamicResource TextColor}" BackgroundColor="Transparent" HeightRequest="48"/>
             </Border>
 
