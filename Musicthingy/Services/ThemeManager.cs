@@ -95,6 +95,30 @@ public class ThemeManager
 
 public static class SystemThemeHelper
 {
+    public static Color? GetNativeSecondaryContainer()
+    {
+#if ANDROID31_0_OR_GREATER
+        // Material You dynamic colors are only available on Android 12+
+        if (Android.OS.Build.VERSION.SdkInt >= Android.OS.BuildVersionCodes.S)
+        {
+            var context = Android.App.Application.Context;
+
+            // Detect if the system is in Dark Mode
+            bool isDark = (context.Resources.Configuration.UiMode & Android.Content.Res.UiMode.NightMask) == Android.Content.Res.UiMode.NightYes;
+
+            // In Material 3:
+            // "Accent2" is the Secondary palette used for UI containers and selections.
+            // 700 maps to Tone 30 (Dark mode container).
+            // 100 maps to Tone 90 (Light mode container).
+            int colorResId = isDark ? Android.Resource.Color.SystemAccent2700 : Android.Resource.Color.SystemAccent2100;
+
+            var androidColor = new Android.Graphics.Color(context.Resources.GetColor(colorResId, context.Theme));
+
+            return Color.FromRgba(androidColor.R, androidColor.G, androidColor.B, androidColor.A);
+        }
+#endif
+        return null;
+    }
     public static Color? GetAndroidSystemAccentColor()
     {
 #if ANDROID31_0_OR_GREATER

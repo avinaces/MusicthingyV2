@@ -227,6 +227,24 @@ public partial class MobileMainPage : ContentPage
         }
     }
 
+    private void OnTrackOptionsClicked(object? sender, EventArgs e)
+    {
+        if (sender is BindableObject bindable && bindable.BindingContext is PlaylistItem track)
+        {
+            if (BindingContext is ViewModels.MainViewModel vm)
+            {
+                if (track == vm.CurrentTrack)
+                {
+                    MenuHelper.ShowCurrentTrackOptions(track, vm);
+                }
+                else
+                {
+                    MenuHelper.ShowTrackOptions(track, vm);
+                }
+            }
+        }
+    }
+
     private void OnListScrolled(object? sender, ScrolledEventArgs e)
     {
         if (_isProgrammaticScroll)
@@ -247,24 +265,6 @@ public partial class MobileMainPage : ContentPage
 
         _lastScrollY = e.ScrollY;
         UpdateStickyToolbar();
-    }
-
-    private void OnTrackOptionsClicked(object? sender, EventArgs e)
-    {
-        if (sender is BindableObject bindable && bindable.BindingContext is PlaylistItem track)
-        {
-            if (BindingContext is ViewModels.MainViewModel vm)
-            {
-                if (track == vm.CurrentTrack)
-                {
-                    MenuHelper.ShowCurrentTrackOptions(track, vm);
-                }
-                else
-                {
-                    MenuHelper.ShowTrackOptions(track, vm);
-                }
-            }
-        }
     }
 
     private void OnPlaylistOptionsClicked(object? sender, EventArgs e)
