@@ -6,10 +6,6 @@
 
 		<AndroidPackageFormat>apk</AndroidPackageFormat>
 		<AndroidCreatePackagePerAbi>false</AndroidCreatePackagePerAbi>
-		
-     <!-- Android signing properties moved to a user-specific file 'Signing.props' which
-			 is not checked into source control. This file is imported at the end of the
-			 project file if it exists. -->
 
 		<LangVersion>latest</LangVersion>
 
