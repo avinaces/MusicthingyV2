@@ -22,6 +22,8 @@
 		<ImplicitUsings>enable</ImplicitUsings>
 		<Nullable>enable</Nullable>
 
+		<UseMaterial3>true</UseMaterial3>
+
 		<!-- Enable XAML source generation for faster build times and improved performance.
 		     This generates C# code from XAML at compile time instead of runtime inflation.
 		     To disable, remove this line.
@@ -91,10 +93,10 @@
 	</ItemGroup>
 
 	<ItemGroup>
-		<PackageReference Include="CommunityToolkit.Maui" Version="14.1.1" />
+		<PackageReference Include="CommunityToolkit.Maui" Version="14.2.0" />
 		<PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" />
-		<PackageReference Include="LibVLCSharp" Version="3.9.7.1" />
-		<PackageReference Include="Microsoft.Maui.Controls" Version="10.0.70" />
+		<PackageReference Include="LibVLCSharp" Version="3.10.0" />
+		<PackageReference Include="Microsoft.Maui.Controls" Version="10.0.71" />
 		<PackageReference Include="Microsoft.Extensions.Logging.Debug" Version="10.0.7" />
 		<PackageReference Include="VideoLAN.LibVLC.Windows" Version="3.0.23.1" />
 		<PackageReference Include="YoutubeExplode" Version="6.6.0" />

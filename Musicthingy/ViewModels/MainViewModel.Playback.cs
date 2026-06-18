@@ -18,8 +18,8 @@ public partial class MainViewModel
 {
     [ObservableProperty] public partial TimeSpan CurrentPosition { get; set; }
     [ObservableProperty] public partial TimeSpan Duration { get; set; }
-    [ObservableProperty] public partial double CurrentPositionSeconds { get; set; }
-    [ObservableProperty] public partial double DurationSeconds { get; set; }
+    [ObservableProperty] public partial double CurrentPositionSeconds { get; set; } = 0;
+    [ObservableProperty] public partial double DurationSeconds { get; set; } = 1;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(PlayPauseIcon))]
