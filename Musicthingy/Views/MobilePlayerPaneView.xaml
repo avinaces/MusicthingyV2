@@ -38,7 +38,7 @@
 
                 <VerticalStackLayout Grid.Row="0" Spacing="16" Margin="0,0,0,10">
 
-                    <HorizontalStackLayout Spacing="4" Margin="0,-16,0,-10">
+                    <HorizontalStackLayout Spacing="4" Margin="0,-10,0,-10">
 
                         <ImageButton Source="tag_icon.png"
                  WidthRequest="36"
@@ -80,7 +80,7 @@
 
                     </HorizontalStackLayout>
 
-                    <VerticalStackLayout Spacing="0">
+                    <VerticalStackLayout Spacing="0" Margin="0,0,0,-10">
 
                         <Slider
                             Minimum="0"
@@ -101,7 +101,7 @@
                     </VerticalStackLayout>
 
                     <!-- Main Transport Controls -->
-                    <HorizontalStackLayout HorizontalOptions="Center" Spacing="24" Margin="0,8,0,0">
+                    <HorizontalStackLayout HorizontalOptions="Center" Spacing="24" Margin="0,0,0,0">
 
                         <ImageButton x:Name="ShuffleBtn" 
                             Source="{Binding ShuffleIconSource}" 

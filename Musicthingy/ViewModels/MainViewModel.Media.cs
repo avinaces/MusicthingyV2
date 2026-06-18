@@ -9,7 +9,7 @@ namespace Musicthingy.ViewModels;
 public partial class MainViewModel
 {
     private const int PreloadTrackDelayMs = 15000;
-    private const int MinimumTimeUpdateIntervalMs = 500;
+    private const int MinimumTimeUpdateIntervalMs = 64;
     private const int ParseDelayTimeoutMs = 5000;
     private const int MaxSeekDesyncToleranceMs = 1500;
 
@@ -168,6 +168,20 @@ public partial class MainViewModel
         if (IsAutoFollowEnabled)
             TriggerAutoFollow();
 
+        // Display cached duration instantly before initiating any async loads, if possible
+        if (newValue.Duration.TotalSeconds > 0)
+        {
+            UpdateTrackDuration(newValue.Duration.TotalSeconds + (newValue.StartTime ?? 0), newValue);
+        }
+        else
+        {
+            Duration = TimeSpan.Zero;
+            DurationSeconds = 1; // Safeguard from division by zero exceptions in UI components
+
+            // Kick-off duration resolution as early as possible so it caches fast 
+            _ = Task.Run(() => ResolveSingleTrackDurationAsync(newValue, token));
+        }
+
         if (_playbackService.CanReuseMedia(newValue.Url))
         {
             Debug.WriteLine($"[Playback] Reusing existing media stream for URL: {newValue.Url}");
@@ -193,7 +207,13 @@ public partial class MainViewModel
                 CurrentPosition = TimeSpan.Zero;
                 CurrentPositionSeconds = 0;
 
-                double lengthSecs = _playbackService.LengthMs > 0 ? (_playbackService.LengthMs / 1000.0) : (CurrentTrack?.Duration.TotalSeconds ?? 0);
+                // Sync correct end-start boundary length internally
+                double lengthSecs = _playbackService.LengthMs > 0
+                    ? (_playbackService.LengthMs / 1000.0)
+                    : (CurrentTrack != null && CurrentTrack.Duration.TotalSeconds > 0
+                        ? CurrentTrack.Duration.TotalSeconds + (CurrentTrack.StartTime ?? 0)
+                        : 0);
+
                 UpdateTrackDuration(lengthSecs, CurrentTrack);
                 SyncOSPlaybackState();
             });
@@ -345,6 +365,97 @@ public partial class MainViewModel
         _ = UpdateOSMediaWidgetsAsync(track.Title, pl?.Name ?? "Musicthingy", widgetIconUrl);
     }
 
+    private async Task ResolveSingleTrackDurationAsync(PlaylistItem track, CancellationToken cancellationToken)
+    {
+        bool needsSave = await ResolveSingleTrackDurationInnerAsync(track, cancellationToken);
+        if (needsSave)
+        {
+            RequestSaveLibrary();
+        }
+    }
+
+    private async Task<bool> ResolveSingleTrackDurationInnerAsync(PlaylistItem track, CancellationToken cancellationToken)
+    {
+        try
+        {
+            bool isSuccess = false;
+
+            if (track.EndTime.HasValue)
+            {
+                double end = track.EndTime.Value;
+                double start = track.StartTime ?? 0;
+                if (end > start)
+                {
+                    MainThread.BeginInvokeOnMainThread(() =>
+                    {
+                        if (CurrentTrack == track)
+                            UpdateTrackDuration(end, track);
+                        else
+                            track.Duration = TimeSpan.FromSeconds(end - start);
+                    });
+                    isSuccess = true;
+                }
+            }
+
+            if (!isSuccess && MediaUrlHelper.IsYouTubeUrl(track.Url))
+            {
+                TimeSpan? duration = await _youtubeResolver.GetVideoDurationAsync(track.Url, cancellationToken);
+                if (duration.HasValue)
+                {
+                    MainThread.BeginInvokeOnMainThread(() =>
+                    {
+                        if (CurrentTrack == track)
+                            UpdateTrackDuration(duration.Value.TotalSeconds, track);
+                        else
+                        {
+                            double start = track.StartTime ?? 0;
+                            double durationSecs = duration.Value.TotalSeconds - start;
+                            track.Duration = TimeSpan.FromSeconds(Math.Max(durationSecs, 0));
+                        }
+                    });
+                    isSuccess = true;
+                }
+            }
+            else if (!isSuccess)
+            {
+                TimeSpan? duration = await _mediaProbingService.ProbeMediaDurationAsync(track.Url, cancellationToken);
+                if (duration.HasValue)
+                {
+                    MainThread.BeginInvokeOnMainThread(() =>
+                    {
+                        if (CurrentTrack == track)
+                            UpdateTrackDuration(duration.Value.TotalSeconds, track);
+                        else
+                        {
+                            double start = track.StartTime ?? 0;
+                            double durationSecs = duration.Value.TotalSeconds - start;
+                            track.Duration = TimeSpan.FromSeconds(Math.Max(durationSecs, 0));
+                        }
+                    });
+                    isSuccess = true;
+                }
+            }
+
+            if (isSuccess)
+            {
+                track.IsResolutionAttempted = true;
+                MainThread.BeginInvokeOnMainThread(() => track.Playlist?.RequestRecalculateDuration());
+                return true;
+            }
+            else
+            {
+                track.IsResolutionAttempted = true;
+                return false;
+            }
+        }
+        catch (OperationCanceledException) { return false; }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"[Resolve] Error resolving duration for {track.Url}: {ex.Message}");
+            return false;
+        }
+    }
+
     private async Task ResolvePlaylistDurationsAsync(Playlist playlist, CancellationToken cancellationToken = default)
     {
         if (playlist == null)
@@ -372,7 +483,7 @@ public partial class MainViewModel
 
         await Task.Run(async () =>
         {
-            bool needsSave = false;
+            int needsSave = 0;
 
             IEnumerable<Task> tasks = itemsToResolve.Select(async track =>
             {
@@ -383,75 +494,19 @@ public partial class MainViewModel
                     if (cancellationToken.IsCancellationRequested)
                         return;
 
-                    bool isSuccess = false;
-
-                    if (track.EndTime.HasValue)
-                    {
-                        double end = track.EndTime.Value;
-                        double start = track.StartTime ?? 0;
-                        if (end > start)
-                        {
-                            MainThread.BeginInvokeOnMainThread(() => track.Duration = TimeSpan.FromSeconds(end - start));
-                            isSuccess = true;
-                        }
-                    }
-
-                    if (!isSuccess && MediaUrlHelper.IsYouTubeUrl(track.Url))
-                    {
-                        TimeSpan? duration = await _youtubeResolver.GetVideoDurationAsync(track.Url, cancellationToken);
-
-                        if (duration.HasValue)
-                        {
-                            MainThread.BeginInvokeOnMainThread(() =>
-                            {
-                                double start = track.StartTime ?? 0;
-                                double durationSecs = duration.Value.TotalSeconds - start;
-                                track.Duration = TimeSpan.FromSeconds(Math.Max(durationSecs, 0));
-                            });
-                            isSuccess = true;
-                        }
-                    }
-                    else if (!isSuccess)
-                    {
-                        // Use the injected service here!
-                        TimeSpan? duration = await _mediaProbingService.ProbeMediaDurationAsync(track.Url, cancellationToken);
-
-                        if (duration.HasValue)
-                        {
-                            MainThread.BeginInvokeOnMainThread(() =>
-                            {
-                                double start = track.StartTime ?? 0;
-                                double durationSecs = duration.Value.TotalSeconds - start;
-                                track.Duration = TimeSpan.FromSeconds(Math.Max(durationSecs, 0));
-                            });
-                            isSuccess = true;
-                        }
-                    }
-
+                    bool isSuccess = await ResolveSingleTrackDurationInnerAsync(track, cancellationToken);
                     if (isSuccess)
                     {
-                        track.IsResolutionAttempted = true;
-                        needsSave = true;
-                        MainThread.BeginInvokeOnMainThread(() => playlist.RequestRecalculateDuration());
-                    }
-                    else
-                    {
-                        track.IsResolutionAttempted = true;
+                        Interlocked.Exchange(ref needsSave, 1);
                     }
                 }
-                catch (OperationCanceledException) { }
-                catch (Exception ex) { Debug.WriteLine($"[Resolve] Error resolving duration for {track.Url}: {ex.Message}"); }
                 finally { _probeConcurrencyLimit.Release(); }
             });
 
             await Task.WhenAll(tasks);
 
-            if (needsSave)
+            if (needsSave == 1)
                 RequestSaveLibrary();
         });
     }
-
-
-
-
 }

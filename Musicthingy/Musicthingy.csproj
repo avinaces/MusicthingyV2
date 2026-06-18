@@ -7,11 +7,9 @@
 		<AndroidPackageFormat>apk</AndroidPackageFormat>
 		<AndroidCreatePackagePerAbi>false</AndroidCreatePackagePerAbi>
 		
-		<AndroidKeyStore>true</AndroidKeyStore>
-		<AndroidSigningKeyStore>Keystore\Musicthingy.keystore</AndroidSigningKeyStore>
-		<AndroidSigningKeyAlias>musicthingy</AndroidSigningKeyAlias>
-		<AndroidSigningStorePass>***REMOVED***</AndroidSigningStorePass>
-		<AndroidSigningKeyPass>***REMOVED***</AndroidSigningKeyPass>
+     <!-- Android signing properties moved to a user-specific file 'Signing.props' which
+			 is not checked into source control. This file is imported at the end of the
+			 project file if it exists. -->
 
 		<LangVersion>latest</LangVersion>
 
@@ -25,11 +23,11 @@
 		<UseMaterial3>true</UseMaterial3>
 
 		<!-- Enable XAML source generation for faster build times and improved performance.
-		     This generates C# code from XAML at compile time instead of runtime inflation.
-		     To disable, remove this line.
-		     For individual files, you can override by setting Inflator metadata:
-		       <MauiXaml Update="MyPage.xaml" Inflator="Default" /> (reverts to defaults: Runtime for Debug, XamlC for Release)
-		       <MauiXaml Update="MyPage.xaml" Inflator="Runtime" /> (force runtime inflation) -->
+			 This generates C# code from XAML at compile time instead of runtime inflation.
+			 To disable, remove this line.
+			 For individual files, you can override by setting Inflator metadata:
+			   <MauiXaml Update="MyPage.xaml" Inflator="Default" /> (reverts to defaults: Runtime for Debug, XamlC for Release)
+			   <MauiXaml Update="MyPage.xaml" Inflator="Runtime" /> (force runtime inflation) -->
 		<MauiXamlInflator>SourceGen</MauiXamlInflator>
 
 		<!-- Display name -->
@@ -62,7 +60,7 @@
 		<MauiImage Include="Resources\Images\*" />
 		<MauiImage Update="Resources\Images\dotnet_bot.png" Resize="True" BaseSize="300,185" />
 		
-      <!-- Custom fonts removed so the app will use system default fonts -->
+	  <!-- Custom fonts removed so the app will use system default fonts -->
 		
 
 		<!-- Raw Assets (also remove the "Resources\Raw" prefix) -->
@@ -88,7 +86,7 @@
 
 	<ItemGroup>
 	  <MauiImage Include="Resources\Splash\music_4_icon_splash.svg">
-	    <TintColor>#C8D1D9</TintColor>
+		<TintColor>#C8D1D9</TintColor>
 	  </MauiImage>
 	</ItemGroup>
 
@@ -109,52 +107,52 @@
 
 	<ItemGroup>
 	  <MauiXaml Update="Views\BottomSheetContainer.xaml">
-	    <Generator>MSBuild:Compile</Generator>
+		<Generator>MSBuild:Compile</Generator>
 	  </MauiXaml>
 	  <MauiXaml Update="Views\ContextMenuSheet.xaml">
-	    <Generator>MSBuild:Compile</Generator>
+		<Generator>MSBuild:Compile</Generator>
 	  </MauiXaml>
 	  <MauiXaml Update="Views\EditPlaylistSheet.xaml">
-	    <Generator>MSBuild:Compile</Generator>
+		<Generator>MSBuild:Compile</Generator>
 	  </MauiXaml>
 	  <MauiXaml Update="Views\EditPlaylistTabs\EditPlaylistGeneralTab.xaml">
-	    <Generator>MSBuild:Compile</Generator>
+		<Generator>MSBuild:Compile</Generator>
 	  </MauiXaml>
 	  <MauiXaml Update="Views\EditTrackSheet.xaml">
-	    <Generator>MSBuild:Compile</Generator>
+		<Generator>MSBuild:Compile</Generator>
 	  </MauiXaml>
 	  <MauiXaml Update="Views\EditTrackTabs\EditTrackGeneralTab.xaml">
-	    <Generator>MSBuild:Compile</Generator>
+		<Generator>MSBuild:Compile</Generator>
 	  </MauiXaml>
 	  <MauiXaml Update="Views\EditTrackTabs\EditTrackLyricsTab.xaml">
-	    <Generator>MSBuild:Compile</Generator>
+		<Generator>MSBuild:Compile</Generator>
 	  </MauiXaml>
 	  <MauiXaml Update="Views\EditTrackTabs\EditTrackTagsTab.xaml">
-	    <Generator>MSBuild:Compile</Generator>
+		<Generator>MSBuild:Compile</Generator>
 	  </MauiXaml>
 	  <MauiXaml Update="Views\FilterOptionsSheet.xaml">
-	    <Generator>MSBuild:Compile</Generator>
+		<Generator>MSBuild:Compile</Generator>
 	  </MauiXaml>
 	  <MauiXaml Update="Views\MobileMainPage.xaml">
-	    <Generator>MSBuild:Compile</Generator>
+		<Generator>MSBuild:Compile</Generator>
 	  </MauiXaml>
 	  <MauiXaml Update="Views\MobilePlayerPaneView.xaml">
-	    <Generator>MSBuild:Compile</Generator>
+		<Generator>MSBuild:Compile</Generator>
 	  </MauiXaml>
 	  <MauiXaml Update="Views\PlayerPaneView.xaml">
-	    <Generator>MSBuild:Compile</Generator>
+		<Generator>MSBuild:Compile</Generator>
 	  </MauiXaml>
 	  <MauiXaml Update="Views\SegmentedTabBar.xaml">
-	    <Generator>MSBuild:Compile</Generator>
+		<Generator>MSBuild:Compile</Generator>
 	  </MauiXaml>
 	  <MauiXaml Update="Views\SharedPopupContainer.xaml">
-	    <Generator>MSBuild:Compile</Generator>
+		<Generator>MSBuild:Compile</Generator>
 	  </MauiXaml>
 	  <MauiXaml Update="Views\SlideUpSheetHost.xaml">
-	    <Generator>MSBuild:Compile</Generator>
+		<Generator>MSBuild:Compile</Generator>
 	  </MauiXaml>
 	  <MauiXaml Update="Views\SortOptionsSheet.xaml">
-	    <Generator>MSBuild:Compile</Generator>
+		<Generator>MSBuild:Compile</Generator>
 	  </MauiXaml>
 	</ItemGroup>
 
@@ -166,8 +164,11 @@
 
 	<ItemGroup Condition="'$(TargetFramework)' == 'net10.0-android'">
 	  <PackageReference Include="Xamarin.AndroidX.Media3.ExoPlayer">
-	    <Version>1.10.1</Version>
+		<Version>1.10.1</Version>
 	  </PackageReference>
 	</ItemGroup>
 
+  <!-- Import a user-specific signing file if it exists. Place your Android keystore and
+	   signing properties in 'Signing.props' and do not check that file into source control. -->
+  <Import Project="Signing.props" Condition="Exists('Signing.props')" />
 </Project>
