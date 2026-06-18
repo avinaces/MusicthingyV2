@@ -19,7 +19,7 @@
     <Color x:Key="SurfaceRaised">#232529</Color>
 
     <!-- Selected surfaces retain slightly more tint for visibility -->
-    <Color x:Key="SurfaceSelected">#214979</Color>
+    <Color x:Key="SurfaceSelected">#1B4C65</Color>
     <Color x:Key="SurfaceSelectedStrong">#344456</Color>
 
     <Color x:Key="SurfaceScrim">#050506</Color>
