@@ -10,8 +10,7 @@
 
             <Grid RowDefinitions="Auto, *">
 
-                <!-- Segmented Tab Bar -->
-                <local:SegmentedTabBar Grid.Row="0" Tabs="Track, Lyrics, Tags" SelectedIndexChanged="OnTabChanged" Margin="0,0,0,16" />
+                <local:SegmentedTabBar x:Name="TabBar" Grid.Row="0" Tabs="Track, Lyrics, Tags" SelectedIndexChanged="OnTabChanged" Margin="0,0,0,16" />
 
                 <!-- Fixed minimum height prevents the bottom sheet from resizing wildly when switching tabs -->
                 <Grid Grid.Row="1" MinimumHeightRequest="500">

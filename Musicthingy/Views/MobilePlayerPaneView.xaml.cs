@@ -22,6 +22,8 @@ public partial class MobilePlayerPaneView : ContentView
     private const double MiniHeight = 72;
     private const double MediumHeight = 280;
 
+    public System.Windows.Input.ICommand OpenTagsCommand { get; }
+
     private readonly PanVelocityTracker _velocityTracker = new();
 
     public MobilePlayerPaneView()
@@ -30,6 +32,8 @@ public partial class MobilePlayerPaneView : ContentView
         SetupGestures();
 
         UpdateLayoutForHeight(MiniHeight);
+
+        OpenTagsCommand = new Command<PlaylistItem>(OnOpenTagsClicked);
 
         WeakReferenceMessenger.Default.Register<ActiveLyricChangedMessage>(this, (r, m) =>
         {
@@ -354,7 +358,30 @@ public partial class MobilePlayerPaneView : ContentView
         }
     }
 
+    private void OnOpenTagsClicked(PlaylistItem? track)
+    {
+        if (track == null || this.BindingContext is not Musicthingy.ViewModels.MainViewModel vm)
+            return;
 
+        List<string> allTags = vm.GetAllKnownTags();
+
+        var editSheet = new EditTrackSheet(track, allTags, initialTabIndex: 2);
+
+        // Wire up the CloseAction so the Sheet Host knows when to safely slide down,
+        // fade out the scrim, and remove the sheet from the visual stack.
+        editSheet.CloseAction = async (result) =>
+        {
+            if (Services.SheetManager.Host != null)
+            {
+                await Services.SheetManager.Host.HideAsync(editSheet);
+            }
+        };
+
+        if (Services.SheetManager.Host != null)
+        {
+            _ = Services.SheetManager.Host.ShowAsync(editSheet);
+        }
+    }
 
     /// <summary>
     /// Event handler to open the Bottom Sheet Context Menu for the current track.

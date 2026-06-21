@@ -15,7 +15,8 @@ public partial class EditTrackSheet : ContentView, IBottomSheet
     private readonly PlaylistItem _originalTrack;
     private readonly List<string> _allTags;
 
-    public EditTrackSheet(PlaylistItem track, List<string> allTags)
+    // Added optional initialTabIndex parameter (0 = Track, 1 = Lyrics, 2 = Tags)
+    public EditTrackSheet(PlaylistItem track, List<string> allTags, int initialTabIndex = 0)
     {
         InitializeComponent();
 
@@ -26,6 +27,10 @@ public partial class EditTrackSheet : ContentView, IBottomSheet
         GeneralTab.BindingContext = new EditTrackForm(track);
         LyricsTab.BindingContext = new EditLyricsForm(track.Lyrics ?? "", track.Title, track.Artist ?? "", track.Url);
         TagsTab.BindingContext = new EditTagsForm(track.Tags.ToList(), allTags);
+
+        // Pre-select the requested tab
+        TabBar.SelectedIndex = initialTabIndex;
+        SetActiveTab(initialTabIndex);
     }
 
     private void OnTabChanged(object? sender, int index)
