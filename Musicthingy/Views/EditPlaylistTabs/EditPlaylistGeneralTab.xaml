@@ -5,11 +5,10 @@
 
     <ScrollView VerticalScrollBarVisibility="Never">
 
-        <!-- FLATTENED GRID: reduces measure cycles compared to nested StackLayouts -->
-        <Grid RowDefinitions="Auto, Auto, Auto" ColumnDefinitions="*,*" RowSpacing="6" Padding="0,0,0,16">
+        <Grid RowDefinitions="Auto, Auto, Auto" ColumnDefinitions="*" RowSpacing="16" Padding="0,0,0,16">
 
             <!-- 0: Icon picker -->
-            <VerticalStackLayout Grid.Row="0" Grid.ColumnSpan="2" HorizontalOptions="Center" Spacing="8" Margin="0,0,0,10">
+            <VerticalStackLayout Grid.Row="0" HorizontalOptions="Center" Spacing="8" Margin="0,0,0,10">
                 <Border WidthRequest="110" HeightRequest="110" StrokeShape="RoundRectangle 16" Stroke="{DynamicResource BorderColor}" StrokeThickness="1" BackgroundColor="{DynamicResource SurfaceInput}">
                     <Image Source="{Binding ItemIconSource}" Aspect="AspectFill" />
                     <Border.GestureRecognizers>
@@ -20,18 +19,37 @@
                 <Button Text="Reset" Command="{Binding ResetIconCommand}" BackgroundColor="Transparent" TextColor="{DynamicResource Danger}" HeightRequest="32" Padding="8,0" />
             </VerticalStackLayout>
 
-            <!-- 1 & 2: Name -->
-            <Label Grid.Row="1" Grid.ColumnSpan="2" Text="Playlist Name" TextColor="{DynamicResource TextColor}" FontSize="14" Margin="0,6,0,0"/>
-            <Border Grid.Row="2" Grid.ColumnSpan="2" BackgroundColor="{DynamicResource SurfaceInput}" Stroke="{DynamicResource InputBorderColor}" StrokeThickness="1" StrokeShape="RoundRectangle 8" Padding="12,0">
-                <Entry Text="{Binding EditName}" TextColor="{DynamicResource TextColor}" BackgroundColor="Transparent" HeightRequest="48"/>
-            </Border>
+            <!-- 1: Name -->
+            <VerticalStackLayout Grid.Row="1" Spacing="4">
+                <!-- Keep the static label on Windows only -->
+                <Label Text="Playlist Name" FontSize="14" TextColor="{DynamicResource TextColor}" Margin="4,0,0,0">
+                    <Label.IsVisible>
+                        <OnPlatform x:TypeArguments="x:Boolean" Default="False">
+                            <On Platform="WinUI" Value="True" />
+                        </OnPlatform>
+                    </Label.IsVisible>
+                </Label>
 
-            <!-- Source (optional) - keep commented for future use -->
+                <Entry Text="{Binding EditName}" 
+                       Placeholder="Playlist Name" 
+                       TextColor="{DynamicResource TextColor}" />
+            </VerticalStackLayout>
+
+            <!-- 2: Source (optional) - refactored to match in case it's uncommented later -->
             <!--
-            <Label Grid.Row="3" Grid.ColumnSpan="2" Text="Source URL (Optional)" TextColor="{DynamicResource TextColor}" FontSize="14" Margin="0,6,0,0"/>
-            <Border Grid.Row="4" Grid.ColumnSpan="2" BackgroundColor="{DynamicResource SurfaceInput}" Stroke="{DynamicResource InputBorderColor}" StrokeThickness="1" StrokeShape="RoundRectangle 8" Padding="12,0">
-                <Entry Text="{Binding EditSource}" TextColor="{DynamicResource TextColor}" BackgroundColor="Transparent" HeightRequest="48"/>
-            </Border>
+            <VerticalStackLayout Grid.Row="2" Spacing="4">
+                <Label Text="Source URL (Optional)" FontSize="14" TextColor="{DynamicResource TextColor}" Margin="4,0,0,0">
+                    <Label.IsVisible>
+                        <OnPlatform x:TypeArguments="x:Boolean" Default="False">
+                            <On Platform="WinUI" Value="True" />
+                        </OnPlatform>
+                    </Label.IsVisible>
+                </Label>
+                
+                <Entry Text="{Binding EditSource}" 
+                       Placeholder="Source URL (Optional)" 
+                       TextColor="{DynamicResource TextColor}" />
+            </VerticalStackLayout>
             -->
 
         </Grid>

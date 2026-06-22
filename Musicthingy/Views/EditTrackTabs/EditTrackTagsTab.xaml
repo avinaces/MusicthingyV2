@@ -5,11 +5,23 @@
              x:Class="Musicthingy.Views.EditTrackTagsTab">
 
     <Grid RowDefinitions="Auto, *">
+        <!-- Removed Border, allow native M3 styling -->
         <Grid Grid.Row="0" ColumnDefinitions="*, Auto" ColumnSpacing="12" Margin="0,0,0,16">
-            <Border BackgroundColor="{DynamicResource CardColor}" Stroke="{DynamicResource InputBorderColor}" StrokeThickness="1" StrokeShape="RoundRectangle 8" Padding="12,0">
-                <Entry Text="{Binding SearchText}" Placeholder="Search or create tag..." TextColor="{DynamicResource TextColor}" PlaceholderColor="{DynamicResource MutedColor}" BackgroundColor="Transparent" HeightRequest="48" />
-            </Border>
-            <Button Grid.Column="1" Text="Create" Command="{Binding CreateTagCommand}" IsVisible="{Binding CanCreateTag}" BackgroundColor="{DynamicResource AccentFill}" TextColor="{DynamicResource OnAccent}" CornerRadius="8" HeightRequest="48" />
+
+            <Entry Grid.Column="0" 
+                   Text="{Binding SearchText}" 
+                   Placeholder="Search or create tag..." 
+                   TextColor="{DynamicResource TextColor}" />
+
+            <Button Grid.Column="1" 
+                    Text="Create" 
+                    Command="{Binding CreateTagCommand}" 
+                    IsVisible="{Binding CanCreateTag}" 
+                    BackgroundColor="{DynamicResource Accent}" 
+                    TextColor="{DynamicResource OnAccent}" 
+                    CornerRadius="8" 
+                    HeightRequest="48"
+                    VerticalOptions="Center" />
         </Grid>
 
         <ScrollView Grid.Row="1" VerticalScrollBarVisibility="Never">

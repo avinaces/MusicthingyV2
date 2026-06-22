@@ -1,6 +1,22 @@
-<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8" ?>
 <resources>
-    <color name="colorPrimary">#315F88</color>
-    <color name="colorPrimaryDark">#0E1218</color>
-    <color name="colorAccent">#6EA0D6</color>
+	<!-- 
+      Change the parent to Theme.Material3.DayNight.NoActionBar. 
+      If it currently says Theme.MaterialComponents..., M3 will fallback to purple.
+    -->
+	<style name="Maui.MainTheme.NoActionBar" parent="Theme.Material3.DayNight.NoActionBar">
+		<!-- Standard Android attributes -->
+		<item name="colorPrimary">@color/colorPrimary</item>
+		<item name="colorPrimaryDark">@color/colorPrimaryDark</item>
+		<item name="colorAccent">@color/colorAccent</item>
+
+		<!-- Material 3 specific attributes (This is what the M3 Entry underlines/labels use) -->
+		<item name="colorSecondary">@color/colorAccent</item>
+		<item name="colorPrimaryContainer">@color/colorPrimary</item>
+		<item name="colorSecondaryContainer">@color/colorAccent</item>
+
+		<!-- Optional: fixes text selection/cursor color to match your accent -->
+		<item name="colorControlActivated">@color/colorAccent</item>
+		<item name="colorControlHighlight">@color/colorAccent</item>
+	</style>
 </resources>

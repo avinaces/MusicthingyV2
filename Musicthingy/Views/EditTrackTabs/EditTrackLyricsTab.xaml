@@ -31,7 +31,6 @@
                         Padding="12">
 
                         <ImageButton.Behaviors>
-                            <!-- Binds to the BoxView, changing automatically when the BoxView's trigger fires -->
                             <toolkit:IconTintColorBehavior TintColor="{Binding Color, Source={x:Reference SettingsColorHelper}}" />
                         </ImageButton.Behaviors>
 
@@ -44,37 +43,32 @@
                     </ImageButton>
                 </Grid>
 
-                <VerticalStackLayout Spacing="12" IsVisible="{Binding IsAdvancedOpen}">
-                    <BoxView HeightRequest="1" Color="{DynamicResource BorderColor}" Margin="0,4"/>
+                <VerticalStackLayout Spacing="16" IsVisible="{Binding IsAdvancedOpen}" Margin="0,8,0,0">
+                    <BoxView HeightRequest="1" Color="{DynamicResource BorderColor}" />
 
+                    <!-- Let M3 handle the floating label placeholders natively -->
                     <Grid ColumnDefinitions="*,*" ColumnSpacing="12">
-                        <VerticalStackLayout Grid.Column="0" Spacing="6">
-                            <Label Text="Title" TextColor="{DynamicResource TextColor}" FontSize="14"/>
-                            <Border BackgroundColor="{DynamicResource SurfaceInput}" Stroke="{DynamicResource InputBorderColor}" StrokeThickness="1" StrokeShape="RoundRectangle 8" Padding="12,0">
-                                <Entry Text="{Binding SearchTitle}" TextColor="{DynamicResource TextColor}" BackgroundColor="Transparent" HeightRequest="48"/>
-                            </Border>
-                        </VerticalStackLayout>
-                        <VerticalStackLayout Grid.Column="1" Spacing="6">
-                            <Label Text="Artist" TextColor="{DynamicResource TextColor}" FontSize="14"/>
-                            <Border BackgroundColor="{DynamicResource SurfaceInput}" Stroke="{DynamicResource InputBorderColor}" StrokeThickness="1" StrokeShape="RoundRectangle 8" Padding="12,0">
-                                <Entry Text="{Binding SearchArtist}" TextColor="{DynamicResource TextColor}" BackgroundColor="Transparent" HeightRequest="48"/>
-                            </Border>
-                        </VerticalStackLayout>
+                        <Entry Grid.Column="0" 
+                               Text="{Binding SearchTitle}" 
+                               Placeholder="Title" 
+                               TextColor="{DynamicResource TextColor}" />
+
+                        <Entry Grid.Column="1" 
+                               Text="{Binding SearchArtist}" 
+                               Placeholder="Artist" 
+                               TextColor="{DynamicResource TextColor}" />
                     </Grid>
 
-                    <VerticalStackLayout Spacing="6">
-                        <Label Text="Preferred Format" TextColor="{DynamicResource TextColor}" FontSize="14"/>
-                        <Border Stroke="{DynamicResource InputBorderColor}" StrokeThickness="1" BackgroundColor="{DynamicResource SurfaceInput}" StrokeShape="RoundRectangle 8" Padding="12,0">
-                            <Picker SelectedItem="{Binding SearchType}" TextColor="{DynamicResource TextColor}" Title="Select Format...">
-                                <Picker.ItemsSource>
-                                    <x:Array Type="{x:Type x:String}">
-                                        <x:String>Timed Lyrics (LRC)</x:String>
-                                        <x:String>Plain Text (Untimed)</x:String>
-                                    </x:Array>
-                                </Picker.ItemsSource>
-                            </Picker>
-                        </Border>
-                    </VerticalStackLayout>
+                    <Picker SelectedItem="{Binding SearchType}" 
+                            Title="Preferred Format"
+                            TextColor="{DynamicResource TextColor}">
+                        <Picker.ItemsSource>
+                            <x:Array Type="{x:Type x:String}">
+                                <x:String>Timed Lyrics (LRC)</x:String>
+                                <x:String>Plain Text (Untimed)</x:String>
+                            </x:Array>
+                        </Picker.ItemsSource>
+                    </Picker>
                 </VerticalStackLayout>
 
                 <ActivityIndicator IsRunning="{Binding IsSearching}" Color="{DynamicResource AccentColor}" HeightRequest="24" IsVisible="{Binding IsSearching}" Margin="0,4,0,0"/>
@@ -83,7 +77,19 @@
         </Border>
 
         <Border Grid.Row="1" BackgroundColor="{DynamicResource CardColor}" Stroke="{DynamicResource BorderColor}" StrokeThickness="1" StrokeShape="RoundRectangle 8" Padding="0">
-            <Editor x:Name="LyricsEditor" Text="{Binding LyricsText}" TextColor="{DynamicResource TextColor}" BackgroundColor="Transparent" VerticalOptions="Fill" HorizontalOptions="Fill" Margin="12" FontSize="14" IsTextPredictionEnabled="False" IsSpellCheckEnabled="False"/>
+            <!-- Set AutoSize="Disabled" and fixed HeightRequest so it becomes scrollable instead of pushing the sheet boundaries out -->
+            <Editor x:Name="LyricsEditor" 
+                    Text="{Binding LyricsText}" 
+                    TextColor="{DynamicResource TextColor}" 
+                    BackgroundColor="Transparent" 
+                    VerticalOptions="Fill" 
+                    HorizontalOptions="Fill" 
+                    Margin="12" 
+                    FontSize="14" 
+                    IsTextPredictionEnabled="False" 
+                    IsSpellCheckEnabled="False"
+                    AutoSize="Disabled"
+                    HeightRequest="250" />
         </Border>
     </Grid>
 </ContentView>

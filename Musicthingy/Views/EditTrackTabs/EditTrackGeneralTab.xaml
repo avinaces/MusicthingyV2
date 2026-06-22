@@ -6,10 +6,11 @@
 
     <ScrollView VerticalScrollBarVisibility="Never">
 
-        <Grid RowDefinitions="Auto, Auto, Auto, Auto, Auto, Auto, Auto, Auto" ColumnDefinitions="*,*" RowSpacing="6" Padding="0,0,0,16">
+        <!-- Simplified the main Grid to a single column, using nested layouts for side-by-side elements -->
+        <Grid RowDefinitions="Auto, Auto, Auto, Auto, Auto" ColumnDefinitions="*" RowSpacing="16" Padding="0,0,0,16">
 
             <!-- 0: Icon picker -->
-            <VerticalStackLayout Grid.Row="0" Grid.ColumnSpan="2" HorizontalOptions="Center" Spacing="8" Margin="0,0,0,10">
+            <VerticalStackLayout Grid.Row="0" HorizontalOptions="Center" Spacing="8" Margin="0,0,0,10">
                 <Border WidthRequest="96" HeightRequest="96" StrokeShape="RoundRectangle 16" Stroke="{DynamicResource BorderColor}" StrokeThickness="1" BackgroundColor="{DynamicResource SurfaceInput}">
                     <Image Source="{Binding ItemIconSource}" Aspect="AspectFill" />
                     <Border.GestureRecognizers>
@@ -20,49 +21,83 @@
                 <Button Text="Reset" Command="{Binding ResetIconCommand}" BackgroundColor="Transparent" TextColor="{DynamicResource Danger}" HeightRequest="32" Padding="8,0" />
             </VerticalStackLayout>
 
-            <!-- 1 & 2: Title Validation & Input -->
-            <Grid Grid.Row="1" Grid.ColumnSpan="2" Margin="0,6,0,0" ColumnDefinitions="Auto,*" ColumnSpacing="8">
-                <Label Text="Title *" TextColor="{DynamicResource TextColor}" FontSize="14" VerticalOptions="Center" />
-                <views:AutoMarqueeLabel Grid.Column="1" Text="{Binding TitleError}" TextColor="{DynamicResource Danger}" FontSize="12" VerticalOptions="Center" HorizontalOptions="Fill" IsVisible="{Binding HasTitleError}" />
+            <!-- 1: Title Input & Validation -->
+            <VerticalStackLayout Grid.Row="1" Spacing="4">
+                <!-- Keep the static label on Windows only, since WinUI doesn't support M3 floating placeholders -->
+                <Label Text="Title *" FontSize="14" TextColor="{DynamicResource TextColor}" Margin="4,0,0,0">
+                    <Label.IsVisible>
+                        <OnPlatform x:TypeArguments="x:Boolean" Default="False">
+                            <On Platform="WinUI" Value="True" />
+                        </OnPlatform>
+                    </Label.IsVisible>
+                </Label>
+
+                <Entry Text="{Binding EditTitle}" 
+                       Placeholder="Title *" 
+                       TextColor="{DynamicResource TextColor}" />
+
+                <views:AutoMarqueeLabel Text="{Binding TitleError}" 
+                                        TextColor="{DynamicResource Danger}" 
+                                        FontSize="12" 
+                                        IsVisible="{Binding HasTitleError}" 
+                                        Margin="4,0,0,0" />
+            </VerticalStackLayout>
+
+            <!-- 2: URL Input & Validation -->
+            <VerticalStackLayout Grid.Row="2" Spacing="4">
+                <Label Text="Stream URL / Path *" FontSize="14" TextColor="{DynamicResource TextColor}" Margin="4,0,0,0">
+                    <Label.IsVisible>
+                        <OnPlatform x:TypeArguments="x:Boolean" Default="False">
+                            <On Platform="WinUI" Value="True" />
+                        </OnPlatform>
+                    </Label.IsVisible>
+                </Label>
+
+                <Entry Text="{Binding EditUrl}" 
+                       Placeholder="Stream URL / Path *" 
+                       TextColor="{DynamicResource TextColor}" />
+
+                <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8" Margin="4,0,0,0">
+                    <ActivityIndicator Grid.Column="0" IsRunning="{Binding IsCheckingUrl}" IsVisible="{Binding IsCheckingUrl}" Color="{DynamicResource Accent}" WidthRequest="14" HeightRequest="14" VerticalOptions="Center" />
+                    <views:AutoMarqueeLabel Grid.Column="1" Text="{Binding UrlError}" TextColor="{DynamicResource Danger}" FontSize="12" VerticalOptions="Center" HorizontalOptions="Fill" IsVisible="{Binding HasUrlError}" />
+                </Grid>
+            </VerticalStackLayout>
+
+            <!-- 3: Times Grid -->
+            <Grid Grid.Row="3" ColumnDefinitions="*,*" ColumnSpacing="12">
+                <!-- Start Time -->
+                <VerticalStackLayout Grid.Column="0" Spacing="4">
+                    <Label Text="Start Time (sec)" FontSize="14" TextColor="{DynamicResource TextColor}" Margin="4,0,0,0">
+                        <Label.IsVisible>
+                            <OnPlatform x:TypeArguments="x:Boolean" Default="False">
+                                <On Platform="WinUI" Value="True" />
+                            </OnPlatform>
+                        </Label.IsVisible>
+                    </Label>
+                    <Entry Text="{Binding EditStartTime}" 
+                           Placeholder="Start Time (sec)" 
+                           Keyboard="Numeric" 
+                           TextColor="{DynamicResource TextColor}" />
+                </VerticalStackLayout>
+
+                <!-- End Time -->
+                <VerticalStackLayout Grid.Column="1" Spacing="4">
+                    <Label Text="End Time (sec)" FontSize="14" TextColor="{DynamicResource TextColor}" Margin="4,0,0,0">
+                        <Label.IsVisible>
+                            <OnPlatform x:TypeArguments="x:Boolean" Default="False">
+                                <On Platform="WinUI" Value="True" />
+                            </OnPlatform>
+                        </Label.IsVisible>
+                    </Label>
+                    <Entry Text="{Binding EditEndTime}" 
+                           Placeholder="End Time (sec)" 
+                           Keyboard="Numeric" 
+                           TextColor="{DynamicResource TextColor}" />
+                </VerticalStackLayout>
             </Grid>
-            <Border Grid.Row="2" Grid.ColumnSpan="2" BackgroundColor="{DynamicResource SurfaceInput}" Stroke="{DynamicResource InputBorderColor}" StrokeThickness="1" StrokeShape="RoundRectangle 8" Padding="12,0">
-                <Border.Triggers>
-                    <DataTrigger TargetType="Border" Binding="{Binding HasTitleError}" Value="True">
-                        <Setter Property="Stroke" Value="{DynamicResource Danger}"/>
-                    </DataTrigger>
-                </Border.Triggers>
-                <Entry Text="{Binding EditTitle}" TextColor="{DynamicResource TextColor}" BackgroundColor="Transparent" HeightRequest="48"/>
-            </Border>
 
-            <!-- 3 & 4: URL Validation & Input -->
-            <Grid Grid.Row="3" Grid.ColumnSpan="2" Margin="0,6,0,0" ColumnDefinitions="Auto,Auto,*" ColumnSpacing="8">
-                <Label Text="Stream URL / Path *" TextColor="{DynamicResource TextColor}" FontSize="14" VerticalOptions="Center" />
-                <!-- Loading Spinner for debounced network check -->
-                <ActivityIndicator Grid.Column="1" IsRunning="{Binding IsCheckingUrl}" IsVisible="{Binding IsCheckingUrl}" Color="{DynamicResource Accent}" WidthRequest="14" HeightRequest="14" VerticalOptions="Center" />
-                <views:AutoMarqueeLabel Grid.Column="2" Text="{Binding UrlError}" TextColor="{DynamicResource Danger}" FontSize="12" VerticalOptions="Center" HorizontalOptions="Fill" IsVisible="{Binding HasUrlError}" />
-            </Grid>
-            <Border Grid.Row="4" Grid.ColumnSpan="2" BackgroundColor="{DynamicResource SurfaceInput}" Stroke="{DynamicResource InputBorderColor}" StrokeThickness="1" StrokeShape="RoundRectangle 8" Padding="12,0">
-                <Border.Triggers>
-                    <DataTrigger TargetType="Border" Binding="{Binding HasUrlError}" Value="True">
-                        <Setter Property="Stroke" Value="{DynamicResource Danger}"/>
-                    </DataTrigger>
-                </Border.Triggers>
-                <Entry Text="{Binding EditUrl}" TextColor="{DynamicResource TextColor}" BackgroundColor="Transparent" HeightRequest="48"/>
-            </Border>
-
-            <!-- 5 & 6: Times Grid -->
-            <Label Grid.Row="5" Grid.Column="0" Text="Start Time (sec)" TextColor="{DynamicResource TextColor}" FontSize="14" Margin="0,6,0,0"/>
-            <Border Grid.Row="6" Grid.Column="0" Margin="0,0,6,0" BackgroundColor="{DynamicResource SurfaceInput}" Stroke="{DynamicResource InputBorderColor}" StrokeThickness="1" StrokeShape="RoundRectangle 8" Padding="12,0">
-                <Entry Text="{Binding EditStartTime}" Keyboard="Numeric" TextColor="{DynamicResource TextColor}" BackgroundColor="Transparent" HeightRequest="48"/>
-            </Border>
-
-            <Label Grid.Row="5" Grid.Column="1" Text="End Time (sec)" TextColor="{DynamicResource TextColor}" FontSize="14" Margin="0,6,0,0"/>
-            <Border Grid.Row="6" Grid.Column="1" Margin="6,0,0,0" BackgroundColor="{DynamicResource SurfaceInput}" Stroke="{DynamicResource InputBorderColor}" StrokeThickness="1" StrokeShape="RoundRectangle 8" Padding="12,0">
-                <Entry Text="{Binding EditEndTime}" Keyboard="Numeric" TextColor="{DynamicResource TextColor}" BackgroundColor="Transparent" HeightRequest="48"/>
-            </Border>
-
-            <!-- 7: Last Played -->
-            <Label Grid.Row="7" Grid.ColumnSpan="2" Text="{Binding LastPlayedText, StringFormat='Last Played: {0}'}" TextColor="{DynamicResource MutedColor}" FontSize="12" HorizontalOptions="Center" Margin="0,12,0,0">
+            <!-- 4: Last Played -->
+            <Label Grid.Row="4" Text="{Binding LastPlayedText, StringFormat='Last Played: {0}'}" TextColor="{DynamicResource MutedColor}" FontSize="12" HorizontalOptions="Center" Margin="0,8,0,0">
                 <Label.Triggers>
                     <DataTrigger TargetType="Label" Binding="{Binding LastPlayedText}" Value="">
                         <Setter Property="IsVisible" Value="False" />
