@@ -33,10 +33,10 @@ public partial class MobileMainPage : ContentPage
 
         WeakReferenceMessenger.Default.Register<ScrollToTrackMessage>(this, (r, m) =>
         {
+            _isProgrammaticScroll = true;
+
             Task.Run(async () =>
             {
-                _isProgrammaticScroll = true;
-
                 await Task.Delay(150);
 
                 MainThread.BeginInvokeOnMainThread(() =>
@@ -46,20 +46,11 @@ public partial class MobileMainPage : ContentPage
                         TracksListView?.ScrollToItem(m.Track, ScrollToPosition.Center, false);
                     }
                     catch { }
-                });
 
-                ResetScrollDetection();
+                    ResetScrollDetection();
+                });
             });
         });
-    }
-
-    protected override void OnSizeAllocated(double width, double height)
-    {
-        base.OnSizeAllocated(width, height);
-        if (!_isSidebarOpen && width > 0)
-        {
-            SidebarGrid.TranslationX = -width;
-        }
     }
 
     private void ResetScrollDetection()
@@ -74,7 +65,7 @@ public partial class MobileMainPage : ContentPage
             try
             {
                 await Task.Delay(300, token);
-                _isProgrammaticScroll = false;
+                MainThread.BeginInvokeOnMainThread(() => _isProgrammaticScroll = false);
             }
             catch (TaskCanceledException) { }
         });

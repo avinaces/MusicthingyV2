@@ -383,12 +383,12 @@ public partial class MainViewModel
     {
         if (CurrentTrack != null && CurrentTrack.Playlist != null)
         {
+            CommunityToolkit.Mvvm.Messaging.WeakReferenceMessenger.Default.Send(new ScrollToTrackMessage(CurrentTrack));
+
             if (SelectedPlaylist != CurrentTrack.Playlist)
             {
                 SelectedPlaylist = CurrentTrack.Playlist;
             }
-
-            CommunityToolkit.Mvvm.Messaging.WeakReferenceMessenger.Default.Send(new ScrollToTrackMessage(CurrentTrack));
         }
     }
 
