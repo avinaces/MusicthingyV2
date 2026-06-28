@@ -17,6 +17,7 @@ public class SettingsManager
     public PlaybackQueueDataSetting PlaybackQueueData { get; }
     public CurrentTrackDataSetting CurrentTrackData { get; }
     public UseSystemThemeSetting UseSystemTheme { get; }
+    public PauseAtZeroVolumeSetting PauseAtZeroVolume { get; }
 
     private readonly IEnumerable<ISetting> _allSettings;
 
@@ -32,6 +33,7 @@ public class SettingsManager
         PlaybackQueueData = GetSetting<PlaybackQueueDataSetting>();
         CurrentTrackData = GetSetting<CurrentTrackDataSetting>();
         UseSystemTheme = GetSetting<UseSystemThemeSetting>();
+        PauseAtZeroVolume = GetSetting<PauseAtZeroVolumeSetting>();
     }
 
     private T GetSetting<T>() where T : class, ISetting

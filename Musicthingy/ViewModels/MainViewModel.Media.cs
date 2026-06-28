@@ -69,6 +69,18 @@ public partial class MainViewModel
         Debug.WriteLine($"[Playback] Playing @ {_playbackStartupSw?.ElapsedMilliseconds}ms");
         MainThread.BeginInvokeOnMainThread(() =>
         {
+            if (_pauseOnLoad)
+            {
+                // User pressed pause while it was loading. Enforce the pause now.
+                _playbackService.Pause();
+                _pauseOnLoad = false;
+                IsLoadingMedia = false;
+                IsPlaying = false;
+                SyncOSPlaybackState();
+                ReleaseTransientWakeLock();
+                return;
+            }
+
             IsPlaying = true;
             IsLoadingMedia = false;
             SyncOSPlaybackState();
@@ -156,6 +168,7 @@ public partial class MainViewModel
 
     private async Task ReloadMediaAsync(PlaylistItem newValue)
     {
+        _pauseOnLoad = false;
         _mediaLoadCts?.Cancel();
         _mediaLoadCts = new CancellationTokenSource();
         CancellationToken token = _mediaLoadCts.Token;

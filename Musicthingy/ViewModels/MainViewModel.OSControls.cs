@@ -10,6 +10,11 @@ using Android.Media;
 using Android.Media.Session;
 using Android.OS;
 using CommunityToolkit.Mvvm.Messaging;
+using Musicthingy.Models;
+using Musicthingy.Services;
+using Stream = Android.Media.Stream;
+
+
 
 #endif
 using System.Net.Http;
@@ -76,9 +81,59 @@ public partial class MainViewModel
     }
 #endif
 
+
 #if ANDROID
+
+
+    private void HandleVolumeChange(int volumeLevel)
+    {
+        if (SettingsManager.IsRestoringState) return;
+
+        if (_settingsManager.PauseAtZeroVolume.Value)
+        {
+            if (volumeLevel <= 0 && IsPlaying)
+            {
+                Pause();
+
+                _pausedByZeroVolume = true;
+            }
+            else if (volumeLevel > 0 && !IsPlaying && _pausedByZeroVolume)
+            {
+                _pausedByZeroVolume = false;
+                Play();
+            }
+        }
+    }
+
+    private class VolumeChangeReceiver : BroadcastReceiver
+    {
+        private readonly MainViewModel _vm;
+        public VolumeChangeReceiver(MainViewModel vm) { _vm = vm; }
+
+        public override void OnReceive(Context? context, Intent? intent)
+        {
+            if (intent?.Action == "android.media.VOLUME_CHANGED_ACTION")
+            {
+                // Check if the stream changed was the Music/Media stream
+                int streamType = intent.GetIntExtra("android.media.EXTRA_VOLUME_STREAM_TYPE", -1);
+
+                if (streamType == (int)Stream.Music)
+                {
+                    // Grab the exact volume from the intent itself to avoid the Android timing delay
+                    int newVolume = intent.GetIntExtra("android.media.EXTRA_VOLUME_STREAM_VALUE", -1);
+
+                    if (newVolume != -1)
+                    {
+                        MainThread.BeginInvokeOnMainThread(() => _vm.HandleVolumeChange(newVolume));
+                    }
+                }
+            }
+        }
+    }
+
     private MediaSession? _mediaSession;
     private Android.Graphics.Bitmap? _currentAndroidArt;
+    private VolumeChangeReceiver? _volumeReceiver;
 
     private void SetupAndroidWidgets()
     {
@@ -91,6 +146,11 @@ public partial class MainViewModel
         _mediaSession.SetCallback(new CustomMediaSessionCallback(this));
         _mediaSession.SetFlags(MediaSessionFlags.HandlesMediaButtons | MediaSessionFlags.HandlesTransportControls);
         _mediaSession.Active = true;
+
+        // DYNAMICALLY register the volume receiver so Android 8.0+ actually fires it
+        _volumeReceiver = new VolumeChangeReceiver(this);
+        var filter = new IntentFilter("android.media.VOLUME_CHANGED_ACTION");
+        context.RegisterReceiver(_volumeReceiver, filter);
     }
 
     private class CustomMediaSessionCallback : MediaSession.Callback

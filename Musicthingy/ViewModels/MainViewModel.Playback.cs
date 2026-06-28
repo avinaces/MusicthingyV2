@@ -75,6 +75,11 @@ public partial class MainViewModel
     private DateTime _lastPositionSave = DateTime.MinValue;
     private bool _isDragging;
 
+    private bool _pauseOnLoad = false;
+
+    // Allows to auto-resume when volume goes back up.
+    private bool _pausedByZeroVolume = false;
+
     // A shadow queue to preserve the un-shuffled state (including any manually added tracks)
     private List<PlaylistItem> _unshuffledQueue = new();
 
@@ -269,18 +274,52 @@ public partial class MainViewModel
     }
 
     [RelayCommand]
-    private void TogglePlay()
+    public void Play()
     {
-        if (IsLoadingMedia) return;
+        _pausedByZeroVolume = false;
 
-        if (IsPlaying)
+        if (IsLoadingMedia)
+        {
+            _pauseOnLoad = false;
+            return;
+        }
+
+        if (IsPlaying) return;
+
+        AcquireTransientWakeLock();
+        _playbackService.Play();
+    }
+
+    [RelayCommand]
+    public void Pause()
+    {
+        _pausedByZeroVolume = false;
+
+        if (IsLoadingMedia)
+        {
+            _pauseOnLoad = true;
+        }
+
+        if (IsPlaying || IsLoadingMedia)
         {
             _playbackService.Pause();
+            IsPlaying = false;
+            ReleaseTransientWakeLock();
+            SyncOSPlaybackState();
+        }
+    }
+
+    [RelayCommand]
+    public void TogglePlay()
+    {
+        // If playing, OR if loading and we haven't already flagged it to pause
+        if (IsPlaying || (IsLoadingMedia && !_pauseOnLoad))
+        {
+            Pause();
         }
         else
         {
-            AcquireTransientWakeLock();
-            _playbackService.Play();
+            Play();
         }
     }
 
