@@ -18,6 +18,8 @@ namespace Musicthingy
 
             // Register Services
             builder.Services.AddSingleton<ThemeManager>();
+            // Use reflection-based automatic registration for app settings
+            builder.Services.AddAppSettings();
             builder.Services.AddSingleton<ColorExtractionService>();
             builder.Services.AddSingleton<YouTubeResolverService>();
 
@@ -28,7 +30,7 @@ namespace Musicthingy
 #if WINDOWS
             builder.Services.AddSingleton<Musicthingy.Services.IMediaProbingService, Musicthingy.Platforms.Windows.VlcMediaProbingService>();
 #elif ANDROID
-            builder.Services.AddSingleton<Musicthingy.Services.IMediaProbingService, Musicthingy.Platforms.Android.ExoPlayerMediaProbingService>();
+            builder.Services.AddSingleton<IMediaProbingService, Platforms.Android.ExoPlayerMediaProbingService>();
 #endif
 
             // ----------------------------------------------------
@@ -50,12 +52,46 @@ namespace Musicthingy
             builder.Services.AddTransient<AppShell>();
 
             builder.UseMauiApp<App>()
-                .UseMauiCommunityToolkit()
+                .UseMauiCommunityToolkit(static options =>
+                {
+                    options.SetPopupDefaults(new DefaultPopupSettings
+                    {
+                        Padding = 0,
+                    });
+
+                    options.SetPopupOptionsDefaults(new DefaultPopupOptionsSettings
+                    {
+                        Shape = null,
+                        CanBeDismissedByTappingOutsideOfPopup = true
+                    });
+                })
                 .UseMPowerKitListView()
                 .ConfigureFonts(fonts => { });
 
 
             return builder.Build();
         }
+    }
+}
+
+
+public static class SettingsExtensions
+{
+    public static IServiceCollection AddAppSettings(this IServiceCollection services)
+    {
+        // 1. Find all classes that inherit from ISetting
+        var settingTypes = System.Reflection.Assembly.GetExecutingAssembly().GetTypes()
+            .Where(t => !t.IsAbstract && !t.IsInterface && typeof(Musicthingy.Settings.ISetting).IsAssignableFrom(t));
+
+        // 2. Register them automatically
+        foreach (Type? type in settingTypes)
+        {
+            services.AddSingleton(typeof(Musicthingy.Settings.ISetting), type);
+        }
+
+        // 3. Register the manager
+        services.AddSingleton<Musicthingy.Services.SettingsManager>();
+
+        return services;
     }
 }

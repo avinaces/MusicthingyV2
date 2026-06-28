@@ -2,6 +2,7 @@
 using CommunityToolkit.Mvvm.Input;
 using CommunityToolkit.Mvvm.Messaging;
 using Musicthingy.Models;
+using Musicthingy.Services;
 using System.Collections.ObjectModel;
 using System.Text.Json;
 
@@ -82,7 +83,7 @@ public partial class MainViewModel
 
     private void SavePlaybackQueueState()
     {
-        if (_isRestoringState) return;
+        if (SettingsManager.IsRestoringState) return;
 
         var queueData = PlaybackQueue
             .Where(t => t.Playlist != null)
@@ -95,14 +96,15 @@ public partial class MainViewModel
             })
             .ToList();
 
-        Preferences.Default.Set("PlaybackQueueData", JsonSerializer.Serialize(queueData));
+        // Persist via SettingsManager
+        _settingsManager.PlaybackQueueData.Value = JsonSerializer.Serialize(queueData);
     }
 
     [RelayCommand]
     private void ToggleShuffle()
     {
         IsShuffleEnabled = !IsShuffleEnabled;
-        Preferences.Default.Set("IsShuffleEnabled", IsShuffleEnabled);
+        _settingsManager.ShuffleEnabled.Value = IsShuffleEnabled;
 
         if (PlaybackQueue == null || PlaybackQueue.Count == 0 || CurrentTrack == null) return;
 
@@ -153,7 +155,7 @@ public partial class MainViewModel
             _ => RepeatMode.Off
         };
 
-        Preferences.Default.Set("RepeatState", (int)RepeatState);
+        _settingsManager.RepeatMode.Value = (int)RepeatState;
     }
 
     [RelayCommand]
@@ -162,7 +164,7 @@ public partial class MainViewModel
         if (SelectedPlaylist == null || DisplayedItems.Count == 0) return;
 
         IsShuffleEnabled = false;
-        Preferences.Default.Set("IsShuffleEnabled", false);
+        _settingsManager.ShuffleEnabled.Value = false;
 
         MainThread.BeginInvokeOnMainThread(() =>
         {
@@ -180,7 +182,7 @@ public partial class MainViewModel
         if (SelectedPlaylist == null || DisplayedItems.Count == 0) return;
 
         IsShuffleEnabled = true;
-        Preferences.Default.Set("IsShuffleEnabled", true);
+        _settingsManager.ShuffleEnabled.Value = true;
 
         MainThread.BeginInvokeOnMainThread(() =>
         {
@@ -300,9 +302,9 @@ public partial class MainViewModel
 
     partial void OnCurrentPositionChanged(TimeSpan value)
     {
-        if (!_isRestoringState && value.TotalSeconds > 0 && (DateTime.Now - _lastPositionSave).TotalSeconds >= 5)
+        if (!SettingsManager.IsRestoringState && value.TotalSeconds > 0 && (DateTime.Now - _lastPositionSave).TotalSeconds >= 5)
         {
-            Preferences.Default.Set("CurrentPositionSeconds", value.TotalSeconds);
+            _settingsManager.CurrentPositionSeconds.Value = value.TotalSeconds;
             _lastPositionSave = DateTime.Now;
         }
     }
@@ -311,7 +313,7 @@ public partial class MainViewModel
     {
         _lastTrackSkipped = null;
 
-        if (!_isRestoringState && newValue != null)
+        if (!SettingsManager.IsRestoringState && newValue != null)
         {
             var currentRef = new QueueItemRef
             {
@@ -321,8 +323,8 @@ public partial class MainViewModel
                 EndTime = newValue.EndTime
             };
 
-            Preferences.Default.Set("CurrentTrackData", JsonSerializer.Serialize(currentRef));
-            Preferences.Default.Set("CurrentPositionSeconds", 0.0);
+            _settingsManager.CurrentTrackData.Value = JsonSerializer.Serialize(currentRef);
+            _settingsManager.CurrentPositionSeconds.Value = 0.0;
         }
 
         if (newValue == null)

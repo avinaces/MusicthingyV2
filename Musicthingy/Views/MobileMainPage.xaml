@@ -93,6 +93,8 @@
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="56" />
                     <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="56" />
+                    <!-- ADDED COLUMN FOR SETTINGS -->
                 </Grid.ColumnDefinitions>
 
                 <ContentView Grid.Column="0" VerticalOptions="Fill" HorizontalOptions="Fill">
@@ -103,6 +105,13 @@
                 </ContentView>
 
                 <Label Grid.Column="1" Text="{Binding SelectedPlaylist.Name}" TextColor="{DynamicResource TitleColor}" FontSize="20" FontAttributes="Bold" VerticalOptions="Center" />
+
+                <!-- NEW SETTINGS BUTTON ON THE RIGHT -->
+                <ImageButton Grid.Column="2" Source="settings_icon.png" Command="{Binding OpenSettingsCommand}" WidthRequest="40" HeightRequest="40" VerticalOptions="Center" HorizontalOptions="Center" BackgroundColor="Transparent" Padding="8">
+                    <ImageButton.Behaviors>
+                        <toolkit:IconTintColorBehavior TintColor="{DynamicResource TitleColor}" />
+                    </ImageButton.Behaviors>
+                </ImageButton>
             </Grid>
 
             <!-- Detail Grid (Tracks + Bottom Player) -->

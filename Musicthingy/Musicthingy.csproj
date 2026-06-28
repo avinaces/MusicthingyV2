@@ -102,6 +102,15 @@
 	</ItemGroup>
 
 	<ItemGroup>
+	  <Compile Update="Views\SettingTemplates\ActionTemplateView.xaml.cs">
+	    <DependentUpon>ActionTemplateView.xaml</DependentUpon>
+	  </Compile>
+	  <Compile Update="Views\SettingTemplates\SwitchTemplateView.xaml.cs">
+	    <DependentUpon>SwitchTemplateView.xaml</DependentUpon>
+	  </Compile>
+	</ItemGroup>
+
+	<ItemGroup>
 	  <MauiXaml Update="Views\BottomSheetContainer.xaml">
 		<Generator>MSBuild:Compile</Generator>
 	  </MauiXaml>
@@ -117,6 +126,12 @@
 	  <MauiXaml Update="Views\EditTrackSheet.xaml">
 		<Generator>MSBuild:Compile</Generator>
 	  </MauiXaml>
+	  <MauiXaml Update="Views\Dialogs\ColorPickerDialog.xaml">
+	    <Generator>MSBuild:Compile</Generator>
+	  </MauiXaml>
+	  <MauiXaml Update="Views\Dialogs\EnumPickerDialog.xaml">
+	    <Generator>MSBuild:Compile</Generator>
+	  </MauiXaml>
 	  <MauiXaml Update="Views\EditTrackTabs\EditTrackGeneralTab.xaml">
 		<Generator>MSBuild:Compile</Generator>
 	  </MauiXaml>
@@ -125,6 +140,9 @@
 	  </MauiXaml>
 	  <MauiXaml Update="Views\EditTrackTabs\EditTrackTagsTab.xaml">
 		<Generator>MSBuild:Compile</Generator>
+	  </MauiXaml>
+	  <MauiXaml Update="Views\Dialogs\TextEntryDialog.xaml">
+	    <Generator>MSBuild:Compile</Generator>
 	  </MauiXaml>
 	  <MauiXaml Update="Views\FilterOptionsSheet.xaml">
 		<Generator>MSBuild:Compile</Generator>
@@ -140,6 +158,21 @@
 	  </MauiXaml>
 	  <MauiXaml Update="Views\SegmentedTabBar.xaml">
 		<Generator>MSBuild:Compile</Generator>
+	  </MauiXaml>
+	  <MauiXaml Update="Views\SettingsCategoryPage.xaml">
+	    <Generator>MSBuild:Compile</Generator>
+	  </MauiXaml>
+	  <MauiXaml Update="Views\SettingsPage.xaml">
+	    <Generator>MSBuild:Compile</Generator>
+	  </MauiXaml>
+	  <MauiXaml Update="Views\SettingTemplates\DialogTemplateView.xaml">
+	    <Generator>MSBuild:Compile</Generator>
+	  </MauiXaml>
+	  <MauiXaml Update="Views\SettingTemplates\ActionTemplateView.xaml">
+	    <Generator>MSBuild:Compile</Generator>
+	  </MauiXaml>
+	  <MauiXaml Update="Views\SettingTemplates\SwitchTemplateView.xaml">
+	    <Generator>MSBuild:Compile</Generator>
 	  </MauiXaml>
 	  <MauiXaml Update="Views\SharedPopupContainer.xaml">
 		<Generator>MSBuild:Compile</Generator>

@@ -11,37 +11,31 @@ public partial class MainViewModel
     private CancellationTokenSource? _saveLibraryCts;
 
     private readonly ThemeManager _themeManager;
-    private bool _isRestoringState = true;
     private double _initialRestorePosition = 0;
+
+    // NEW SAFETY FLAG
+    private bool _isLibraryLoadFailed = false;
 
     private static PlaylistIconType ParseIconType(string? raw)
     {
         if (string.IsNullOrEmpty(raw)) return PlaylistIconType.Playlist;
         raw = raw.Trim();
-        // Accept older lowercase values like "playlist", "track", "youtube"
         if (raw.Equals("playlist", StringComparison.OrdinalIgnoreCase)) return PlaylistIconType.Playlist;
         if (raw.Equals("track", StringComparison.OrdinalIgnoreCase)) return PlaylistIconType.Track;
         if (raw.Equals("youtube", StringComparison.OrdinalIgnoreCase)) return PlaylistIconType.YouTube;
-
-        // Try to parse enum names directly
         if (Enum.TryParse<PlaylistIconType>(raw, true, out var parsed)) return parsed;
-
         return PlaylistIconType.Playlist;
     }
 
-    /// <summary>
-    /// Call this whenever Playlists or Tracks are added, edited, or removed.
-    /// It waits 1 second before saving, preventing lag if multiple edits happen at once.
-    /// </summary>
     public void RequestSaveLibrary()
     {
+        // CRITICAL SAFETY CHECK: Do not attempt to save if the library failed to load!
+        if (_isLibraryLoadFailed) return;
 
         _saveLibraryCts?.Cancel();
         _saveLibraryCts = new CancellationTokenSource();
         var token = _saveLibraryCts.Token;
 
-        // CRITICAL FIX: Snapshot the ObservableCollections on the MainThread BEFORE jumping to the background.
-        // Otherwise, deleting a track via SwipeView while this is iterating triggers a fatal Native crash.
         List<PlaylistDto> librarySnapshot = new();
         try
         {
@@ -69,9 +63,7 @@ public partial class MainViewModel
                 }).ToList()
             }).ToList();
         }
-
-
-        catch { return; /* Ignore transient read errors during fast UI changes */ }
+        catch { return; }
 
         Task.Delay(1000, token).ContinueWith(async t =>
         {
@@ -84,17 +76,17 @@ public partial class MainViewModel
 
     private async Task SaveLibraryAsync(List<PlaylistDto> libraryData)
     {
+        if (_isLibraryLoadFailed) return; // Redundant safety net
+
         Debug.WriteLine("Saving Library...");
         try
         {
-
             string path = Path.Combine(FileSystem.AppDataDirectory, LibraryFileName);
             string tempPath = path + ".tmp";
 
             string json = JsonSerializer.Serialize(libraryData);
             await File.WriteAllTextAsync(tempPath, json);
 
-            // Atomically move the file (overwrites the old one safely)
             File.Move(tempPath, path, overwrite: true);
         }
         catch (Exception ex)
@@ -105,12 +97,14 @@ public partial class MainViewModel
 
     private async Task SaveLibraryAsync()
     {
+        if (_isLibraryLoadFailed) return; // Redundant safety net
+
         Debug.WriteLine("Saving Library...");
         try
         {
-            // Map the active observable objects to JSON-friendly DTOs
             var library = Playlists.Select(p => new PlaylistDto
             {
+                // ... mapping logic remains unchanged
                 name = p.Name,
                 icon = p.IconUrl,
                 iconType = p.IconType.ToString().ToLowerInvariant(),
@@ -145,9 +139,22 @@ public partial class MainViewModel
 
     public async Task LoadStateAsync()
     {
+        SettingsManager.IsRestoringState = true;
+        _isLibraryLoadFailed = false; // Reset on startup
+
+        try
+        {
+            _settingsManager.LoadAll();
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Failed to load settings: {ex}");
+        }
+
         try
         {
             LoadThemeState();
+
             string path = Path.Combine(FileSystem.AppDataDirectory, LibraryFileName);
             if (File.Exists(path))
             {
@@ -189,47 +196,66 @@ public partial class MainViewModel
                         loadedPlaylists.Add(p);
                     }
 
-                    // Push UI updates onto the main thread
                     MainThread.BeginInvokeOnMainThread(() =>
                     {
-                        Playlists.Clear();
-                        foreach (var lp in loadedPlaylists) Playlists.Add(lp);
-                        RestorePlaybackState();
+                        try
+                        {
+                            Playlists.Clear();
+                            foreach (var lp in loadedPlaylists) Playlists.Add(lp);
+                            RestorePlaybackState();
+                        }
+                        finally
+                        {
+                            SettingsManager.IsRestoringState = false;
+                        }
                     });
 
-                    return; // Successfully loaded, skip dummy data
+                    return; // Successfully loaded
                 }
             }
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"Failed to load state: {ex.Message}");
+            System.Diagnostics.Debug.WriteLine($"Failed to load library state: {ex.Message}");
+
+            // 1. SET THE LOCK FLAG
+            _isLibraryLoadFailed = true;
+
+            // 2. ALERT THE USER ON THE MAIN THREAD
+            MainThread.BeginInvokeOnMainThread(async () =>
+            {
+                SettingsManager.IsRestoringState = false;
+                await ShowConfirmAsync(
+                    "Library Load Failed",
+                    $"There was an error loading your library data. To protect your playlists from being accidentally deleted, all saving has been temporarily disabled.\n\nError: {ex.Message}",
+                    "Understood",
+                    ModalBackgroundTapBehavior.Ignore,
+                    isDanger: true);
+            });
+
+            return;
         }
 
-        // Fallback to dummy data if no library exists (e.g. first app launch) or loading failed
-        MainThread.BeginInvokeOnMainThread(() =>
-        {
-            _isRestoringState = false;
-        });
+        // Fallback unlock if library doesn't exist (first launch) or is empty
+        MainThread.BeginInvokeOnMainThread(() => SettingsManager.IsRestoringState = false);
     }
 
     private void RestorePlaybackState()
     {
-        IsShuffleEnabled = Preferences.Default.Get("IsShuffleEnabled", false);
-        RepeatState = (RepeatMode)Preferences.Default.Get("RepeatState", (int)RepeatMode.Off);
+        IsShuffleEnabled = _settingsManager.ShuffleEnabled.Value;
+        RepeatState = (RepeatMode)_settingsManager.RepeatMode.Value;
 
-        string? selectedPlaylistName = Preferences.Default.Get("SelectedPlaylistName", string.Empty);
-        string? queueJson = Preferences.Default.Get("PlaybackQueueData", string.Empty);
-        string? currentTrackJson = Preferences.Default.Get("CurrentTrackData", string.Empty);
+        string? selectedPlaylistName = _settingsManager.SelectedPlaylistName.Value;
+        string? queueJson = _settingsManager.PlaybackQueueData.Value;
+        string? currentTrackJson = _settingsManager.CurrentTrackData.Value;
 
-        _initialRestorePosition = Preferences.Default.Get("CurrentPositionSeconds", 0.0);
+        _initialRestorePosition = _settingsManager.CurrentPositionSeconds.Value;
 
         if (!string.IsNullOrEmpty(selectedPlaylistName))
         {
             SelectedPlaylist = Playlists.FirstOrDefault(p => p.Name == selectedPlaylistName);
         }
 
-        // 1. Restore the PlaybackQueue
         if (!string.IsNullOrEmpty(queueJson))
         {
             try
@@ -241,24 +267,18 @@ public partial class MainViewModel
                     foreach (var qRef in queueRefs)
                     {
                         var targetPlaylist = Playlists.FirstOrDefault(p => p.Name == qRef.Playlist);
-
-                        // FIX: Match exact slices using StartTime and EndTime!
                         var track = targetPlaylist?.Items.FirstOrDefault(i =>
                             i.Url == qRef.Url &&
                             i.StartTime == qRef.StartTime &&
                             i.EndTime == qRef.EndTime);
 
-                        if (track != null)
-                        {
-                            PlaybackQueue.Add(track);
-                        }
+                        if (track != null) PlaybackQueue.Add(track);
                     }
                 }
             }
-            catch { /* Ignore parsing errors */ }
+            catch { }
         }
 
-        // 2. Restore CurrentTrack
         if (!string.IsNullOrEmpty(currentTrackJson))
         {
             try
@@ -267,52 +287,37 @@ public partial class MainViewModel
                 if (currentRef != null && !string.IsNullOrEmpty(currentRef.Url))
                 {
                     var targetPlaylist = Playlists.FirstOrDefault(p => p.Name == currentRef.Playlist);
-
                     var track = targetPlaylist?.Items.FirstOrDefault(i =>
                         i.Url == currentRef.Url &&
                         i.StartTime == currentRef.StartTime &&
                         i.EndTime == currentRef.EndTime);
 
-                    if (track != null)
-                    {
-                        CurrentTrack = track;
-                    }
+                    if (track != null) CurrentTrack = track;
                 }
             }
-            catch { /* Fallback */ }
+            catch { }
         }
-
-        _isRestoringState = false;
     }
 
     public void LoadThemeState()
     {
         Color seedColor;
-
-        // 1. Try to get the Android 12+ Material You color
         Color? androidSystemColor = SystemThemeHelper.GetAndroidSystemAccentColor();
 
-        if (androidSystemColor != null)
-        {
-            // Use the OS wallpaper theme!
-            seedColor = androidSystemColor;
-        }
+        if (androidSystemColor != null && _settingsManager.UseSystemTheme.Value) seedColor = androidSystemColor;
         else
         {
-            // 2. Fallback for Windows or older Android: Use saved preferences
-            string savedHex = Preferences.Get("AppThemeSeedColor", "#005dff");
-            seedColor = Color.FromArgb("#005dff");
+            string savedHex = _settingsManager.ThemeSeedColor.Value;
+            seedColor = Color.FromArgb(savedHex);
         }
 
-        // Apply it using your existing perfectly-tuned OKLCH logic!
         _themeManager.ApplyTheme(seedColor);
     }
 
     public void SaveThemeColor(Color newColor)
     {
         string hex = newColor.ToHex();
-        Preferences.Set("AppThemeSeedColor", hex);
-
+        _settingsManager.ThemeSeedColor.Value = hex;
         _themeManager.ApplyTheme(newColor);
     }
 

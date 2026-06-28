@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentView xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             xmlns:toolkit="http://schemas.microsoft.com/dotnet/2022/maui/toolkit"
+             xmlns:helpers="clr-namespace:Musicthingy.Helpers"
+             x:Class="Musicthingy.Views.SwitchTemplateView">
+    <Grid ColumnDefinitions="Auto, *, Auto" Padding="16,16" ColumnSpacing="16" helpers:AndroidRipple.AddRipple="True">
+
+        <!-- Icon -->
+        <Image Grid.Column="0" Source="{Binding Icon}" WidthRequest="24" HeightRequest="24" VerticalOptions="Center">
+            <Image.Behaviors>
+                <toolkit:IconTintColorBehavior TintColor="{DynamicResource TitleColor}" />
+            </Image.Behaviors>
+        </Image>
+
+        <VerticalStackLayout Grid.Column="1" VerticalOptions="Center" Spacing="2">
+            <Label Text="{Binding Title}" TextColor="{DynamicResource TitleColor}" FontSize="16" />
+            <Label Text="{Binding Description}" TextColor="{DynamicResource MutedColor}" FontSize="14" />
+        </VerticalStackLayout>
+
+        <Switch Grid.Column="2" IsToggled="{Binding IsToggled, Mode=TwoWay}" VerticalOptions="Center" 
+                OnColor="{DynamicResource PrimaryButtonColor}" ThumbColor="{DynamicResource PrimaryButtonText}" />
+    </Grid>
+</ContentView>

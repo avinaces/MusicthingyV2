@@ -26,6 +26,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
 
     private readonly PlaylistDataService _dataService;
     private readonly ColorExtractionService _colorExtractionService;
+    private readonly SettingsManager _settingsManager;
 
     [ObservableProperty] public partial bool IsLoadingMedia { get; set; }
     [ObservableProperty] public partial double MediaDownloadProgress { get; set; }
@@ -180,13 +181,16 @@ public partial class MainViewModel : ObservableObject, IDisposable
         YouTubeResolverService youtubeResolver,
         IMediaPlaybackService playbackService,
         IMediaProbingService mediaProbingService,
-        ColorExtractionService colorExtractionService)
+        ColorExtractionService colorExtractionService,
+        SettingsManager settingsManager)
     {
         _themeManager = themeManager;
         _youtubeResolver = youtubeResolver;
         _playbackService = playbackService;
         _mediaProbingService = mediaProbingService;
         _colorExtractionService = colorExtractionService;
+        _settingsManager = settingsManager;
+
 
         _cleanupOldInstances?.Invoke();
         _cleanupOldInstances = CleanupMedia;
@@ -249,7 +253,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
 
     partial void OnSelectedPlaylistChanged(Playlist? oldValue, Playlist? newValue)
     {
-        if (!_isRestoringState)
+        if (!SettingsManager.IsRestoringState)
         {
             Preferences.Default.Set("SelectedPlaylistName", newValue?.Name ?? string.Empty);
         }
@@ -422,5 +426,21 @@ public partial class MainViewModel : ObservableObject, IDisposable
                 }
             }
         });
+    }
+
+    [RelayCommand]
+    private async Task OpenSettings()
+    {
+        var settingsPage = new Views.SettingsPage(_settingsManager);
+
+        // pattern match to guarantee 'app' is not null, then check if windows exist
+        if (Application.Current is { } app && app.Windows.Count > 0)
+        {
+            var mainPage = app.Windows[0]?.Page;
+            if (mainPage != null)
+            {
+                await mainPage.Navigation.PushModalAsync(settingsPage);
+            }
+        }
     }
 }
