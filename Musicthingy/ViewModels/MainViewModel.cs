@@ -43,10 +43,8 @@ public partial class MainViewModel : ObservableObject, IDisposable
 
     public bool IsFilterActive => CurrentFilterTags.Any(t => t.State != FilterState.Neutral);
 
-    // CHANGED: Fallback color changed from MutedColor to TextColor so the text perfectly matches the icon's tint
     public Color FilterIconColor => IsFilterActive ? ThemeResources.Color("AccentColor") : ThemeResources.Color("TextColor");
 
-    // Adjusted to standard Lucide logic as requested
     public string FilterToolbarIcon => IsFilterActive ? "funnel_x_icon.png" : "funnel_icon.png";
 
     [RelayCommand]
@@ -62,7 +60,6 @@ public partial class MainViewModel : ObservableObject, IDisposable
     [RelayCommand]
     private async Task ToolbarFilterIconActionAsync()
     {
-        // Acts as 'X' to clear if active, or 'Funnel' to open sheet if inactive.
         if (IsFilterActive)
         {
             ClearFilter();
@@ -209,8 +206,13 @@ public partial class MainViewModel : ObservableObject, IDisposable
                 PlayPreviousCommand.Execute(null);
             else if (m.Action == "PlayPause" && TogglePlayCommand.CanExecute(null))
                 TogglePlayCommand.Execute(null);
+            else if (m.Action == "AutoFollow")         
+                TriggerAutoFollow();                   
         });
     }
+
+    // Partial declaration bridging to the platform-specific files
+    partial void CleanupOSMediaPlatform();
 
     private void CleanupMedia()
     {
@@ -233,16 +235,8 @@ public partial class MainViewModel : ObservableObject, IDisposable
 
         ReleaseTransientWakeLock();
 
-#if ANDROID
-        try
-        {
-            var context = Android.App.Application.Context;
-            var intent = new Android.Content.Intent(context, typeof(AndroidMediaService));
-            intent.SetAction("STOP");
-            context.StartService(intent);
-        }
-        catch { }
-#endif
+        // Call the platform specific method (no compiler directives needed)
+        CleanupOSMediaPlatform();
     }
 
     public void Dispose()
@@ -264,9 +258,6 @@ public partial class MainViewModel : ObservableObject, IDisposable
             oldValue.Items.CollectionChanged -= SelectedPlaylistItems_CollectionChanged;
         }
 
-        // CRITICAL MAUI CRASH FIX: Assign a brand new collection instead of calling .Clear()
-        // This prevents disposed BottomSheets from receiving collection changed events
-        // and attempting to manipulate destroyed Android ViewGroups.
         MainThread.BeginInvokeOnMainThread(() =>
         {
             CurrentFilterTags = new ObservableCollection<FilterTag>();
@@ -313,8 +304,6 @@ public partial class MainViewModel : ObservableObject, IDisposable
                 }
             }
 
-            // CRITICAL MAUI CRASH FIX: Do all logic on a temporary standard List
-            // Never call .Add() or .RemoveAt() on the bound CurrentFilterTags directly
             List<FilterTag> newTags = CurrentFilterTags.ToList();
             bool changed = false;
 
@@ -338,7 +327,6 @@ public partial class MainViewModel : ObservableObject, IDisposable
 
             if (changed)
             {
-                // Assign a brand new ObservableCollection to safely trigger the UI update
                 CurrentFilterTags = new ObservableCollection<FilterTag>(newTags.OrderBy(t => t.Name));
                 NotifyFilterStateChanged();
             }
@@ -355,17 +343,13 @@ public partial class MainViewModel : ObservableObject, IDisposable
             return;
         }
 
-        // Snapshot current items to avoid collection modified exceptions on Playlist.Items
         List<PlaylistItem> sourceItems = currentPlaylist.Items.ToList();
         List<string> playlistTagsSnapshot = currentPlaylist.Tags?.ToList() ?? new List<string>();
 
-        // Push ALL filtering logic to the MainThread. This guarantees CurrentFilterTags 
-        // won't be modified by a playlist switch at the exact moment we are iterating it.
         MainThread.BeginInvokeOnMainThread(() =>
         {
             IEnumerable<PlaylistItem> query = sourceItems;
 
-            // Apply tag filtering safely
             List<string> includedTags = CurrentFilterTags.Where(t => t.State == FilterState.Included).Select(t => t.Name).ToList();
             List<string> excludedTags = CurrentFilterTags.Where(t => t.State == FilterState.Excluded).Select(t => t.Name).ToList();
 
@@ -386,7 +370,6 @@ public partial class MainViewModel : ObservableObject, IDisposable
                 });
             }
 
-            // Apply universal sorting
             if (CurrentSortField != SortField.Custom)
             {
                 switch (CurrentSortField)
@@ -433,7 +416,6 @@ public partial class MainViewModel : ObservableObject, IDisposable
     {
         var settingsPage = new Views.SettingsPage(_settingsManager);
 
-        // pattern match to guarantee 'app' is not null, then check if windows exist
         if (Application.Current is { } app && app.Windows.Count > 0)
         {
             var mainPage = app.Windows[0]?.Page;
