@@ -41,6 +41,7 @@ public partial class SettingsPage : ContentPage
         SettingCategory.Appearance => "palette_icon.png",
         SettingCategory.Playback => "circle_play_icon.png",
         SettingCategory.General => "settings_icon.png",
+        SettingCategory.Storage => "database_icon.png",
         _ => "settings_icon.png"
     };
 

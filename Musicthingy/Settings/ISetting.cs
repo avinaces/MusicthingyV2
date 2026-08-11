@@ -3,7 +3,7 @@ using System.Windows.Input;
 
 namespace Musicthingy.Settings;
 
-public enum SettingCategory { Appearance, Playback, General, Hidden }
+public enum SettingCategory { Appearance, Playback, General, Storage, Hidden }
 
 public interface ISetting : INotifyPropertyChanged
 {
