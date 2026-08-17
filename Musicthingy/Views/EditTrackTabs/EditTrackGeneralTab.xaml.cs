@@ -28,6 +28,7 @@ public partial class EditTrackForm : ObservableObject
 
     [ObservableProperty] public partial ImageSource? ItemIconSource { get; set; }
     [ObservableProperty] public partial string LastPlayedText { get; set; } = string.Empty;
+    [ObservableProperty] public partial int Views { get; set; } = 0;
 
     // --- Validation Properties ---
     [ObservableProperty] public partial string TitleError { get; set; } = string.Empty;
@@ -48,6 +49,7 @@ public partial class EditTrackForm : ObservableObject
         EditEndTime = track.EndTime?.ToString() ?? "";
         EditIconUrl = track.IconUrl ?? "";
         ItemIconSource = track.ItemIconSource;
+        Views = track.Views;
 
         if (track.LastPlayedAt.HasValue)
         {

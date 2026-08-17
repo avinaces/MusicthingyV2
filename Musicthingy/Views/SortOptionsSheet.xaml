@@ -93,6 +93,26 @@
                             </Image>
                         </Grid>
 
+                        <!-- 5. Views Row -->
+                        <Grid HeightRequest="56">
+                            <Button BackgroundColor="{DynamicResource CardColor}" CornerRadius="0" Clicked="OnSortFieldClicked" CommandParameter="Views" Margin="0" Padding="0" />
+
+                            <HorizontalStackLayout InputTransparent="True" Padding="16,0" Spacing="16" VerticalOptions="Center">
+                                <Image Source="eye_icon.png" WidthRequest="20" HeightRequest="20">
+                                    <Image.Behaviors>
+                                        <toolkit:IconTintColorBehavior TintColor="{DynamicResource MutedColor}" />
+                                    </Image.Behaviors>
+                                </Image>
+                                <Label Text="Views" TextColor="{DynamicResource TextColor}" FontSize="16" VerticalOptions="Center" />
+                            </HorizontalStackLayout>
+
+                            <Image Source="check_icon.png" HorizontalOptions="End" WidthRequest="20" HeightRequest="20" Margin="0,0,16,0" IsVisible="{Binding IsSortViews}" InputTransparent="True">
+                                <Image.Behaviors>
+                                    <toolkit:IconTintColorBehavior TintColor="{DynamicResource AccentColor}" />
+                                </Image.Behaviors>
+                            </Image>
+                        </Grid>
+
                     </VerticalStackLayout>
                 </Border>
             </VerticalStackLayout>

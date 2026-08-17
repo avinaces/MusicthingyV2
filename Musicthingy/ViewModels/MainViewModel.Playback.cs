@@ -80,6 +80,9 @@ public partial class MainViewModel
     // Allows to auto-resume when volume goes back up.
     private bool _pausedByZeroVolume = false;
 
+    // Track if the current song has already received a view count increment 
+    private bool _hasIncrementedViewForCurrentTrack = false;
+
     // A shadow queue to preserve the un-shuffled state (including any manually added tracks)
     private List<PlaylistItem> _unshuffledQueue = new();
 
@@ -105,6 +108,46 @@ public partial class MainViewModel
         _settingsManager.PlaybackQueueData.Value = JsonSerializer.Serialize(queueData);
     }
 
+    /// <summary>
+    /// Reusable method to initialize or rebuild the playback queue.
+    /// Handles un-shuffled shadow queue tracking, shuffle state logic, queue swapping, and current track targeting.
+    /// </summary>
+    private void SetupPlaybackQueue(IEnumerable<PlaylistItem> items, PlaylistItem? startTrack = null)
+    {
+        if (items == null || !items.Any()) return;
+
+        MainThread.BeginInvokeOnMainThread(() =>
+        {
+            _unshuffledQueue = items.ToList();
+            PlaybackQueue.Clear();
+
+            // If a start track isn't forced: when shuffled pick randomly; otherwise pick naturally.
+            var firstTrack = startTrack ?? (IsShuffleEnabled
+                ? _unshuffledQueue[Random.Shared.Next(_unshuffledQueue.Count)]
+                : _unshuffledQueue.First());
+
+            if (IsShuffleEnabled)
+            {
+                var remaining = _unshuffledQueue.Where(x => x != firstTrack).OrderBy(x => Random.Shared.Next());
+                PlaybackQueue.Add(firstTrack);
+                foreach (var item in remaining) PlaybackQueue.Add(item);
+            }
+            else
+            {
+                foreach (var item in _unshuffledQueue) PlaybackQueue.Add(item);
+            }
+
+            SavePlaybackQueueState();
+
+            // Trigger track playback if it's not already correct 
+            // (Setting this will naturally flow into OnCurrentTrackChanged avoiding an endless loop since the track is now in PlaybackQueue)
+            if (CurrentTrack != firstTrack)
+            {
+                CurrentTrack = firstTrack;
+            }
+        });
+    }
+
     [RelayCommand]
     private void ToggleShuffle()
     {
@@ -113,40 +156,30 @@ public partial class MainViewModel
 
         if (PlaybackQueue == null || PlaybackQueue.Count == 0 || CurrentTrack == null) return;
 
-        MainThread.BeginInvokeOnMainThread(() =>
+        if (_unshuffledQueue.Count == 0)
         {
             if (IsShuffleEnabled)
             {
                 // Ensure shadow queue is populated as a fallback for app reboots
-                if (_unshuffledQueue.Count == 0) _unshuffledQueue = PlaybackQueue.ToList();
-
-                var remaining = PlaybackQueue.Where(x => x != CurrentTrack).OrderBy(x => Random.Shared.Next()).ToList();
-                PlaybackQueue.Clear();
-                PlaybackQueue.Add(CurrentTrack);
-                foreach (var item in remaining) PlaybackQueue.Add(item);
+                _unshuffledQueue = PlaybackQueue.ToList();
             }
             else
             {
-                if (_unshuffledQueue.Count == 0)
+                // Fallback if _unshuffledQueue wasn't tracked across an app restart
+                if (CurrentTrack.Playlist != null)
                 {
-                    // Fallback if _unshuffledQueue wasn't tracked across an app restart
-                    if (CurrentTrack.Playlist != null)
-                    {
-                        var sourceList = (CurrentTrack.Playlist == SelectedPlaylist) ? DisplayedItems : CurrentTrack.Playlist.Items;
-                        _unshuffledQueue = sourceList.ToList();
-                    }
-                    else
-                    {
-                        _unshuffledQueue = PlaybackQueue.ToList();
-                    }
+                    var sourceList = (CurrentTrack.Playlist == SelectedPlaylist) ? DisplayedItems : CurrentTrack.Playlist.Items;
+                    _unshuffledQueue = sourceList.ToList();
                 }
-
-                PlaybackQueue.Clear();
-                // Restore from the shadow queue, which contains all context tracks AND manually added tracks
-                foreach (var item in _unshuffledQueue) PlaybackQueue.Add(item);
+                else
+                {
+                    _unshuffledQueue = PlaybackQueue.ToList();
+                }
             }
-            SavePlaybackQueueState();
-        });
+        }
+
+        // Reuse the generic setup passing the track so it doesn't change what's currently playing
+        SetupPlaybackQueue(_unshuffledQueue, CurrentTrack);
     }
 
     [RelayCommand]
@@ -171,14 +204,7 @@ public partial class MainViewModel
         IsShuffleEnabled = false;
         _settingsManager.ShuffleEnabled.Value = false;
 
-        MainThread.BeginInvokeOnMainThread(() =>
-        {
-            _unshuffledQueue = DisplayedItems.ToList();
-            PlaybackQueue.Clear();
-            foreach (var item in _unshuffledQueue) PlaybackQueue.Add(item);
-            SavePlaybackQueueState();
-            CurrentTrack = PlaybackQueue[0];
-        });
+        SetupPlaybackQueue(DisplayedItems);
     }
 
     [RelayCommand]
@@ -189,15 +215,7 @@ public partial class MainViewModel
         IsShuffleEnabled = true;
         _settingsManager.ShuffleEnabled.Value = true;
 
-        MainThread.BeginInvokeOnMainThread(() =>
-        {
-            _unshuffledQueue = DisplayedItems.ToList();
-            var shuffledItems = _unshuffledQueue.OrderBy(x => Random.Shared.Next()).ToList();
-            PlaybackQueue.Clear();
-            foreach (var item in shuffledItems) PlaybackQueue.Add(item);
-            SavePlaybackQueueState();
-            CurrentTrack = PlaybackQueue[0];
-        });
+        SetupPlaybackQueue(DisplayedItems);
     }
 
     [RelayCommand]
@@ -222,14 +240,8 @@ public partial class MainViewModel
             {
                 if (IsShuffleEnabled)
                 {
-                    MainThread.BeginInvokeOnMainThread(() =>
-                    {
-                        var shuffled = PlaybackQueue.OrderBy(x => Random.Shared.Next()).ToList();
-                        PlaybackQueue.Clear();
-                        foreach (var item in shuffled) PlaybackQueue.Add(item);
-                        SavePlaybackQueueState();
-                        CurrentTrack = PlaybackQueue[0];
-                    });
+                    // Starts the entire queue fresh and re-shuffled dynamically
+                    SetupPlaybackQueue(_unshuffledQueue);
                     return;
                 }
                 else
@@ -346,11 +358,33 @@ public partial class MainViewModel
             _settingsManager.CurrentPositionSeconds.Value = value.TotalSeconds;
             _lastPositionSave = DateTime.Now;
         }
+
+        // View Increment Logic
+        if (!_hasIncrementedViewForCurrentTrack && CurrentTrack != null && !SettingsManager.IsRestoringState)
+        {
+            double targetSeconds = 20.0;
+
+            // Check if track is shorter than 20 seconds
+            if (Duration.TotalSeconds > 0 && Duration.TotalSeconds < 20.0)
+            {
+                // Trigger just before the track naturally ends
+                targetSeconds = Math.Max(0.5, Duration.TotalSeconds - 0.5);
+            }
+
+            if (value.TotalSeconds >= targetSeconds)
+            {
+                CurrentTrack.Views++;
+                _hasIncrementedViewForCurrentTrack = true;
+
+                RequestSaveLibrary();
+            }
+        }
     }
 
     partial void OnCurrentTrackChanged(PlaylistItem? oldValue, PlaylistItem? newValue)
     {
         _lastTrackSkipped = null;
+        _hasIncrementedViewForCurrentTrack = false; // Reset view tracker on track change
 
         if (!SettingsManager.IsRestoringState && newValue != null)
         {
@@ -380,26 +414,8 @@ public partial class MainViewModel
 
         if (newValue.Playlist != null && !PlaybackQueue.Contains(newValue))
         {
-            MainThread.BeginInvokeOnMainThread(() =>
-            {
-                PlaybackQueue.Clear();
-                var sourceList = (newValue.Playlist == SelectedPlaylist) ? DisplayedItems.ToList() : newValue.Playlist.Items.ToList();
-
-                // Track context reset
-                _unshuffledQueue = sourceList;
-
-                if (IsShuffleEnabled)
-                {
-                    var remaining = _unshuffledQueue.Where(x => x != newValue).OrderBy(x => Random.Shared.Next()).ToList();
-                    PlaybackQueue.Add(newValue);
-                    foreach (var item in remaining) PlaybackQueue.Add(item);
-                }
-                else
-                {
-                    foreach (var item in _unshuffledQueue) PlaybackQueue.Add(item);
-                }
-                SavePlaybackQueueState();
-            });
+            var sourceList = (newValue.Playlist == SelectedPlaylist) ? DisplayedItems.ToList() : newValue.Playlist.Items.ToList();
+            SetupPlaybackQueue(sourceList, newValue);
         }
 
         newValue.LastPlayedAt = DateTime.Now;
@@ -470,7 +486,7 @@ public partial class MainViewModel
                         PlaybackQueue.Add(item);
                     }
 
-                    // Always append to our shadow queue so it survives un-shuffling in standard order
+                    // Always append to our shadow queue so it survives un-shuffled in standard order
                     if (!_unshuffledQueue.Contains(item))
                     {
                         _unshuffledQueue.Add(item);

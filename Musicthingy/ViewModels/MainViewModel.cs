@@ -15,7 +15,8 @@ public enum SortField
     Custom,
     Title,
     Duration,
-    LastPlayed
+    LastPlayed,
+    Views
 }
 
 public partial class MainViewModel : ObservableObject, IDisposable
@@ -115,6 +116,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
     [NotifyPropertyChangedFor(nameof(IsSortTitle))]
     [NotifyPropertyChangedFor(nameof(IsSortDuration))]
     [NotifyPropertyChangedFor(nameof(IsSortLastPlayed))]
+    [NotifyPropertyChangedFor(nameof(IsSortViews))]
     [NotifyPropertyChangedFor(nameof(IsDirectionToggleVisible))]
     public partial SortField CurrentSortField { get; set; } = SortField.Custom;
 
@@ -127,6 +129,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
         SortField.Title => "Title",
         SortField.Duration => "Duration",
         SortField.LastPlayed => "Last Played",
+        SortField.Views => "Views",
         _ => "Custom Order"
     };
 
@@ -134,6 +137,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
     public bool IsSortTitle => CurrentSortField == SortField.Title;
     public bool IsSortDuration => CurrentSortField == SortField.Duration;
     public bool IsSortLastPlayed => CurrentSortField == SortField.LastPlayed;
+    public bool IsSortViews => CurrentSortField == SortField.Views;
 
     public bool IsDirectionToggleVisible => CurrentSortField != SortField.Custom;
     public string SortDirectionIcon => IsSortAscending ? "arrow_down_icon.png" : "arrow_up_icon.png";
@@ -388,6 +392,11 @@ public partial class MainViewModel : ObservableObject, IDisposable
                         query = IsSortAscending
                             ? query.OrderBy(x => x.LastPlayedAt ?? DateTime.MinValue)
                             : query.OrderByDescending(x => x.LastPlayedAt ?? DateTime.MinValue);
+                        break;
+                    case SortField.Views:
+                        query = IsSortAscending
+                            ? query.OrderBy(x => x.Views)
+                            : query.OrderByDescending(x => x.Views);
                         break;
                 }
             }

@@ -57,29 +57,29 @@ public partial class MainViewModel
             var customFileType = new FilePickerFileType(
                 new Dictionary<DevicePlatform, IEnumerable<string>>
                 {
-                    { DevicePlatform.WinUI, windowsFileTypeJSON },
-                    { DevicePlatform.Android, androidFileTypeJSON },
+                { DevicePlatform.WinUI, windowsFileTypeJSON },
+                { DevicePlatform.Android, androidFileTypeJSON },
                 });
 
             // Use PickMultipleAsync to allow multiple file selection
-            var results = await FilePicker.Default.PickMultipleAsync(new PickOptions
+            IEnumerable<FileResult>? results = await FilePicker.Default.PickMultipleAsync(new PickOptions
             {
                 PickerTitle = "Select Playlist JSON files",
                 FileTypes = customFileType
             });
 
-            if (results != null)
+            if (results != null && results.Any())
             {
-                var importedPlaylists = new List<Playlist>();
+                List<Playlist> importedPlaylists = new List<Playlist>();
 
                 // Loop through all selected files
-                foreach (var result in results)
+                foreach (FileResult result in results)
                 {
-                    using var stream = await result.OpenReadAsync();
-                    using var reader = new StreamReader(stream);
-                    var jsonContent = await reader.ReadToEndAsync();
+                    using Stream stream = await result.OpenReadAsync();
+                    using StreamReader reader = new StreamReader(stream);
+                    string jsonContent = await reader.ReadToEndAsync();
 
-                    var importedPlaylist = await _dataService.ImportPlaylistFromJsonAsync(jsonContent);
+                    Playlist? importedPlaylist = await _dataService.ImportPlaylistFromJsonAsync(jsonContent);
 
                     if (importedPlaylist != null)
                     {
@@ -92,13 +92,13 @@ public partial class MainViewModel
                     MainThread.BeginInvokeOnMainThread(() =>
                     {
                         // Add all successfully imported playlists to the UI
-                        foreach (var playlist in importedPlaylists)
+                        foreach (Playlist playlist in importedPlaylists)
                         {
                             Playlists.Add(playlist);
                         }
 
                         // Set the last imported playlist as the currently selected one
-                        SelectedPlaylist = importedPlaylists[importedPlaylists.Count - 1];
+                        SelectedPlaylist = importedPlaylists.Last();
 
                         RequestSaveLibrary(); // Trigger library save
                     });
@@ -107,14 +107,14 @@ public partial class MainViewModel
         }
         catch (Exception ex)
         {
-            // Use your custom overlay system
             await MainThread.InvokeOnMainThreadAsync(async () =>
             {
                 await ShowConfirmAsync(
                     title: "Error",
                     message: $"Failed to import: {ex.Message}",
                     confirmText: "OK",
-                    bgBehavior: ModalBackgroundTapBehavior.Confirm);
+                    bgBehavior: ModalBackgroundTapBehavior.Confirm,
+                    isDanger: true);
             });
         }
     }
@@ -126,48 +126,27 @@ public partial class MainViewModel
 
         try
         {
-            // 1. Map current Playlist to safe DTO
-            var dto = new PlaylistDto
+            // 1. Serialize the Playlist model directly (No DTO needed!)
+            JsonSerializerOptions options = new JsonSerializerOptions
             {
-                name = playlist.Name,
-                icon = playlist.IconUrl,
-                iconType = playlist.IconType.ToString().ToLowerInvariant(),
-                source = playlist.Source,
-                createdAt = playlist.CreatedAt,
-                updatedAt = playlist.UpdatedAt,
-                duration = playlist.Duration,
-
-                // Safe navigation with "?." and fallback to empty collections "?? []"
-                tags = playlist.Tags?.ToList() ?? [],
-                items = playlist.Items?.Select(i => new PlaylistItemDto
-                {
-                    title = i.Title,
-                    url = i.Url,
-                    startTime = i.StartTime,
-                    endTime = i.EndTime,
-                    duration = i.Duration,
-                    icon = i.IconUrl,
-                    tags = i.Tags?.ToList() ?? [],
-                    lyrics = i.Lyrics,
-                    lastPlayedAt = i.LastPlayedAt
-                }).ToList() ?? []
+                WriteIndented = true, // Makes the JSON file pretty and readable
+                PropertyNameCaseInsensitive = true,
+                DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull
             };
 
-            // 2. Serialize to pretty JSON
-            string json = JsonSerializer.Serialize(dto, new JsonSerializerOptions { WriteIndented = true });
+            string json = JsonSerializer.Serialize(playlist, options);
 
-            // 3. Clean invalid file name chars safely
+            // 2. Clean invalid file name chars safely
             string safeName = string.IsNullOrWhiteSpace(playlist.Name) ? "Playlist" : playlist.Name;
             string cleanName = string.Join("_", safeName.Split(Path.GetInvalidFileNameChars()));
             string fileName = $"{cleanName}.json";
 
-            // 4. Save file natively
-            using var stream = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(json));
-            var fileSaverResult = await FileSaver.Default.SaveAsync(fileName, stream, CancellationToken.None);
+            // 3. Save file natively
+            using MemoryStream stream = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(json));
+            var fileSaverResult = await CommunityToolkit.Maui.Storage.FileSaver.Default.SaveAsync(fileName, stream, CancellationToken.None);
 
             if (fileSaverResult.IsSuccessful)
             {
-                // Use your custom overlay system
                 await MainThread.InvokeOnMainThreadAsync(async () =>
                 {
                     await ShowConfirmAsync(
@@ -180,14 +159,14 @@ public partial class MainViewModel
         }
         catch (Exception ex)
         {
-            // Use your custom overlay system
             await MainThread.InvokeOnMainThreadAsync(async () =>
             {
                 await ShowConfirmAsync(
                     title: "Export Failed",
                     message: ex.Message,
                     confirmText: "OK",
-                    bgBehavior: ModalBackgroundTapBehavior.Confirm);
+                    bgBehavior: ModalBackgroundTapBehavior.Confirm,
+                    isDanger: true);
             });
         }
     }

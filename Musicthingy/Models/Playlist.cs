@@ -4,11 +4,28 @@ using Musicthingy.Services;
 using System.Collections.Concurrent;
 using System.Collections.ObjectModel;
 using System.Collections.Specialized;
+using System.Text.Json;
 using System.Text.Json.Serialization;
 
 namespace Musicthingy.Models;
 
-[JsonConverter(typeof(JsonStringEnumConverter))]
+public class PlaylistIconTypeConverter : JsonConverter<PlaylistIconType>
+{
+    public override PlaylistIconType Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+    {
+        string? raw = reader.GetString();
+        if (string.IsNullOrEmpty(raw)) return PlaylistIconType.Playlist;
+        if (Enum.TryParse<PlaylistIconType>(raw, true, out var parsed)) return parsed;
+        return PlaylistIconType.Playlist;
+    }
+
+    public override void Write(Utf8JsonWriter writer, PlaylistIconType value, JsonSerializerOptions options)
+    {
+        writer.WriteStringValue(value.ToString().ToLowerInvariant());
+    }
+}
+
+[JsonConverter(typeof(PlaylistIconTypeConverter))]
 public enum PlaylistIconType
 {
     Playlist,
@@ -18,7 +35,6 @@ public enum PlaylistIconType
 
 public partial class Playlist : ObservableObject
 {
-
     public Playlist()
     {
         Items.CollectionChanged += Items_CollectionChanged;
@@ -29,7 +45,9 @@ public partial class Playlist : ObservableObject
 
     [ObservableProperty]
     [JsonPropertyName("name")]
-    public partial string Name { get; set; } = string.Empty; [ObservableProperty]
+    public partial string Name { get; set; } = string.Empty;
+
+    [ObservableProperty]
     [JsonPropertyName("icon")]
     public partial string IconUrl { get; set; } = string.Empty;
 
@@ -62,9 +80,11 @@ public partial class Playlist : ObservableObject
     public partial TimeSpan Duration { get; set; }
 
     [ObservableProperty]
+    [JsonIgnore]
     public partial bool IsHovered { get; set; }
 
     [ObservableProperty]
+    [JsonIgnore]
     public partial bool IsSelected { get; set; }
 
     [RelayCommand]
@@ -132,7 +152,7 @@ public partial class Playlist : ObservableObject
                     return;
                 }
 
-                const int playlistIconUiSize = 110; // TODO: make this dynamic based on actual UI size
+                const int playlistIconUiSize = 110;
                 const int playlistGeneratedIconLogicalSize = 12;
 
                 byte[]? imageBytes = null;
@@ -262,7 +282,6 @@ public partial class Playlist : ObservableObject
 
         foreach (var item in Items)
         {
-            // If length is unknown, it actually has a URL, and we HAVEN'T attempted to resolve it yet
             if (item.Duration.TotalSeconds <= 0 && !string.IsNullOrEmpty(item.Url) && !item.IsResolutionAttempted)
             {
                 hasUnresolved = true;

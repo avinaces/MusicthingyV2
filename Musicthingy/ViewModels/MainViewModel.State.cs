@@ -12,58 +12,25 @@ public partial class MainViewModel
 
     private readonly ThemeManager _themeManager;
     private double _initialRestorePosition = 0;
-
-    // NEW SAFETY FLAG
     private bool _isLibraryLoadFailed = false;
 
-    private static PlaylistIconType ParseIconType(string? raw)
+    // Single central setup for JSON serialization
+    private static readonly JsonSerializerOptions _jsonOptions = new()
     {
-        if (string.IsNullOrEmpty(raw)) return PlaylistIconType.Playlist;
-        raw = raw.Trim();
-        if (raw.Equals("playlist", StringComparison.OrdinalIgnoreCase)) return PlaylistIconType.Playlist;
-        if (raw.Equals("track", StringComparison.OrdinalIgnoreCase)) return PlaylistIconType.Track;
-        if (raw.Equals("youtube", StringComparison.OrdinalIgnoreCase)) return PlaylistIconType.YouTube;
-        if (Enum.TryParse<PlaylistIconType>(raw, true, out var parsed)) return parsed;
-        return PlaylistIconType.Playlist;
-    }
+        PropertyNameCaseInsensitive = true,
+        DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull
+    };
 
     public void RequestSaveLibrary()
     {
-        // CRITICAL SAFETY CHECK: Do not attempt to save if the library failed to load!
         if (_isLibraryLoadFailed) return;
 
         _saveLibraryCts?.Cancel();
         _saveLibraryCts = new CancellationTokenSource();
         var token = _saveLibraryCts.Token;
 
-        List<PlaylistDto> librarySnapshot = new();
-        try
-        {
-            librarySnapshot = Playlists.Select(p => new PlaylistDto
-            {
-                name = p.Name,
-                icon = p.IconUrl,
-                iconType = p.IconType.ToString().ToLowerInvariant(),
-                source = p.Source,
-                createdAt = p.CreatedAt,
-                updatedAt = p.UpdatedAt,
-                duration = p.Duration,
-                tags = p.Tags.ToList(),
-                items = p.Items.Select(i => new PlaylistItemDto
-                {
-                    title = i.Title,
-                    url = i.Url,
-                    startTime = i.StartTime,
-                    endTime = i.EndTime,
-                    duration = i.Duration,
-                    icon = i.IconUrl,
-                    tags = i.Tags.ToList(),
-                    lyrics = i.Lyrics,
-                    lastPlayedAt = i.LastPlayedAt
-                }).ToList()
-            }).ToList();
-        }
-        catch { return; }
+        // Take a snapshot list of current playlists directly
+        List<Playlist> librarySnapshot = Playlists.ToList();
 
         Task.Delay(1000, token).ContinueWith(async t =>
         {
@@ -74,9 +41,9 @@ public partial class MainViewModel
         }, TaskScheduler.Default);
     }
 
-    private async Task SaveLibraryAsync(List<PlaylistDto> libraryData)
+    private async Task SaveLibraryAsync(List<Playlist> libraryData)
     {
-        if (_isLibraryLoadFailed) return; // Redundant safety net
+        if (_isLibraryLoadFailed) return;
 
         Debug.WriteLine("Saving Library...");
         try
@@ -84,72 +51,24 @@ public partial class MainViewModel
             string path = Path.Combine(FileSystem.AppDataDirectory, LibraryFileName);
             string tempPath = path + ".tmp";
 
-            string json = JsonSerializer.Serialize(libraryData);
+            // Magic happens here: No manual mapping needed!
+            string json = JsonSerializer.Serialize(libraryData, _jsonOptions);
             await File.WriteAllTextAsync(tempPath, json);
 
             File.Move(tempPath, path, overwrite: true);
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"Failed to save library: {ex.Message}");
-        }
-    }
-
-    private async Task SaveLibraryAsync()
-    {
-        if (_isLibraryLoadFailed) return; // Redundant safety net
-
-        Debug.WriteLine("Saving Library...");
-        try
-        {
-            var library = Playlists.Select(p => new PlaylistDto
-            {
-                // ... mapping logic remains unchanged
-                name = p.Name,
-                icon = p.IconUrl,
-                iconType = p.IconType.ToString().ToLowerInvariant(),
-                source = p.Source,
-                createdAt = p.CreatedAt,
-                updatedAt = p.UpdatedAt,
-                duration = p.Duration,
-                tags = p.Tags.ToList(),
-                items = p.Items.Select(i => new PlaylistItemDto
-                {
-                    title = i.Title,
-                    url = i.Url,
-                    startTime = i.StartTime,
-                    endTime = i.EndTime,
-                    duration = i.Duration,
-                    icon = i.IconUrl,
-                    tags = i.Tags.ToList(),
-                    lyrics = i.Lyrics,
-                    lastPlayedAt = i.LastPlayedAt
-                }).ToList()
-            }).ToList();
-
-            string path = Path.Combine(FileSystem.AppDataDirectory, LibraryFileName);
-            string json = JsonSerializer.Serialize(library);
-            await File.WriteAllTextAsync(path, json);
-        }
-        catch (Exception ex)
-        {
-            System.Diagnostics.Debug.WriteLine($"Failed to save library: {ex.Message}");
+            Debug.WriteLine($"Failed to save library: {ex.Message}");
         }
     }
 
     public async Task LoadStateAsync()
     {
         SettingsManager.IsRestoringState = true;
-        _isLibraryLoadFailed = false; // Reset on startup
+        _isLibraryLoadFailed = false;
 
-        try
-        {
-            _settingsManager.LoadAll();
-        }
-        catch (Exception ex)
-        {
-            System.Diagnostics.Debug.WriteLine($"Failed to load settings: {ex}");
-        }
+        try { _settingsManager.LoadAll(); } catch { }
 
         try
         {
@@ -159,49 +78,23 @@ public partial class MainViewModel
             if (File.Exists(path))
             {
                 string json = await File.ReadAllTextAsync(path);
-                var library = JsonSerializer.Deserialize<List<PlaylistDto>>(json);
 
-                if (library != null && library.Count > 0)
+                // Directly deserialize into the Models!
+                var loadedPlaylists = JsonSerializer.Deserialize<List<Playlist>>(json, _jsonOptions);
+
+                if (loadedPlaylists != null && loadedPlaylists.Count > 0)
                 {
-                    var loadedPlaylists = new List<Playlist>();
-                    foreach (var pDto in library)
-                    {
-                        var p = new Playlist
-                        {
-                            Name = pDto.name ?? "",
-                            IconUrl = pDto.icon ?? "",
-                            IconType = ParseIconType(pDto.iconType),
-                            Source = pDto.source ?? "",
-                            CreatedAt = pDto.createdAt ?? DateTime.Now,
-                            UpdatedAt = pDto.updatedAt ?? DateTime.Now,
-                            Duration = pDto.duration,
-                            Tags = new System.Collections.ObjectModel.ObservableCollection<string>(pDto.tags ?? new List<string>())
-                        };
-
-                        foreach (var iDto in pDto.items ?? new List<PlaylistItemDto>())
-                        {
-                            p.Items.Add(new PlaylistItem
-                            {
-                                Title = iDto.title ?? "",
-                                Url = iDto.url ?? "",
-                                StartTime = iDto.startTime,
-                                EndTime = iDto.endTime,
-                                Duration = iDto.duration,
-                                IconUrl = iDto.icon ?? "",
-                                Tags = new System.Collections.ObjectModel.ObservableCollection<string>(iDto.tags ?? new List<string>()),
-                                Lyrics = iDto.lyrics ?? "",
-                                LastPlayedAt = iDto.lastPlayedAt
-                            });
-                        }
-                        loadedPlaylists.Add(p);
-                    }
-
                     MainThread.BeginInvokeOnMainThread(() =>
                     {
                         try
                         {
                             Playlists.Clear();
-                            foreach (var lp in loadedPlaylists) Playlists.Add(lp);
+                            foreach (var lp in loadedPlaylists)
+                            {
+                                // Because Playlist is ignored on the child to prevent a circular loop, we assign it here once
+                                foreach (var item in lp.Items) item.Playlist = lp;
+                                Playlists.Add(lp);
+                            }
                             RestorePlaybackState();
                         }
                         finally
@@ -210,18 +103,13 @@ public partial class MainViewModel
                         }
                     });
 
-                    return; // Successfully loaded
+                    return;
                 }
             }
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"Failed to load library state: {ex.Message}");
-
-            // 1. SET THE LOCK FLAG
             _isLibraryLoadFailed = true;
-
-            // 2. ALERT THE USER ON THE MAIN THREAD
             MainThread.BeginInvokeOnMainThread(async () =>
             {
                 SettingsManager.IsRestoringState = false;
@@ -232,11 +120,9 @@ public partial class MainViewModel
                     ModalBackgroundTapBehavior.Ignore,
                     isDanger: true);
             });
-
             return;
         }
 
-        // Fallback unlock if library doesn't exist (first launch) or is empty
         MainThread.BeginInvokeOnMainThread(() => SettingsManager.IsRestoringState = false);
     }
 

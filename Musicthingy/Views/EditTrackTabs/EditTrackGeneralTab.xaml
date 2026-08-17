@@ -7,7 +7,7 @@
     <ScrollView VerticalScrollBarVisibility="Never">
 
         <!-- Simplified the main Grid to a single column, using nested layouts for side-by-side elements -->
-        <Grid RowDefinitions="Auto, Auto, Auto, Auto, Auto" ColumnDefinitions="*" RowSpacing="16" Padding="0,0,0,16">
+        <Grid RowDefinitions="Auto, Auto, Auto, Auto, Auto, Auto" ColumnDefinitions="*" RowSpacing="16" Padding="0,0,0,16">
 
             <!-- 0: Icon picker -->
             <VerticalStackLayout Grid.Row="0" HorizontalOptions="Center" Spacing="8" Margin="0,0,0,10">
@@ -100,6 +100,15 @@
             <Label Grid.Row="4" Text="{Binding LastPlayedText, StringFormat='Last Played: {0}'}" TextColor="{DynamicResource MutedColor}" FontSize="12" HorizontalOptions="Center" Margin="0,8,0,0">
                 <Label.Triggers>
                     <DataTrigger TargetType="Label" Binding="{Binding LastPlayedText}" Value="">
+                        <Setter Property="IsVisible" Value="False" />
+                    </DataTrigger>
+                </Label.Triggers>
+            </Label>
+            
+            <!-- 5: Views -->
+            <Label Grid.Row="5" Text="{Binding Views, StringFormat='Views: {0}'}" TextColor="{DynamicResource MutedColor}" FontSize="12" HorizontalOptions="Center" Margin="0,4,0,0">
+                <Label.Triggers>
+                    <DataTrigger TargetType="Label" Binding="{Binding Views}" Value="0">
                         <Setter Property="IsVisible" Value="False" />
                     </DataTrigger>
                 </Label.Triggers>

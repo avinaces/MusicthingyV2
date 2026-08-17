@@ -4,7 +4,6 @@ using Musicthingy.Services;
 using System.Collections.ObjectModel;
 using System.Text.Json.Serialization;
 using System.Collections.Concurrent;
-using System.Threading;
 
 namespace Musicthingy.Models;
 
@@ -15,17 +14,19 @@ public partial class PlaylistItem : ObservableObject
         Tags.CollectionChanged += (s, e) => NotifyTagChanges();
     }
 
-    [ObservableProperty] public partial string Title { get; set; } = string.Empty;
-    [ObservableProperty] public partial string Url { get; set; } = string.Empty;
-    [ObservableProperty] public partial int? StartTime { get; set; }
-    [ObservableProperty] public partial int? EndTime { get; set; }
-    [ObservableProperty] public partial string IconUrl { get; set; } = string.Empty;
-    [ObservableProperty] public partial ObservableCollection<string> Tags { get; set; } = new();
-    [ObservableProperty] public partial bool IsHovered { get; set; }
-    [ObservableProperty] public partial bool IsSelected { get; set; }
-    [ObservableProperty] public partial string Lyrics { get; set; } = string.Empty;
-    [ObservableProperty] public partial DateTime? LastPlayedAt { get; set; }
-    [ObservableProperty] public partial TimeSpan Duration { get; set; }
+    [ObservableProperty][JsonPropertyName("title")] public partial string Title { get; set; } = string.Empty;
+    [ObservableProperty][JsonPropertyName("url")] public partial string Url { get; set; } = string.Empty;
+    [ObservableProperty][JsonPropertyName("startTime")] public partial int? StartTime { get; set; }
+    [ObservableProperty][JsonPropertyName("endTime")] public partial int? EndTime { get; set; }
+    [ObservableProperty][JsonPropertyName("icon")] public partial string IconUrl { get; set; } = string.Empty;
+    [ObservableProperty][JsonPropertyName("tags")] public partial ObservableCollection<string> Tags { get; set; } = new();
+    [ObservableProperty][JsonPropertyName("lyrics")] public partial string Lyrics { get; set; } = string.Empty;
+    [ObservableProperty][JsonPropertyName("lastPlayedAt")] public partial DateTime? LastPlayedAt { get; set; }
+    [ObservableProperty][JsonPropertyName("views")] public partial int Views { get; set; } = 0;
+    [ObservableProperty][JsonPropertyName("duration")] public partial TimeSpan Duration { get; set; }
+
+    [ObservableProperty][JsonIgnore] public partial bool IsHovered { get; set; }
+    [ObservableProperty][JsonIgnore] public partial bool IsSelected { get; set; }
 
     [ObservableProperty]
     [JsonIgnore]
@@ -92,8 +93,6 @@ public partial class PlaylistItem : ObservableObject
     {
         get
         {
-
-            //return ImageSource.FromStream(() => new MemoryStream(new byte[1]));
             if (_itemIconSource != null) return _itemIconSource;
 
             // Fast path: if we've generated this icon before, return it instantly to the UI
@@ -187,7 +186,7 @@ public partial class PlaylistItem : ObservableObject
                 {
                     try
                     {
-                        const int iconUiSize = 44; // TODO: make this dynamic based on actual UI size
+                        const int iconUiSize = 44;
                         const int generatedIconLogicalSize = 8;
                         ImageSource? source = null;
 
