@@ -253,8 +253,6 @@
                                             </Grid>
                                         </Border>
 
-                                        <!-- Inset Divider Line -->
-                                        <BoxView HeightRequest="1" Color="{DynamicResource BorderColor}" VerticalOptions="End" Margin="72,0,16,0" />
                                     </Grid>
                                 </mpowerkit:VirtualizeListViewCell>
                             </DataTemplate>
