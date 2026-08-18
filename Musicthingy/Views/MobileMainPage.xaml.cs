@@ -238,6 +238,9 @@ public partial class MobileMainPage : ContentPage
 
     private void OnListScrolled(object? sender, ScrolledEventArgs e)
     {
+        // Ignore scroll events from the sidebar's playlist list
+        if (sender != TracksListView) return;
+
         if (_isProgrammaticScroll)
         {
             _lastScrollY = e.ScrollY;
