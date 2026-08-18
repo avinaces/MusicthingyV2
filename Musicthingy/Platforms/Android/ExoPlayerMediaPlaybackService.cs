@@ -64,19 +64,31 @@ public class ExoPlayerMediaPlaybackService : Java.Lang.Object, IMediaPlaybackSer
     {
         CurrentMediaUrl = streamUrl;
 
-        // 1. Configure the HTTP data source for remote streams (with custom User-Agent)
         var httpDataSourceFactory = new DefaultHttpDataSource.Factory();
         httpDataSourceFactory.SetUserAgent(userAgent);
         httpDataSourceFactory.SetAllowCrossProtocolRedirects(true);
 
-        // 2. Wrap it inside DefaultDataSource to seamlessly handle local files, assets, AND http streams
         var context = global::Android.App.Application.Context;
         var dataSourceFactory = new DefaultDataSource.Factory(context, httpDataSourceFactory);
 
-        // 3. Format URI correctly for both local cached files and remote URLs
-        global::Android.Net.Uri uri = streamUrl.StartsWith("/")
-            ? global::Android.Net.Uri.FromFile(new Java.IO.File(streamUrl))!
-            : global::Android.Net.Uri.Parse(streamUrl)!;
+        global::Android.Net.Uri uri;
+
+        if (streamUrl.StartsWith("http://") || streamUrl.StartsWith("https://") ||
+            streamUrl.StartsWith("file://") || streamUrl.StartsWith("content://"))
+        {
+            // Natively structured URIs
+            uri = global::Android.Net.Uri.Parse(streamUrl)!;
+        }
+        else if (streamUrl.StartsWith("/"))
+        {
+            // Raw absolute Unix paths (e.g., /storage/emulated/0/Music/...)
+            uri = global::Android.Net.Uri.FromFile(new Java.IO.File(streamUrl))!;
+        }
+        else
+        {
+            // Fallback for everything else
+            uri = global::Android.Net.Uri.Parse(streamUrl)!;
+        }
 
         var mediaItem = MediaItem.FromUri(uri);
         var mediaSource = new AndroidX.Media3.ExoPlayer.Source.DefaultMediaSourceFactory(dataSourceFactory)

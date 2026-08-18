@@ -1,5 +1,5 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
-	
+
 	<PropertyGroup>
 		<TargetFrameworks>net10.0-android</TargetFrameworks>
 		<TargetFrameworks Condition="$([MSBuild]::IsOSPlatform('windows'))">$(TargetFrameworks);net10.0-windows10.0.19041.0</TargetFrameworks>
@@ -16,15 +16,8 @@
 		<ImplicitUsings>enable</ImplicitUsings>
 		<Nullable>enable</Nullable>
 
+		<!-- Enable Material 3 -->
 		<UseMaterial3>true</UseMaterial3>
-
-		<!-- Enable XAML source generation for faster build times and improved performance.
-			 This generates C# code from XAML at compile time instead of runtime inflation.
-			 To disable, remove this line.
-			 For individual files, you can override by setting Inflator metadata:
-			   <MauiXaml Update="MyPage.xaml" Inflator="Default" /> (reverts to defaults: Runtime for Debug, XamlC for Release)
-			   <MauiXaml Update="MyPage.xaml" Inflator="Runtime" /> (force runtime inflation) -->
-		<MauiXamlInflator>SourceGen</MauiXamlInflator>
 
 		<!-- Display name -->
 		<ApplicationTitle>Musicthingy</ApplicationTitle>
@@ -36,7 +29,7 @@
 		<ApplicationDisplayVersion>1.0</ApplicationDisplayVersion>
 		<ApplicationVersion>1</ApplicationVersion>
 
-		<!-- To develop, package, and publish an app to the Microsoft Store, see: https://aka.ms/MauiTemplateUnpackaged -->
+		<!-- Windows Unpackaged configuration -->
 		<WindowsPackageType>None</WindowsPackageType>
 
 		<SupportedOSPlatformVersion Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'android'">26.0</SupportedOSPlatformVersion>
@@ -48,42 +41,39 @@
 	<ItemGroup>
 		<!-- App Icon -->
 		<MauiIcon Include="Resources\AppIcon\appicon.svg" />
-		
+
 		<!-- Splash Screen -->
-		<MauiSplashScreen Include="Resources\Splash\music_4_icon_splash.svg" Color="#111214" BaseSize="128,128" />
+		<MauiSplashScreen Include="Resources\Splash\music_4_icon_splash.svg" Color="#111214" BaseSize="512,512" />
 
 		<!-- Images -->
 		<MauiImage Include="Resources\Images\*" />
 		<MauiImage Update="Resources\Images\dotnet_bot.png" Resize="True" BaseSize="300,185" />
-		
-	  <!-- Custom fonts removed so the app will use system default fonts -->
-		
 
-		<!-- Raw Assets (also remove the "Resources\Raw" prefix) -->
+		<!-- Raw Assets -->
 		<MauiAsset Include="Resources\Raw\**" LogicalName="%(RecursiveDir)%(Filename)%(Extension)" />
 	</ItemGroup>
 
 	<ItemGroup>
-	  <None Remove="Resources\Images\feather\*" />
+		<None Remove="Resources\Images\feather\*" />
 		<None Remove="Resources\Images\lucide\*" />
 	</ItemGroup>
 
 	<ItemGroup>
-	  <MauiImage Include="Resources\Images\lucide\*" TintColor="#FFFFFF" />
+		<MauiImage Include="Resources\Images\lucide\*" TintColor="#FFFFFF" />
 	</ItemGroup>
 
 	<ItemGroup>
-	  <None Remove="Platforms\Android\Environment.txt" />
+		<None Remove="Platforms\Android\Environment.txt" />
 	</ItemGroup>
 
 	<ItemGroup>
-	  <AndroidEnvironment Include="Platforms\Android\Environment.txt" />
+		<AndroidEnvironment Include="Platforms\Android\Environment.txt" />
 	</ItemGroup>
 
 	<ItemGroup>
-	  <MauiImage Include="Resources\Splash\music_4_icon_splash.svg">
-		<TintColor>#C8D1D9</TintColor>
-	  </MauiImage>
+		<MauiImage Include="Resources\Splash\music_4_icon_splash.svg">
+			<TintColor>#C8D1D9</TintColor>
+		</MauiImage>
 	</ItemGroup>
 
 	<ItemGroup>
@@ -98,91 +88,7 @@
 	</ItemGroup>
 
 	<ItemGroup>
-	  <ProjectReference Include="..\..\..\VirualizeList\MPowerKit.VirtualizeListView\MPowerKit.VirtualizeListView.csproj" />
-	</ItemGroup>
-
-	<ItemGroup>
-	  <Compile Update="Views\SettingTemplates\ActionTemplateView.xaml.cs">
-	    <DependentUpon>ActionTemplateView.xaml</DependentUpon>
-	  </Compile>
-	  <Compile Update="Views\SettingTemplates\SwitchTemplateView.xaml.cs">
-	    <DependentUpon>SwitchTemplateView.xaml</DependentUpon>
-	  </Compile>
-	</ItemGroup>
-
-	<ItemGroup>
-	  <MauiXaml Update="Views\BottomSheetContainer.xaml">
-		<Generator>MSBuild:Compile</Generator>
-	  </MauiXaml>
-	  <MauiXaml Update="Views\ContextMenuSheet.xaml">
-		<Generator>MSBuild:Compile</Generator>
-	  </MauiXaml>
-	  <MauiXaml Update="Views\EditPlaylistSheet.xaml">
-		<Generator>MSBuild:Compile</Generator>
-	  </MauiXaml>
-	  <MauiXaml Update="Views\EditPlaylistTabs\EditPlaylistGeneralTab.xaml">
-		<Generator>MSBuild:Compile</Generator>
-	  </MauiXaml>
-	  <MauiXaml Update="Views\EditTrackSheet.xaml">
-		<Generator>MSBuild:Compile</Generator>
-	  </MauiXaml>
-	  <MauiXaml Update="Views\Dialogs\ColorPickerDialog.xaml">
-	    <Generator>MSBuild:Compile</Generator>
-	  </MauiXaml>
-	  <MauiXaml Update="Views\Dialogs\EnumPickerDialog.xaml">
-	    <Generator>MSBuild:Compile</Generator>
-	  </MauiXaml>
-	  <MauiXaml Update="Views\EditTrackTabs\EditTrackGeneralTab.xaml">
-		<Generator>MSBuild:Compile</Generator>
-	  </MauiXaml>
-	  <MauiXaml Update="Views\EditTrackTabs\EditTrackLyricsTab.xaml">
-		<Generator>MSBuild:Compile</Generator>
-	  </MauiXaml>
-	  <MauiXaml Update="Views\EditTrackTabs\EditTrackTagsTab.xaml">
-		<Generator>MSBuild:Compile</Generator>
-	  </MauiXaml>
-	  <MauiXaml Update="Views\Dialogs\TextEntryDialog.xaml">
-	    <Generator>MSBuild:Compile</Generator>
-	  </MauiXaml>
-	  <MauiXaml Update="Views\FilterOptionsSheet.xaml">
-		<Generator>MSBuild:Compile</Generator>
-	  </MauiXaml>
-	  <MauiXaml Update="Views\MobileMainPage.xaml">
-		<Generator>MSBuild:Compile</Generator>
-	  </MauiXaml>
-	  <MauiXaml Update="Views\MobilePlayerPaneView.xaml">
-		<Generator>MSBuild:Compile</Generator>
-	  </MauiXaml>
-	  <MauiXaml Update="Views\PlayerPaneView.xaml">
-		<Generator>MSBuild:Compile</Generator>
-	  </MauiXaml>
-	  <MauiXaml Update="Views\SegmentedTabBar.xaml">
-		<Generator>MSBuild:Compile</Generator>
-	  </MauiXaml>
-	  <MauiXaml Update="Views\SettingsCategoryPage.xaml">
-	    <Generator>MSBuild:Compile</Generator>
-	  </MauiXaml>
-	  <MauiXaml Update="Views\SettingsPage.xaml">
-	    <Generator>MSBuild:Compile</Generator>
-	  </MauiXaml>
-	  <MauiXaml Update="Views\SettingTemplates\DialogTemplateView.xaml">
-	    <Generator>MSBuild:Compile</Generator>
-	  </MauiXaml>
-	  <MauiXaml Update="Views\SettingTemplates\ActionTemplateView.xaml">
-	    <Generator>MSBuild:Compile</Generator>
-	  </MauiXaml>
-	  <MauiXaml Update="Views\SettingTemplates\SwitchTemplateView.xaml">
-	    <Generator>MSBuild:Compile</Generator>
-	  </MauiXaml>
-	  <MauiXaml Update="Views\SharedPopupContainer.xaml">
-		<Generator>MSBuild:Compile</Generator>
-	  </MauiXaml>
-	  <MauiXaml Update="Views\SlideUpSheetHost.xaml">
-		<Generator>MSBuild:Compile</Generator>
-	  </MauiXaml>
-	  <MauiXaml Update="Views\SortOptionsSheet.xaml">
-		<Generator>MSBuild:Compile</Generator>
-	  </MauiXaml>
+		<ProjectReference Include="..\..\..\VirualizeList\MPowerKit.VirtualizeListView\MPowerKit.VirtualizeListView.csproj" />
 	</ItemGroup>
 
 	<ItemGroup Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'windows'">
@@ -192,12 +98,11 @@
 	</ItemGroup>
 
 	<ItemGroup Condition="'$(TargetFramework)' == 'net10.0-android'">
-	  <PackageReference Include="Xamarin.AndroidX.Media3.ExoPlayer">
-		<Version>1.10.1.1</Version>
-	  </PackageReference>
+		<PackageReference Include="Xamarin.AndroidX.Media3.ExoPlayer">
+			<Version>1.10.1.1</Version>
+		</PackageReference>
 	</ItemGroup>
 
-  <!-- Import a user-specific signing file if it exists. Place your Android keystore and
-	   signing properties in 'Signing.props' and do not check that file into source control. -->
-  <Import Project="Signing.props" Condition="Exists('Signing.props')" />
+	<!-- Import signing file if exists -->
+	<Import Project="Signing.props" Condition="Exists('Signing.props')" />
 </Project>

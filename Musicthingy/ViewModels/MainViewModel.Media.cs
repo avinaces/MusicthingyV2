@@ -181,6 +181,36 @@ public partial class MainViewModel
         if (IsAutoFollowEnabled)
             TriggerAutoFollow();
 
+        // ==========================================
+        // LOCAL FILE PERMISSION CHECK
+        // ==========================================
+        if (!string.IsNullOrEmpty(newValue.Url) &&
+           (newValue.Url.StartsWith("/") || newValue.Url.StartsWith("file://") || newValue.Url.StartsWith("content://")))
+        {
+            var status = await Permissions.CheckStatusAsync<Helpers.LocalFilesPermission>();
+            if (status != PermissionStatus.Granted)
+            {
+                status = await Permissions.RequestAsync<Helpers.LocalFilesPermission>();
+            }
+
+            if (status != PermissionStatus.Granted)
+            {
+                await MainThread.InvokeOnMainThreadAsync(async () =>
+                {
+                    await ShowConfirmAsync(
+                        "Permission Denied",
+                        "Storage permission is required to play local files.",
+                        "OK",
+                        ModalBackgroundTapBehavior.Confirm,
+                        isDanger: true);
+                });
+
+                ReleaseTransientWakeLock();
+                IsLoadingMedia = false;
+                return;
+            }
+        }
+
         // Display cached duration instantly before initiating any async loads, if possible
         if (newValue.Duration.TotalSeconds > 0)
         {
