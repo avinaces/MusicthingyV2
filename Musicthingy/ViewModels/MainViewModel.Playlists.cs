@@ -45,14 +45,19 @@ public partial class MainViewModel
         MainThread.BeginInvokeOnMainThread(() =>
         {
             _cachedTracksPlaylist.Items.Clear();
-            var uniqueUrls = new HashSet<string>();
+
+            // We now track uniqueness by URL + StartTime + EndTime
+            var uniqueTrackKeys = new HashSet<string>();
 
             // Scan all normal playlists for tracks that are currently in the cache
             foreach (var p in Playlists.Where(x => !x.IsSystemPlaylist))
             {
                 foreach (var t in p.Items)
                 {
-                    if (_trackCacheService.IsTrackCached(t.Url) && uniqueUrls.Add(t.Url))
+                    // Create a unique footprint for this specific track slice
+                    string trackKey = $"{t.Url}::{t.StartTime ?? 0}::{t.EndTime ?? 0}";
+
+                    if (_trackCacheService.IsTrackCached(t.Url) && uniqueTrackKeys.Add(trackKey))
                     {
                         // Create a pointer copy that links to the original track and playlist
                         var pointerTrack = new PlaylistItem
@@ -63,12 +68,12 @@ public partial class MainViewModel
                             EndTime = t.EndTime,
                             IconUrl = t.IconUrl,
                             Duration = t.Duration,
-                            Lyrics = t.Lyrics,          // Fix: Copy lyrics
-                            Views = t.Views,            // Fix: Copy views
+                            Lyrics = t.Lyrics,
+                            Views = t.Views,
                             LastPlayedAt = t.LastPlayedAt,
                             Playlist = _cachedTracksPlaylist,
-                            SourcePlaylist = p,         // Pointer to original playlist
-                            SourceTrack = t             // Pointer to original track
+                            SourcePlaylist = p,
+                            SourceTrack = t
                         };
 
                         if (t.Tags != null)
