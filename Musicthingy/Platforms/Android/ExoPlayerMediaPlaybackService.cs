@@ -14,7 +14,6 @@ public class ExoPlayerMediaPlaybackService : Java.Lang.Object, IMediaPlaybackSer
     private const int StateReady = 3;
     private const int StateEnded = 4;
 
-    private readonly LocalStreamProxy _streamProxy;
     private AndroidX.Media3.ExoPlayer.IExoPlayer? _player;
     private System.Timers.Timer? _progressTimer;
 
@@ -32,17 +31,13 @@ public class ExoPlayerMediaPlaybackService : Java.Lang.Object, IMediaPlaybackSer
     public event EventHandler<double>? TimeChanged;
     public event EventHandler<double>? LengthChanged;
 
-    public ExoPlayerMediaPlaybackService(LocalStreamProxy streamProxy)
+    public ExoPlayerMediaPlaybackService()
     {
-        _streamProxy = streamProxy;
-
-        // Ensure initialization happens safely on the main thread
         MainThread.BeginInvokeOnMainThread(InitializePlayer);
     }
 
     private void InitializePlayer()
     {
-        _streamProxy.Start();
 
         var context = global::Android.App.Application.Context;
 
@@ -69,13 +64,21 @@ public class ExoPlayerMediaPlaybackService : Java.Lang.Object, IMediaPlaybackSer
     {
         CurrentMediaUrl = streamUrl;
 
-        // BYPASS PROXY: Use streamUrl directly instead of _streamProxy.GetProxyUrl(streamUrl)
-        // ExoPlayer doesn't get blocked by ISP's or youtube's anti-bot measures, so the proxy is unnecessary and causes extra overhead.
-        var dataSourceFactory = new DefaultHttpDataSource.Factory();
-        dataSourceFactory.SetUserAgent(userAgent);
-        dataSourceFactory.SetAllowCrossProtocolRedirects(true);
+        // 1. Configure the HTTP data source for remote streams (with custom User-Agent)
+        var httpDataSourceFactory = new DefaultHttpDataSource.Factory();
+        httpDataSourceFactory.SetUserAgent(userAgent);
+        httpDataSourceFactory.SetAllowCrossProtocolRedirects(true);
 
-        var mediaItem = MediaItem.FromUri(global::Android.Net.Uri.Parse(streamUrl)!);
+        // 2. Wrap it inside DefaultDataSource to seamlessly handle local files, assets, AND http streams
+        var context = global::Android.App.Application.Context;
+        var dataSourceFactory = new DefaultDataSource.Factory(context, httpDataSourceFactory);
+
+        // 3. Format URI correctly for both local cached files and remote URLs
+        global::Android.Net.Uri uri = streamUrl.StartsWith("/")
+            ? global::Android.Net.Uri.FromFile(new Java.IO.File(streamUrl))!
+            : global::Android.Net.Uri.Parse(streamUrl)!;
+
+        var mediaItem = MediaItem.FromUri(uri);
         var mediaSource = new AndroidX.Media3.ExoPlayer.Source.DefaultMediaSourceFactory(dataSourceFactory)
             .CreateMediaSource(mediaItem);
 

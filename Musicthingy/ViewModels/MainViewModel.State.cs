@@ -30,7 +30,7 @@ public partial class MainViewModel
         var token = _saveLibraryCts.Token;
 
         // Take a snapshot list of current playlists directly
-        List<Playlist> librarySnapshot = Playlists.ToList();
+        List<Playlist> librarySnapshot = Playlists.Where(p => !p.IsSystemPlaylist).ToList();
 
         Task.Delay(1000, token).ContinueWith(async t =>
         {
@@ -96,6 +96,7 @@ public partial class MainViewModel
                                 Playlists.Add(lp);
                             }
                             RestorePlaybackState();
+                            InitializeSystemPlaylists();
                         }
                         finally
                         {

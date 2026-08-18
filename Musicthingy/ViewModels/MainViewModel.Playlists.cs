@@ -3,6 +3,7 @@ using CommunityToolkit.Maui.Extensions;
 using CommunityToolkit.Maui.Storage;
 using CommunityToolkit.Mvvm.Input;
 using Musicthingy.Models;
+using Musicthingy.Views;
 using System.Diagnostics;
 using System.Text.Json;
 
@@ -13,30 +14,79 @@ public partial class MainViewModel
     private static readonly string[] androidFileTypeJSON = ["application/json"];
     private static readonly string[] windowsFileTypeJSON = [".json"];
 
+    private Playlist? _cachedTracksPlaylist;
+
+    public void InitializeSystemPlaylists()
+    {
+        // Find or create the auto-generated Cached Tracks playlist
+        _cachedTracksPlaylist = Playlists.FirstOrDefault(p => p.IsSystemPlaylist && p.Name == "Cached Tracks");
+
+        if (_cachedTracksPlaylist == null)
+        {
+            _cachedTracksPlaylist = new Playlist
+            {
+                Name = "Cached Tracks",
+                IsSystemPlaylist = true,
+                IconUrl = "refresh_cw_icon.png"
+            };
+            Playlists.Insert(0, _cachedTracksPlaylist); // Put it at the very top
+        }
+
+        RefreshCachedTracksPlaylist();
+
+        // Listen for future cache downloads/deletions in the background
+        _trackCacheService.CacheUpdated += (s, e) => RefreshCachedTracksPlaylist();
+    }
+
+    private void RefreshCachedTracksPlaylist()
+    {
+        if (_cachedTracksPlaylist == null) return;
+
+        MainThread.BeginInvokeOnMainThread(() =>
+        {
+            _cachedTracksPlaylist.Items.Clear();
+            var uniqueUrls = new HashSet<string>();
+
+            // Scan all normal playlists for tracks that are currently in the cache
+            foreach (var p in Playlists.Where(x => !x.IsSystemPlaylist))
+            {
+                foreach (var t in p.Items)
+                {
+                    if (_trackCacheService.IsTrackCached(t.Url) && uniqueUrls.Add(t.Url))
+                    {
+                        // Create a pointer copy that links to the original track and playlist
+                        var pointerTrack = new PlaylistItem
+                        {
+                            Title = t.Title,
+                            Url = t.Url,
+                            StartTime = t.StartTime,
+                            EndTime = t.EndTime,
+                            IconUrl = t.IconUrl,
+                            Duration = t.Duration,
+                            Lyrics = t.Lyrics,          // Fix: Copy lyrics
+                            Views = t.Views,            // Fix: Copy views
+                            LastPlayedAt = t.LastPlayedAt,
+                            Playlist = _cachedTracksPlaylist,
+                            SourcePlaylist = p,         // Pointer to original playlist
+                            SourceTrack = t             // Pointer to original track
+                        };
+
+                        if (t.Tags != null)
+                        {
+                            foreach (var tag in t.Tags) pointerTrack.Tags.Add(tag);
+                        }
+
+                        _cachedTracksPlaylist.Items.Add(pointerTrack);
+                    }
+                }
+            }
+            _cachedTracksPlaylist.RequestRecalculateDuration();
+        });
+    }
 
     partial void OnSelectedPlaylistChanged(Playlist? value)
     {
-        return; // Disable dynamic theming for now, as it can cause jank and isn't the most important feature. Will revisit later.
-        Task.Run(async () =>
-        {
-            if (value != null)
-            {
-                var extractedColor = await _colorExtractionService.ExtractDominantColorAsync(value);
-
-                if (extractedColor != null)
-                {
-                    // Apply the new playlist theme!
-                    MainThread.BeginInvokeOnMainThread(() => _themeManager.ApplyTheme(extractedColor));
-                }
-                else
-                {
-                    // No icon/color found? Revert to the standard system accent color
-                    var fallbackColor = Services.SystemThemeHelper.GetAndroidSystemAccentColor();
-                    if (fallbackColor != null)
-                        MainThread.BeginInvokeOnMainThread(() => _themeManager.ApplyTheme(fallbackColor));
-                }
-            }
-        });
+        return; // Dynamic theming disabled temporarily
     }
 
     [RelayCommand]
@@ -46,22 +96,22 @@ public partial class MainViewModel
         Playlists.Add(newList);
         SelectedPlaylist = newList;
 
-        RequestSaveLibrary(); // Trigger library save
+        RequestSaveLibrary();
     }
 
     [RelayCommand]
     private async Task ImportPlaylistAsync()
     {
+        // (Keep your existing ImportPlaylistAsync logic here...)
         try
         {
             var customFileType = new FilePickerFileType(
                 new Dictionary<DevicePlatform, IEnumerable<string>>
                 {
-                { DevicePlatform.WinUI, windowsFileTypeJSON },
-                { DevicePlatform.Android, androidFileTypeJSON },
+                    { DevicePlatform.WinUI, windowsFileTypeJSON },
+                    { DevicePlatform.Android, androidFileTypeJSON },
                 });
 
-            // Use PickMultipleAsync to allow multiple file selection
             IEnumerable<FileResult>? results = await FilePicker.Default.PickMultipleAsync(new PickOptions
             {
                 PickerTitle = "Select Playlist JSON files",
@@ -72,7 +122,6 @@ public partial class MainViewModel
             {
                 List<Playlist> importedPlaylists = new List<Playlist>();
 
-                // Loop through all selected files
                 foreach (FileResult result in results)
                 {
                     using Stream stream = await result.OpenReadAsync();
@@ -80,27 +129,16 @@ public partial class MainViewModel
                     string jsonContent = await reader.ReadToEndAsync();
 
                     Playlist? importedPlaylist = await _dataService.ImportPlaylistFromJsonAsync(jsonContent);
-
-                    if (importedPlaylist != null)
-                    {
-                        importedPlaylists.Add(importedPlaylist);
-                    }
+                    if (importedPlaylist != null) importedPlaylists.Add(importedPlaylist);
                 }
 
                 if (importedPlaylists.Count > 0)
                 {
                     MainThread.BeginInvokeOnMainThread(() =>
                     {
-                        // Add all successfully imported playlists to the UI
-                        foreach (Playlist playlist in importedPlaylists)
-                        {
-                            Playlists.Add(playlist);
-                        }
-
-                        // Set the last imported playlist as the currently selected one
+                        foreach (Playlist playlist in importedPlaylists) Playlists.Add(playlist);
                         SelectedPlaylist = importedPlaylists.Last();
-
-                        RequestSaveLibrary(); // Trigger library save
+                        RequestSaveLibrary();
                     });
                 }
             }
@@ -109,12 +147,7 @@ public partial class MainViewModel
         {
             await MainThread.InvokeOnMainThreadAsync(async () =>
             {
-                await ShowConfirmAsync(
-                    title: "Error",
-                    message: $"Failed to import: {ex.Message}",
-                    confirmText: "OK",
-                    bgBehavior: ModalBackgroundTapBehavior.Confirm,
-                    isDanger: true);
+                await ShowConfirmAsync("Error", $"Failed to import: {ex.Message}", "OK", ModalBackgroundTapBehavior.Confirm, isDanger: true);
             });
         }
     }
@@ -122,38 +155,30 @@ public partial class MainViewModel
     [RelayCommand]
     private async Task ExportPlaylistAsync(Playlist playlist)
     {
-        if (playlist == null) return;
+        if (playlist == null || playlist.IsSystemPlaylist) return;
 
+        // (Keep your existing ExportPlaylistAsync logic here...)
         try
         {
-            // 1. Serialize the Playlist model directly (No DTO needed!)
             JsonSerializerOptions options = new JsonSerializerOptions
             {
-                WriteIndented = true, // Makes the JSON file pretty and readable
+                WriteIndented = true,
                 PropertyNameCaseInsensitive = true,
                 DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull
             };
 
             string json = JsonSerializer.Serialize(playlist, options);
-
-            // 2. Clean invalid file name chars safely
             string safeName = string.IsNullOrWhiteSpace(playlist.Name) ? "Playlist" : playlist.Name;
             string cleanName = string.Join("_", safeName.Split(Path.GetInvalidFileNameChars()));
-            string fileName = $"{cleanName}.json";
 
-            // 3. Save file natively
             using MemoryStream stream = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(json));
-            var fileSaverResult = await CommunityToolkit.Maui.Storage.FileSaver.Default.SaveAsync(fileName, stream, CancellationToken.None);
+            var fileSaverResult = await CommunityToolkit.Maui.Storage.FileSaver.Default.SaveAsync($"{cleanName}.json", stream, CancellationToken.None);
 
             if (fileSaverResult.IsSuccessful)
             {
                 await MainThread.InvokeOnMainThreadAsync(async () =>
                 {
-                    await ShowConfirmAsync(
-                        title: "Success",
-                        message: $"Playlist exported to:\n{fileSaverResult.FilePath}",
-                        confirmText: "OK",
-                        bgBehavior: ModalBackgroundTapBehavior.Confirm);
+                    await ShowConfirmAsync("Success", $"Playlist exported to:\n{fileSaverResult.FilePath}", "OK", ModalBackgroundTapBehavior.Confirm);
                 });
             }
         }
@@ -161,12 +186,7 @@ public partial class MainViewModel
         {
             await MainThread.InvokeOnMainThreadAsync(async () =>
             {
-                await ShowConfirmAsync(
-                    title: "Export Failed",
-                    message: ex.Message,
-                    confirmText: "OK",
-                    bgBehavior: ModalBackgroundTapBehavior.Confirm,
-                    isDanger: true);
+                await ShowConfirmAsync("Export Failed", ex.Message, "OK", ModalBackgroundTapBehavior.Confirm, isDanger: true);
             });
         }
     }
@@ -174,7 +194,8 @@ public partial class MainViewModel
     [RelayCommand]
     private async Task DeletePlaylistAsync(Playlist playlist)
     {
-        // Uses the overlay system we built earlier
+        if (playlist == null || playlist.IsSystemPlaylist) return; // Safeguard
+
         bool confirm = await ShowConfirmAsync(
             title: "Delete Playlist",
             message: $"Are you sure you want to delete '{playlist.Name}'? This cannot be undone.",
@@ -186,16 +207,14 @@ public partial class MainViewModel
         {
             Playlists.Remove(playlist);
             if (SelectedPlaylist == playlist) SelectedPlaylist = null;
-
-            RequestSaveLibrary(); // Trigger library save
+            RequestSaveLibrary();
         }
     }
 
     [RelayCommand]
     private void DeleteTrack(PlaylistItem track)
     {
-        // TODO: add delete modal
-        if (track.Playlist != null && track.Playlist.Items.Contains(track))
+        if (track.Playlist != null && track.Playlist.Items.Contains(track) && !track.Playlist.IsSystemPlaylist)
         {
             track.Playlist.Items.Remove(track);
             PlaybackQueue.Remove(track);
@@ -203,32 +222,24 @@ public partial class MainViewModel
         }
     }
 
-    // NEW: Scrapes all current tags dynamically, mixed with cached ones
     public List<string> GetAllKnownTags()
     {
         var tags = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-        // Gather from Playlists
         foreach (var p in Playlists)
         {
-            if (p.Tags != null)
-                foreach (var t in p.Tags) tags.Add(t);
-
+            if (p.Tags != null) foreach (var t in p.Tags) tags.Add(t);
             if (p.Items != null)
                 foreach (var i in p.Items)
                     if (i.Tags != null)
                         foreach (var t in i.Tags) tags.Add(t);
         }
 
-        // Gather from Global Cache (for tags that were created but not assigned to anything yet)
         var storedTagsJson = Preferences.Default.Get("AppGlobalTags", "[]");
         try
         {
             var stored = JsonSerializer.Deserialize<List<string>>(storedTagsJson);
-            if (stored != null)
-            {
-                foreach (var t in stored) tags.Add(t);
-            }
+            if (stored != null) foreach (var t in stored) tags.Add(t);
         }
         catch { }
 
@@ -238,25 +249,17 @@ public partial class MainViewModel
     [RelayCommand]
     private async Task AddNewTrackAsync()
     {
-        if (SelectedPlaylist == null) return;
+        if (SelectedPlaylist == null || SelectedPlaylist.IsSystemPlaylist) return;
 
-        // 1. Create the temporary new track
-        var newTrack = new PlaylistItem
-        {
-            Playlist = SelectedPlaylist
-        };
-
+        var newTrack = new PlaylistItem { Playlist = SelectedPlaylist };
         var allTags = GetAllKnownTags();
 
-        // 2. Open the edit options for that item
         var sheet = new Views.EditTrackSheet(newTrack, allTags);
         var result = await Services.SheetManager.ShowAsync<bool>(sheet);
 
-        // 3. If the user saved their edits, append it to the active playlist
         if (result)
         {
             SelectedPlaylist.Items.Add(newTrack);
-
             UpdateFilterTags();
             RefreshDisplayedItems();
             RequestSaveLibrary();
@@ -266,12 +269,10 @@ public partial class MainViewModel
     [RelayCommand]
     private async Task EditTrackAsync(PlaylistItem track)
     {
+        if (track.Playlist != null && track.Playlist.IsSystemPlaylist) return;
+
         var allTags = GetAllKnownTags();
-
-        // Create the View
         var sheet = new Views.EditTrackSheet(track, allTags);
-
-        // Await it natively
         var result = await Services.SheetManager.ShowAsync<bool>(sheet);
 
         if (result)
@@ -285,12 +286,10 @@ public partial class MainViewModel
     [RelayCommand]
     private async Task EditPlaylistAsync(Playlist playlist)
     {
+        if (playlist.IsSystemPlaylist) return;
+
         List<string> allTags = GetAllKnownTags();
-
-        // Create the View
         Views.EditPlaylistSheet sheet = new Views.EditPlaylistSheet(playlist, allTags);
-
-        // Await natively
         bool result = await Services.SheetManager.ShowAsync<bool>(sheet);
 
         if (result)

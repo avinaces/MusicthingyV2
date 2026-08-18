@@ -9,25 +9,57 @@ namespace Musicthingy.Platforms.Android;
 public class ExoPlayerMediaProbingService : IMediaProbingService
 {
     private const int ParseDelayTimeoutMs = 5000;
+    private const int StateIdle = 1;
+    private const int StateBuffering = 2;
+    private const int StateReady = 3;
+    private const int StateEnded = 4;
 
     public async Task<TimeSpan?> ProbeMediaDurationAsync(string url, CancellationToken cancellationToken)
     {
-        var tcs = new TaskCompletionSource<TimeSpan?>();
-        using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        if (string.IsNullOrWhiteSpace(url))
+            return null;
 
-        // Cancel via token aborts the completion source
-        cts.Token.Register(() => tcs.TrySetResult(null));
+        TaskCompletionSource<TimeSpan?> tcs = new TaskCompletionSource<TimeSpan?>();
+        using CancellationTokenSource cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+
+        ProbePlayerListener? listener = null;
 
         MainThread.BeginInvokeOnMainThread(() =>
         {
             try
             {
-                var context = global::Android.App.Application.Context;
-                var player = new ExoPlayerBuilder(context).Build();
-                var listener = new ProbePlayerListener(player, tcs);
+                global::Android.Content.Context context = global::Android.App.Application.Context;
+                IExoPlayer? player = new ExoPlayerBuilder(context).Build();
+
+                if (player == null)
+                {
+                    tcs.TrySetResult(null);
+                    return;
+                }
+
+                listener = new ProbePlayerListener(player, tcs);
                 player.AddListener(listener);
 
-                var mediaItem = MediaItem.FromUri(global::Android.Net.Uri.Parse(url)!);
+                // Correctly resolve local paths vs. remote web streams
+                global::Android.Net.Uri? uri = url.StartsWith("/")
+                    ? global::Android.Net.Uri.FromFile(new Java.IO.File(url))
+                    : global::Android.Net.Uri.Parse(url);
+
+                if (uri == null)
+                {
+                    tcs.TrySetResult(null);
+                    listener.ReleasePlayer();
+                    return;
+                }
+
+                MediaItem? mediaItem = MediaItem.FromUri(uri);
+                if (mediaItem == null)
+                {
+                    tcs.TrySetResult(null);
+                    listener.ReleasePlayer();
+                    return;
+                }
+
                 player.SetMediaItem(mediaItem);
                 player.Prepare(); // Run a headless prep to read the metadata
             }
@@ -35,16 +67,30 @@ public class ExoPlayerMediaProbingService : IMediaProbingService
             {
                 Debug.WriteLine($"[Probe Android] ExoPlayer Init Error: {ex.Message}");
                 tcs.TrySetResult(null);
+                listener?.ReleasePlayer();
             }
         });
 
-        // Add a safety hard-timeout fallback in case ExoPlayer gets stuck buffering forever
-        _ = Task.Delay(ParseDelayTimeoutMs, cts.Token).ContinueWith(t => tcs.TrySetResult(null));
+        // Hard timeout and cancellation fallback: ensure player is released if probing hangs
+        _ = Task.Delay(ParseDelayTimeoutMs, cts.Token).ContinueWith(_ =>
+        {
+            if (tcs.TrySetResult(null))
+            {
+                listener?.ReleasePlayer();
+            }
+        }, TaskScheduler.Default);
+
+        cts.Token.Register(() =>
+        {
+            if (tcs.TrySetResult(null))
+            {
+                listener?.ReleasePlayer();
+            }
+        });
 
         return await tcs.Task;
     }
 
-    // Standard Object/Listener required for native ExoPlayer bindings
     private class ProbePlayerListener : Java.Lang.Object, IPlayerListener
     {
         private readonly IExoPlayer _player;
@@ -59,18 +105,21 @@ public class ExoPlayerMediaProbingService : IMediaProbingService
 
         public void OnPlaybackStateChanged(int playbackState)
         {
-            // 3 = StateReady, 4 = StateEnded, 1 = StateIdle
-            if (playbackState == 3) // StateReady
+            if (playbackState == StateReady)
             {
-                var durationMs = _player.Duration;
+                long durationMs = _player.Duration;
                 if (durationMs > 0 && durationMs != C.TimeUnset)
+                {
                     _tcs.TrySetResult(TimeSpan.FromMilliseconds(durationMs));
+                }
                 else
+                {
                     _tcs.TrySetResult(null);
+                }
 
                 ReleasePlayer();
             }
-            else if (playbackState == 4 || playbackState == 1) // Ended or Idle without Ready state
+            else if (playbackState == StateEnded || playbackState == StateIdle)
             {
                 _tcs.TrySetResult(null);
                 ReleasePlayer();
@@ -84,12 +133,12 @@ public class ExoPlayerMediaProbingService : IMediaProbingService
             ReleasePlayer();
         }
 
-        private void ReleasePlayer()
+        public void ReleasePlayer()
         {
             if (_isReleased) return;
             _isReleased = true;
 
-            // Player MUST be released strictly on Main Thread to prevent JNI crashes
+            // Player MUST be released strictly on the Main Thread to prevent JNI lifecycle exceptions
             MainThread.BeginInvokeOnMainThread(() =>
             {
                 try

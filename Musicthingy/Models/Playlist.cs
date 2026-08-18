@@ -81,6 +81,10 @@ public partial class Playlist : ObservableObject
 
     [ObservableProperty]
     [JsonIgnore]
+    public partial bool IsSystemPlaylist { get; set; }
+
+    [ObservableProperty]
+    [JsonIgnore]
     public partial bool IsHovered { get; set; }
 
     [ObservableProperty]
@@ -114,6 +118,12 @@ public partial class Playlist : ObservableObject
         get
         {
             if (_iconImageSource != null) return _iconImageSource;
+
+            if (IsSystemPlaylist && !string.IsNullOrEmpty(IconUrl))
+            {
+                _iconImageSource = ImageSource.FromFile(IconUrl);
+                return _iconImageSource;
+            }
 
             // Fast path: if we've generated this icon before, return it instantly to the UI
             string cacheKey = string.IsNullOrEmpty(IconUrl) ? $"NAME_{Name}" : IconUrl;

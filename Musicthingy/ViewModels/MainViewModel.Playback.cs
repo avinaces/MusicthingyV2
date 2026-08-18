@@ -374,8 +374,14 @@ public partial class MainViewModel
             if (value.TotalSeconds >= targetSeconds)
             {
                 CurrentTrack.Views++;
-                _hasIncrementedViewForCurrentTrack = true;
 
+                // Sync view increment to the real track
+                if (CurrentTrack.SourceTrack != null)
+                {
+                    CurrentTrack.SourceTrack.Views = CurrentTrack.Views;
+                }
+
+                _hasIncrementedViewForCurrentTrack = true;
                 RequestSaveLibrary();
             }
         }
@@ -419,6 +425,12 @@ public partial class MainViewModel
         }
 
         newValue.LastPlayedAt = DateTime.Now;
+
+        // Sync last played time to the real track
+        if (newValue.SourceTrack != null)
+        {
+            newValue.SourceTrack.LastPlayedAt = newValue.LastPlayedAt;
+        }
 
         if (oldValue != null) oldValue.IsSelected = false;
         newValue.IsSelected = true;

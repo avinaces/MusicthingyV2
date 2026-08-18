@@ -246,13 +246,29 @@ public partial class MainViewModel
             CurrentPositionSeconds = 0;
             SyncOSPlaybackState();
 
-            Stopwatch resolveSw = Stopwatch.StartNew();
-            ResolvedMedia? resolvedMedia = string.IsNullOrEmpty(newValue.Url)
-                ? null
-                : await _youtubeResolver.ResolveMediaSourceAsync(newValue.Url);
-            resolveSw.Stop();
+            // ==========================================
+            // NEW CACHE LOGIC: Check Local Cache First
+            // ==========================================
+            ResolvedMedia? resolvedMedia = null;
+            bool isCached = false;
 
-            Debug.WriteLine($"[Playback] Resolved media source in {resolveSw.ElapsedMilliseconds}ms");
+            if (!string.IsNullOrEmpty(newValue.Url))
+            {
+                string? cachedPath = _trackCacheService.GetCachedTrackPath(newValue.Url);
+                if (cachedPath != null)
+                {
+                    Debug.WriteLine($"[Playback] Using Local Cache for: {newValue.Url}");
+                    resolvedMedia = new ResolvedMedia(cachedPath, "");
+                    isCached = true;
+                }
+                else
+                {
+                    Stopwatch resolveSw = Stopwatch.StartNew();
+                    resolvedMedia = await _youtubeResolver.ResolveMediaSourceAsync(newValue.Url);
+                    resolveSw.Stop();
+                    Debug.WriteLine($"[Playback] Resolved via Internet in {resolveSw.ElapsedMilliseconds}ms");
+                }
+            }
 
             if (token.IsCancellationRequested || resolvedMedia == null || string.IsNullOrEmpty(resolvedMedia.Url))
             {
@@ -261,14 +277,20 @@ public partial class MainViewModel
             }
 
             double absoluteRestore = _initialRestorePosition + (newValue.StartTime ?? 0);
-            double targetStartMs = absoluteRestore > 0
-                ? absoluteRestore * 1000.0
-                : (newValue.StartTime ?? 0) * 1000.0;
-
+            double targetStartMs = absoluteRestore > 0 ? absoluteRestore * 1000.0 : (newValue.StartTime ?? 0) * 1000.0;
             _initialRestorePosition = 0;
-            _playbackStartupSw = Stopwatch.StartNew();
 
+            _playbackStartupSw = Stopwatch.StartNew();
             _playbackService.Play(resolvedMedia.Url, resolvedMedia.UserAgent, targetStartMs);
+
+            // ==========================================
+            // NEW CACHE LOGIC: Trigger Background Cache
+            // ==========================================
+            if (!isCached && !resolvedMedia.Url.StartsWith("/") && !resolvedMedia.Url.StartsWith("file://"))
+            {
+                // Fire and forget downloading the track quietly in the background while it streams!
+                _ = _trackCacheService.CacheTrackAsync(newValue.Url, resolvedMedia.Url);
+            }
 
             totalSw.Stop();
             Debug.WriteLine($"[Playback] ReloadMediaAsync completed in {totalSw.ElapsedMilliseconds}ms");

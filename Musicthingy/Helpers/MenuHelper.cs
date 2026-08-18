@@ -5,7 +5,6 @@ namespace Musicthingy.Views;
 
 public static class MenuHelper
 {
-
     public static void HideContextMenu(ContextMenuSheet menuSheet)
     {
         if (Services.SheetManager.Host != null)
@@ -13,69 +12,64 @@ public static class MenuHelper
             _ = Services.SheetManager.Host.HideAsync(menuSheet);
         }
     }
+
     public static void ShowTrackOptions(PlaylistItem track, MainViewModel vm)
     {
+        bool isReadOnly = track.Playlist != null && track.Playlist.IsSystemPlaylist;
+
         ContextMenuSheet menuSheet = new ContextMenuSheet
         {
             HasHeader = true,
             HeaderTitle = track.Title,
-            HeaderSubtitle = vm.SelectedPlaylist?.Name ?? "Track",
+            HeaderSubtitle = track.SourcePlaylist?.Name ?? vm.SelectedPlaylist?.Name ?? "Track",
             HeaderImageSource = track.ItemIconSource!
         };
 
-        // Switch to MenuGroups to separate the destructive action into its own card
-        menuSheet.MenuGroups = new List<ContextMenuGroup>
+        ContextMenuGroup safeGroup = new ContextMenuGroup();
+        ContextMenuGroup dangerGroup = new ContextMenuGroup();
+
+        if (!isReadOnly)
         {
-            // First group: Safe actions
-            new ContextMenuGroup
+            safeGroup.Add(new ContextMenuItem
             {
-                new ContextMenuItem
-                {
-                    Title = "Edit Track",
-                    IconSource = "pencil_icon.png",
-                    Action = () =>
-                    {
-                        HideContextMenu(menuSheet);
-                        vm.EditTrackCommand.Execute(track);
-                    }
-                },
-                new ContextMenuItem
-                {
-                    Title = "Play Next",
-                    IconSource = "list_video_icon.png",
-                    Action = () =>
-                    {
-                        HideContextMenu(menuSheet);
-                        vm.PlayNextInQueue(track);
-                    }
-                },
-                new ContextMenuItem
-                {
-                    Title = "Add to Queue",
-                    IconSource = "list_music_icon.png",
-                    Action = () =>
-                    {
-                        HideContextMenu(menuSheet);
-                        vm.AddToPlaybackQueue(track);
-                    }
-                }
-            },
-            // Second group: Destructive actions isolated
-            new ContextMenuGroup
+                Title = "Edit Track",
+                IconSource = "pencil_icon.png",
+                Action = () => { HideContextMenu(menuSheet); vm.EditTrackCommand.Execute(track); }
+            });
+        }
+
+        safeGroup.Add(new ContextMenuItem
+        {
+            Title = "Play Next",
+            IconSource = "list_video_icon.png",
+            Action = () => { HideContextMenu(menuSheet); vm.PlayNextInQueue(track); }
+        });
+
+        safeGroup.Add(new ContextMenuItem
+        {
+            Title = "Add to Queue",
+            IconSource = "list_music_icon.png",
+            Action = () => { HideContextMenu(menuSheet); vm.AddToPlaybackQueue(track); }
+        });
+
+        if (!isReadOnly)
+        {
+            dangerGroup.Add(new ContextMenuItem
             {
-                new ContextMenuItem
-                {
-                    Title = "Delete from Playlist",
-                    IconSource = "trash_2_icon.png",
-                    IsDestructive = true,
-                    Action = () =>
-                    {
-                        HideContextMenu(menuSheet);
-                        vm.DeleteTrackCommand.Execute(track);
-                    }
-                }
-            }
-        };
+                Title = "Delete from Playlist",
+                IconSource = "trash_2_icon.png",
+                IsDestructive = true,
+                Action = () => { HideContextMenu(menuSheet); vm.DeleteTrackCommand.Execute(track); }
+            });
+        }
+
+        List<ContextMenuGroup> groups = new List<ContextMenuGroup> { safeGroup };
+        if (dangerGroup.Count > 0)
+        {
+            groups.Add(dangerGroup);
+        }
+
+        menuSheet.MenuGroups = groups;
 
         if (Services.SheetManager.Host != null)
         {
@@ -84,54 +78,7 @@ public static class MenuHelper
     }
 
     public static void ShowCurrentTrackOptions(PlaylistItem track, MainViewModel vm)
-    {
-        ContextMenuSheet menuSheet = new ContextMenuSheet
-        {
-            HasHeader = true,
-            HeaderTitle = track.Title,
-            HeaderSubtitle = vm.SelectedPlaylist?.Name ?? "Track",
-            HeaderImageSource = track.ItemIconSource!
-        };
-
-        // Switch to MenuGroups to separate the destructive action into its own card
-        menuSheet.MenuGroups = new List<ContextMenuGroup>
-        {
-            // First group: Safe actions
-            new ContextMenuGroup
-            {
-                new ContextMenuItem
-                {
-                    Title = "Edit Track",
-                    IconSource = "pencil_icon.png",
-                    Action = () =>
-                    {
-                        HideContextMenu(menuSheet);
-                        vm.EditTrackCommand.Execute(track);
-                    }
-                }
-            },
-            // Second group: Destructive actions isolated
-            new ContextMenuGroup
-            {
-                new ContextMenuItem
-                {
-                    Title = "Delete from Playlist",
-                    IconSource = "trash_2_icon.png",
-                    IsDestructive = true,
-                    Action = () =>
-                    {
-                        HideContextMenu(menuSheet);
-                        vm.DeleteTrackCommand.Execute(track);
-                    }
-                }
-            }
-        };
-
-        if (Services.SheetManager.Host != null)
-        {
-            _ = Services.SheetManager.Host.ShowAsync(menuSheet);
-        }
-    }
+        => ShowTrackOptions(track, vm);
 
     public static void ShowPlaylistOptions(Playlist playlist, MainViewModel vm)
     {
@@ -143,71 +90,63 @@ public static class MenuHelper
             HeaderImageSource = playlist.IconImageSource!
         };
 
-        menuSheet.MenuGroups = new List<ContextMenuGroup>
+        ContextMenuGroup safeGroup = new ContextMenuGroup();
+        ContextMenuGroup exportGroup = new ContextMenuGroup();
+        ContextMenuGroup dangerGroup = new ContextMenuGroup();
+
+        if (!playlist.IsSystemPlaylist)
         {
-            // First group: Safe actions
-            new ContextMenuGroup
+            safeGroup.Add(new ContextMenuItem
             {
-                new ContextMenuItem
-                {
-                    Title = "Edit Playlist",
-                    IconSource = "pencil_icon.png",
-                    Action = () =>
-                    {
-                        HideContextMenu(menuSheet);
-                        vm.EditPlaylistCommand.Execute(playlist);
-                    }
-                },
-                new ContextMenuItem
-                {
-                    Title = "Play Next",
-                    IconSource = "list_video_icon.png",
-                    Action = () =>
-                    {
-                        HideContextMenu(menuSheet);
-                        vm.PlayNextInQueue(playlist);
-                    }
-                },
-                new ContextMenuItem
-                {
-                    Title = "Add to Queue",
-                    IconSource = "list_music_icon.png",
-                    Action = () =>
-                    {
-                        HideContextMenu(menuSheet);
-                        vm.AddToPlaybackQueue(playlist);
-                    }
-                }
-            },
-            new ContextMenuGroup
+                Title = "Edit Playlist",
+                IconSource = "pencil_icon.png",
+                Action = () => { HideContextMenu(menuSheet); vm.EditPlaylistCommand.Execute(playlist); }
+            });
+        }
+
+        safeGroup.Add(new ContextMenuItem
+        {
+            Title = "Play Next",
+            IconSource = "list_video_icon.png",
+            Action = () => { HideContextMenu(menuSheet); vm.PlayNextInQueue(playlist); }
+        });
+
+        safeGroup.Add(new ContextMenuItem
+        {
+            Title = "Add to Queue",
+            IconSource = "list_music_icon.png",
+            Action = () => { HideContextMenu(menuSheet); vm.AddToPlaybackQueue(playlist); }
+        });
+
+        if (!playlist.IsSystemPlaylist)
+        {
+            exportGroup.Add(new ContextMenuItem
             {
-                new ContextMenuItem
-                {
-                    Title = "Export Playlist",
-                    IconSource = "upload_icon.png",
-                    Action = () =>
-                    {
-                        HideContextMenu(menuSheet);
-                        vm.ExportPlaylistCommand.Execute(playlist);
-                    }
-                }
-            },
-            // Second group: Destructive actions isolated
-            new ContextMenuGroup
+                Title = "Export Playlist",
+                IconSource = "upload_icon.png",
+                Action = () => { HideContextMenu(menuSheet); vm.ExportPlaylistCommand.Execute(playlist); }
+            });
+
+            dangerGroup.Add(new ContextMenuItem
             {
-                new ContextMenuItem
-                {
-                    Title = "Delete Playlist",
-                    IconSource = "trash_2_icon.png",
-                    IsDestructive = true,
-                    Action = () =>
-                    {
-                        HideContextMenu(menuSheet);
-                        vm.DeletePlaylistCommand.Execute(playlist);
-                    }
-                }
-            }
-        };
+                Title = "Delete Playlist",
+                IconSource = "trash_2_icon.png",
+                IsDestructive = true,
+                Action = () => { HideContextMenu(menuSheet); vm.DeletePlaylistCommand.Execute(playlist); }
+            });
+        }
+
+        List<ContextMenuGroup> groups = new List<ContextMenuGroup> { safeGroup };
+        if (exportGroup.Count > 0)
+        {
+            groups.Add(exportGroup);
+        }
+        if (dangerGroup.Count > 0)
+        {
+            groups.Add(dangerGroup);
+        }
+
+        menuSheet.MenuGroups = groups;
 
         if (Services.SheetManager.Host != null)
         {
@@ -216,7 +155,5 @@ public static class MenuHelper
     }
 
     public static void ShowCurrentPlaylistOptions(Playlist playlist, MainViewModel vm)
-    {
-        ShowPlaylistOptions(playlist, vm); // For now, the options are the same as regular playlists
-    }
+        => ShowPlaylistOptions(playlist, vm);
 }

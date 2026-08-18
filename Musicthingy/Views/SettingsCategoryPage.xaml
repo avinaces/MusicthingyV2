@@ -6,7 +6,8 @@
              x:Class="Musicthingy.Views.SettingsCategoryPage"
              BackgroundColor="{DynamicResource BgColor}">
 
-    <Grid RowDefinitions="Auto, *">
+    <Grid RowDefinitions="Auto, Auto, *">
+        <!-- Top Bar -->
         <Grid Grid.Row="0" HeightRequest="56" BackgroundColor="{DynamicResource BgColor}" ZIndex="10">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="56" />
@@ -22,9 +23,25 @@
             <Label x:Name="TitleLabel" Grid.Column="1" TextColor="{DynamicResource TitleColor}" FontSize="20" FontAttributes="Bold" VerticalOptions="Center"/>
         </Grid>
 
-        <CollectionView Grid.Row="1" x:Name="SettingsList">
+        <!-- CUSTOM STORAGE UI (Only visible for Storage category) -->
+        <Border x:Name="StorageStatsContainer" Grid.Row="1" IsVisible="False" Margin="16,8,16,16" Padding="16" BackgroundColor="{DynamicResource SurfacePanel}" Stroke="{DynamicResource BorderColor}" StrokeThickness="1" StrokeShape="RoundRectangle 12">
+            <VerticalStackLayout Spacing="12">
+                <Label Text="Cache Statistics" FontSize="16" FontAttributes="Bold" TextColor="{DynamicResource TitleColor}"/>
+
+                <ProgressBar x:Name="StorageProgressBar" Progress="0" ProgressColor="{DynamicResource AccentColor}" HeightRequest="8"/>
+
+                <Grid ColumnDefinitions="*,*">
+                    <Label x:Name="UsedStorageLabel" Grid.Column="0" TextColor="{DynamicResource MutedColor}" FontSize="12"/>
+                    <Label x:Name="MaxStorageLabel" Grid.Column="1" HorizontalOptions="End" TextColor="{DynamicResource MutedColor}" FontSize="12"/>
+                </Grid>
+
+                <Button Text="Clear Cache Now" Clicked="OnClearCacheClicked" BackgroundColor="{DynamicResource Danger}" TextColor="White" CornerRadius="8" HeightRequest="40" Margin="0,8,0,0"/>
+            </VerticalStackLayout>
+        </Border>
+
+        <!-- Settings List -->
+        <CollectionView Grid.Row="2" x:Name="SettingsList">
             <CollectionView.ItemTemplate>
-                <!-- Look how clean this is now! Templates are handled automatically by the C# selector -->
                 <helpers:SettingsTemplateSelector />
             </CollectionView.ItemTemplate>
         </CollectionView>

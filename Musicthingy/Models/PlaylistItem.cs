@@ -30,14 +30,25 @@ public partial class PlaylistItem : ObservableObject
 
     [ObservableProperty]
     [JsonIgnore]
+    public partial Playlist? SourcePlaylist { get; set; }
+
+    [ObservableProperty]
+    [JsonIgnore]
+    public partial PlaylistItem? SourceTrack { get; set; }
+
+    [ObservableProperty]
+    [JsonIgnore]
     public partial Playlist? Playlist { get; set; }
 
     [JsonIgnore]
     public bool IsResolutionAttempted { get; set; }
 
     // Helper to combine Playlist tags and Item tags
+    [JsonIgnore]
+    public string? Artist => SourcePlaylist?.Name ?? Playlist?.Name;
+
     private List<string> AllDisplayTags =>
-        (Playlist?.Tags ?? Enumerable.Empty<string>())
+        ((SourcePlaylist ?? Playlist)?.Tags ?? Enumerable.Empty<string>())
         .Concat(Tags)
         .ToList();
 
@@ -110,16 +121,6 @@ public partial class PlaylistItem : ObservableObject
             }
 
             return null;
-        }
-    }
-
-    [JsonIgnore]
-    public string? Artist
-    {
-        get
-        {
-            // For now atleast the artist will be playlist name
-            return Playlist?.Name;
         }
     }
 

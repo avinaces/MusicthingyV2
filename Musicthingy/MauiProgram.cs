@@ -22,12 +22,13 @@ namespace Musicthingy
             builder.Services.AddAppSettings();
             builder.Services.AddSingleton<ColorExtractionService>();
             builder.Services.AddSingleton<YouTubeResolverService>();
+            builder.Services.AddSingleton<Services.TrackCacheService>();
 
             builder.Services.AddSingleton(sp => new HttpClient(YouTubeResolverService.Ipv4Handler));
-            builder.Services.AddSingleton<LocalStreamProxy>();
 
 
 #if WINDOWS
+            builder.Services.AddSingleton<LocalStreamProxy>();
             builder.Services.AddSingleton<Musicthingy.Services.IMediaProbingService, Musicthingy.Platforms.Windows.VlcMediaProbingService>();
 #elif ANDROID
             builder.Services.AddSingleton<IMediaProbingService, Platforms.Android.ExoPlayerMediaProbingService>();

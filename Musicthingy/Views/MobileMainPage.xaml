@@ -73,7 +73,6 @@
                                          BackgroundColor="Transparent"
                                          VerticalOptions="Center">
                                 <ImageButton.Behaviors>
-                                    <!-- Explicitly route the BindingContext using the RootPage reference -->
                                     <toolkit:IconTintColorBehavior TintColor="{Binding BindingContext.FilterIconColor, Source={x:Reference RootPage}}" />
                                 </ImageButton.Behaviors>
                             </ImageButton>
@@ -94,7 +93,6 @@
                     <ColumnDefinition Width="56" />
                     <ColumnDefinition Width="*" />
                     <ColumnDefinition Width="56" />
-                    <!-- ADDED COLUMN FOR SETTINGS -->
                 </Grid.ColumnDefinitions>
 
                 <ContentView Grid.Column="0" VerticalOptions="Fill" HorizontalOptions="Fill">
@@ -106,7 +104,7 @@
 
                 <Label Grid.Column="1" Text="{Binding SelectedPlaylist.Name}" TextColor="{DynamicResource TitleColor}" FontSize="20" FontAttributes="Bold" VerticalOptions="Center" />
 
-                <!-- NEW SETTINGS BUTTON ON THE RIGHT -->
+                <!-- SETTINGS BUTTON ON THE RIGHT -->
                 <ImageButton Grid.Column="2" Source="settings_icon.png" Command="{Binding OpenSettingsCommand}" WidthRequest="40" HeightRequest="40" VerticalOptions="Center" HorizontalOptions="Center" BackgroundColor="Transparent" Padding="8">
                     <ImageButton.Behaviors>
                         <toolkit:IconTintColorBehavior TintColor="{DynamicResource TitleColor}" />
@@ -147,22 +145,15 @@
                                         <Grid ColumnDefinitions="3*, 2*, 48" ColumnSpacing="8" Margin="8,8,8,0">
 
                                             <!-- PLAY & SHUFFLE UNITED -->
-                                            <!-- The Border naturally clips its inner content to the RoundRectangle shape -->
                                             <Border Grid.Column="0" Background="{DynamicResource CardColor}" Stroke="{DynamicResource BorderColor}" StrokeThickness="1" StrokeShape="RoundRectangle 24" Padding="0" HeightRequest="48">
                                                 <Grid ColumnDefinitions="*, 1, *">
-                                                    <!-- CornerRadius 0 makes the inner side perfectly flat -->
                                                     <ImageButton Grid.Column="0" Source="play_icon.png" Command="{Binding PlayPlaylistCommand}" HeightRequest="48" HorizontalOptions="Fill" CornerRadius="0" BackgroundColor="Transparent" Padding="12" />
-
-                                                    <!-- Vertical Separator Line -->
                                                     <BoxView Grid.Column="1" BackgroundColor="{DynamicResource BorderColor}" WidthRequest="1" Margin="0,12" VerticalOptions="Fill" />
-
-                                                    <!-- CornerRadius 0 makes the inner side perfectly flat -->
                                                     <ImageButton Grid.Column="2" Source="shuffle_icon.png" Command="{Binding ShufflePlaylistCommand}" HeightRequest="48" HorizontalOptions="Fill" CornerRadius="0" BackgroundColor="Transparent" Padding="12" />
                                                 </Grid>
                                             </Border>
 
                                             <!-- ADD ITEM BUTTON -->
-                                            <!-- Hidden BoxView to resolve the DynamicResource inside a DataTemplate -->
                                             <BoxView x:Name="AddIconColorHelper" Color="{DynamicResource PrimaryButtonText}" IsVisible="False" />
 
                                             <ImageButton Grid.Column="1" Source="plus_icon.png" Command="{Binding AddNewTrackCommand}" HeightRequest="48" HorizontalOptions="Fill" CornerRadius="24" BackgroundColor="{DynamicResource PrimaryButtonColor}" BorderColor="{DynamicResource PrimaryButtonBorder}" BorderWidth="1" Padding="12">
@@ -176,7 +167,7 @@
                                         </Grid>
                                     </VerticalStackLayout>
 
-                                    <!-- NATIVE INLINE TOOLBAR (Changed HeightRequest to 48) -->
+                                    <!-- NATIVE INLINE TOOLBAR -->
                                     <Grid HeightRequest="48">
                                         <BoxView HeightRequest="1" Color="{DynamicResource BorderColor}" VerticalOptions="Start" ZIndex="1" />
                                         <ContentView ControlTemplate="{StaticResource SharedToolbarTemplate}" />
@@ -191,9 +182,7 @@
                                 <mpowerkit:VirtualizeListViewCell>
                                     <Grid>
                                         <!-- Selection Container -->
-                                        <Border Margin="8,0,8,0" 
-                        StrokeThickness="0" 
-                        Background="Transparent">
+                                        <Border Margin="8,0,8,0" StrokeThickness="0" Background="Transparent">
                                             <Border.StrokeShape>
                                                 <RoundRectangle CornerRadius="8" />
                                             </Border.StrokeShape>
@@ -204,9 +193,7 @@
                                             </Border.Triggers>
 
                                             <!-- Main Content Row: Ripple effect and Tap applied here -->
-                                            <Grid ColumnDefinitions="Auto, *, Auto" ColumnSpacing="12" Padding="8"
-                          helpers:AndroidRipple.AddRipple="True">
-
+                                            <Grid ColumnDefinitions="Auto, *, Auto" ColumnSpacing="12" Padding="8" helpers:AndroidRipple.AddRipple="True">
                                                 <Grid.GestureRecognizers>
                                                     <TapGestureRecognizer Tapped="OnTrackTapped" />
                                                 </Grid.GestureRecognizers>
@@ -251,34 +238,30 @@
                                                     </Grid>
                                                 </VerticalStackLayout>
 
-                                                <!-- Standard ImageButton processes its own clicks natively without interfering with the parent grid tap -->
                                                 <ImageButton Grid.Column="2" 
-                                     Source="ellipsis_vertical_icon.png" 
-                                     Clicked="OnTrackOptionsClicked" 
-                                     VerticalOptions="Center" 
-                                     HorizontalOptions="End" 
-                                     WidthRequest="44" 
-                                     HeightRequest="44" 
-                                     Padding="12" 
-                                     BackgroundColor="Transparent" 
-                                     BorderColor="Transparent"
-                                     BorderWidth="0"
-                                     CornerRadius="22" />
+                                                             Source="ellipsis_vertical_icon.png" 
+                                                             Clicked="OnTrackOptionsClicked" 
+                                                             VerticalOptions="Center" 
+                                                             HorizontalOptions="End" 
+                                                             WidthRequest="44" 
+                                                             HeightRequest="44" 
+                                                             Padding="12" 
+                                                             BackgroundColor="Transparent" 
+                                                             BorderColor="Transparent"
+                                                             BorderWidth="0"
+                                                             CornerRadius="22" />
                                             </Grid>
                                         </Border>
 
                                         <!-- Inset Divider Line -->
-                                        <BoxView HeightRequest="1" 
-                         Color="{DynamicResource BorderColor}" 
-                         VerticalOptions="End" 
-                         Margin="72,0,16,0" />
+                                        <BoxView HeightRequest="1" Color="{DynamicResource BorderColor}" VerticalOptions="End" Margin="72,0,16,0" />
                                     </Grid>
                                 </mpowerkit:VirtualizeListViewCell>
                             </DataTemplate>
                         </mpowerkit:VirtualizeListView.ItemTemplate>
                     </mpowerkit:VirtualizeListView>
 
-                    <!-- STICKY TOOLBAR (Changed HeightRequest to 48) -->
+                    <!-- STICKY TOOLBAR -->
                     <Grid x:Name="StickyToolbar" VerticalOptions="Start" HeightRequest="48" IsVisible="False" ZIndex="5">
                         <ContentView ControlTemplate="{StaticResource SharedToolbarTemplate}" />
                         <BoxView HeightRequest="1" Color="{DynamicResource BorderColor}" VerticalOptions="End" />
@@ -290,6 +273,7 @@
             </Grid>
         </Grid>
 
+        <!-- Touch / Sidebar Overlays -->
         <ContentView x:Name="EdgeSwipeZone" WidthRequest="25" HorizontalOptions="Start" VerticalOptions="Fill" BackgroundColor="Transparent" ZIndex="49">
             <ContentView.GestureRecognizers>
                 <PanGestureRecognizer PanUpdated="OnEdgePanUpdated" />
@@ -324,17 +308,12 @@
                                     <Border StrokeShape="RoundRectangle 12" Padding="0" Background="{DynamicResource CardColor}" Stroke="{DynamicResource BorderColor}">
                                         <Border.Triggers>
                                             <DataTrigger TargetType="Border" Binding="{Binding IsSelected}" Value="True">
-                                                <!-- Consolidated to use the unified SurfaceSelected M3 token -->
                                                 <Setter Property="Background" Value="{DynamicResource SurfaceSelected}" />
-                                                <!-- Removed the AccentColor Stroke setter so the border remains subtle on selection -->
                                             </DataTrigger>
                                         </Border.Triggers>
 
                                         <!-- Main Content Row -->
-                                        <Grid ColumnDefinitions="Auto, *, Auto" 
-                          ColumnSpacing="12" 
-                          Padding="12"
-                          helpers:AndroidRipple.AddRipple="True">
+                                        <Grid ColumnDefinitions="Auto, *, Auto" ColumnSpacing="12" Padding="12" helpers:AndroidRipple.AddRipple="True">
                                             <Grid.GestureRecognizers>
                                                 <TapGestureRecognizer Tapped="OnPlaylistTapped" />
                                             </Grid.GestureRecognizers>
@@ -355,19 +334,18 @@
                                                 <Label Text="{Binding CreatedAt, StringFormat='CREATED {0:MMM dd, yyyy}'}" FontSize="10" TextColor="{DynamicResource MutedColor}" TextTransform="Uppercase" />
                                             </VerticalStackLayout>
 
-                                            <!-- Standard ImageButton processes its own clicks natively -->
                                             <ImageButton Grid.Column="2" 
-                                     Source="ellipsis_vertical_icon.png" 
-                                     Clicked="OnPlaylistOptionsClicked" 
-                                     VerticalOptions="Center" 
-                                     HorizontalOptions="End" 
-                                     WidthRequest="40" 
-                                     HeightRequest="60" 
-                                     Padding="10,20" 
-                                     BackgroundColor="Transparent" 
-                                     BorderColor="Transparent"
-                                     BorderWidth="0"
-                                     CornerRadius="20" />
+                                                         Source="ellipsis_vertical_icon.png" 
+                                                         Clicked="OnPlaylistOptionsClicked" 
+                                                         VerticalOptions="Center" 
+                                                         HorizontalOptions="End" 
+                                                         WidthRequest="40" 
+                                                         HeightRequest="60" 
+                                                         Padding="10,20" 
+                                                         BackgroundColor="Transparent" 
+                                                         BorderColor="Transparent"
+                                                         BorderWidth="0"
+                                                         CornerRadius="20" />
                                         </Grid>
                                     </Border>
                                 </Grid>
@@ -383,6 +361,7 @@
             </ContentView>
         </Grid>
 
+        <!-- Modal Dialog -->
         <Grid IsVisible="{Binding IsModalVisible}" ZIndex="100">
             <BoxView BackgroundColor="{DynamicResource ModalSurfaceScrim}">
                 <BoxView.GestureRecognizers>

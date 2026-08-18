@@ -28,6 +28,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
     private readonly PlaylistDataService _dataService;
     private readonly ColorExtractionService _colorExtractionService;
     private readonly SettingsManager _settingsManager;
+    private readonly TrackCacheService _trackCacheService;
 
     [ObservableProperty] public partial bool IsLoadingMedia { get; set; }
     [ObservableProperty] public partial double MediaDownloadProgress { get; set; }
@@ -183,7 +184,8 @@ public partial class MainViewModel : ObservableObject, IDisposable
         IMediaPlaybackService playbackService,
         IMediaProbingService mediaProbingService,
         ColorExtractionService colorExtractionService,
-        SettingsManager settingsManager)
+        SettingsManager settingsManager,
+        TrackCacheService trackCacheService)
     {
         _themeManager = themeManager;
         _youtubeResolver = youtubeResolver;
@@ -191,6 +193,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
         _mediaProbingService = mediaProbingService;
         _colorExtractionService = colorExtractionService;
         _settingsManager = settingsManager;
+        _trackCacheService = trackCacheService;
 
 
         _cleanupOldInstances?.Invoke();
