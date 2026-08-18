@@ -1,9 +1,12 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using CommunityToolkit.Mvvm.Messaging;
 using Microsoft.Maui.Controls;
 using Musicthingy.Helpers;
 using Musicthingy.Models;
+using Musicthingy.Services;
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
@@ -20,6 +23,8 @@ public partial class EditTrackGeneralTab : ContentView
 
 public partial class EditTrackForm : ObservableObject
 {
+    private readonly PlaylistItem _originalTrack;
+
     [ObservableProperty] public partial string EditTitle { get; set; } = string.Empty;
     [ObservableProperty] public partial string EditUrl { get; set; } = string.Empty;
     [ObservableProperty] public partial string EditStartTime { get; set; } = string.Empty;
@@ -39,10 +44,22 @@ public partial class EditTrackForm : ObservableObject
 
     [ObservableProperty] public partial bool IsCheckingUrl { get; set; }
 
+    // --- Chapters Properties ---
+    [ObservableProperty] public partial bool HasChapters { get; set; }
+    [ObservableProperty] public partial int ChaptersCount { get; set; }
+    private IReadOnlyList<VideoChapter>? _availableChapters;
+
+    // --- Playlist Import Properties ---
+    [ObservableProperty] public partial bool HasPlaylistVideos { get; set; }
+    [ObservableProperty] public partial int PlaylistVideosCount { get; set; }
+    private IReadOnlyList<YouTubePlaylistVideo>? _availablePlaylistVideos;
+
     private CancellationTokenSource? _urlCheckCts;
 
     public EditTrackForm(PlaylistItem track)
     {
+        _originalTrack = track;
+
         EditTitle = track.Title;
         EditUrl = track.Url;
         EditStartTime = track.StartTime?.ToString() ?? "";
@@ -56,12 +73,10 @@ public partial class EditTrackForm : ObservableObject
             LastPlayedText = track.LastPlayedAt.Value.ToString("M/dd/yyyy, h:mm:ss tt");
         }
 
-        // Run initial validation so errors populate if creating a totally blank track
         ValidateTitleFast(EditTitle);
         ValidateUrlFast(EditUrl);
     }
 
-    // Automatically fired by MVVM toolkit when EditTitle changes
     partial void OnEditTitleChanged(string value) => ValidateTitleFast(value);
 
     private void ValidateTitleFast(string title)
@@ -70,14 +85,18 @@ public partial class EditTrackForm : ObservableObject
         TitleError = HasTitleError ? "Name is required." : string.Empty;
     }
 
-    // Automatically fired by MVVM toolkit when EditUrl changes
     partial void OnEditUrlChanged(string value)
     {
         ValidateUrlFast(value);
 
+        // Reset both chapter and playlist states on URL change
+        HasChapters = false;
+        _availableChapters = null;
+        HasPlaylistVideos = false;
+        _availablePlaylistVideos = null;
+
         if (!HasUrlError && !string.IsNullOrWhiteSpace(value))
         {
-            // Debounce / rate limit the network check to prevent spamming while typing
             _urlCheckCts?.Cancel();
             _urlCheckCts = new CancellationTokenSource();
             _ = DebouncedUrlCheckAsync(value, _urlCheckCts.Token);
@@ -114,11 +133,8 @@ public partial class EditTrackForm : ObservableObject
         try
         {
             IsCheckingUrl = true;
-
-            // Wait 800ms before actually doing the network call
             await Task.Delay(800, token);
 
-            // Ask the helper to verify the URL and extract metadata
             (bool isSuccess, string errorMessage, string? fetchedTitle, string? fetchedImageUrl) =
                 await NetworkHelper.CheckMediaUrlAsync(url, token);
 
@@ -134,7 +150,6 @@ public partial class EditTrackForm : ObservableObject
                     HasUrlError = false;
                     UrlError = string.Empty;
 
-                    // AUTO-FILL TITLE if the user hasn't typed one yet
                     if (!string.IsNullOrWhiteSpace(fetchedTitle) && string.IsNullOrWhiteSpace(EditTitle))
                     {
                         EditTitle = fetchedTitle;
@@ -142,30 +157,90 @@ public partial class EditTrackForm : ObservableObject
                 }
             });
 
-            // AUTO-FILL ICON: Do this outside the MainThread block so downloading/cropping doesn't lag the UI
+            if (isSuccess && MediaUrlHelper.IsYouTubeUrl(url))
+            {
+                YouTubeResolverService resolver = new YouTubeResolverService();
+
+                // 1. Check if URL is a YouTube Playlist
+                if (MediaUrlHelper.IsYouTubePlaylistUrl(url))
+                {
+                    IReadOnlyList<YouTubePlaylistVideo> playlistVideos = await resolver.GetPlaylistVideosAsync(url, token);
+                    MainThread.BeginInvokeOnMainThread(() =>
+                    {
+                        if (playlistVideos != null && playlistVideos.Count > 0)
+                        {
+                            _availablePlaylistVideos = playlistVideos;
+                            PlaylistVideosCount = playlistVideos.Count;
+                            HasPlaylistVideos = true;
+                        }
+                    });
+                }
+
+                // 2. Check if video has Chapters
+                IReadOnlyList<VideoChapter> chapters = await resolver.GetVideoChaptersAsync(url);
+                MainThread.BeginInvokeOnMainThread(() =>
+                {
+                    if (chapters != null && chapters.Count > 0)
+                    {
+                        _availableChapters = chapters;
+                        ChaptersCount = chapters.Count;
+                        HasChapters = true;
+                    }
+                });
+            }
+
             if (isSuccess && !string.IsNullOrWhiteSpace(fetchedImageUrl) && string.IsNullOrWhiteSpace(EditIconUrl))
             {
                 await ProcessAndSetFetchedIconAsync(fetchedImageUrl, token);
             }
         }
-        catch (TaskCanceledException) { /* Ignored, user is still typing */ }
+        catch (TaskCanceledException) { }
         finally
         {
             MainThread.BeginInvokeOnMainThread(() => IsCheckingUrl = false);
         }
     }
 
-    // Downloads the remote image and pushes it through the native croppers
+    [RelayCommand]
+    private async Task SplitChaptersAsync()
+    {
+        if (_availableChapters == null || _availableChapters.Count == 0) return;
+
+        // Fix: Use Application.Current.Windows instead of Shell.Current
+        Page? activePage = Application.Current?.Windows.FirstOrDefault()?.Page;
+        bool confirm = true;
+
+        if (activePage != null)
+        {
+            confirm = await activePage.DisplayAlertAsync(
+                "Split Video",
+                $"This will discard your current edits and generate {_availableChapters.Count} separate tracks using the video's chapters. Continue?",
+                "Split", "Cancel");
+        }
+
+        if (!confirm) return;
+
+        // Broadcast to MainViewModel so it can do the actual database additions
+        WeakReferenceMessenger.Default.Send(new SplitTrackIntoChaptersMessage(
+            _originalTrack,
+            _availableChapters,
+            EditUrl,
+            EditIconUrl));
+
+        // Returns false to the caller so they drop the currently edited single track
+        await SheetManager.CloseCurrentAsync(false);
+    }
+
     private async Task ProcessAndSetFetchedIconAsync(string imageUrl, CancellationToken token)
     {
         try
         {
-            using var client = new HttpClient { Timeout = TimeSpan.FromSeconds(10) };
-            using var response = await client.GetAsync(imageUrl, HttpCompletionOption.ResponseHeadersRead, token);
+            using HttpClient client = new HttpClient { Timeout = TimeSpan.FromSeconds(10) };
+            using HttpResponseMessage response = await client.GetAsync(imageUrl, HttpCompletionOption.ResponseHeadersRead, token);
 
             if (response.IsSuccessStatusCode)
             {
-                using var stream = await response.Content.ReadAsStreamAsync(token);
+                using Stream stream = await response.Content.ReadAsStreamAsync(token);
                 byte[]? finalBytes = null;
 
 #if ANDROID
@@ -173,7 +248,7 @@ public partial class EditTrackForm : ObservableObject
 #elif WINDOWS
                 finalBytes = await CropAndResizeImageWindowsAsync(stream, 256);
 #else
-                using var ms = new MemoryStream();
+                using MemoryStream ms = new MemoryStream();
                 await stream.CopyToAsync(ms, token);
                 finalBytes = ms.ToArray();
 #endif
@@ -182,7 +257,6 @@ public partial class EditTrackForm : ObservableObject
                 {
                     MainThread.BeginInvokeOnMainThread(() =>
                     {
-                        // Double check the user didn't manually pick an icon while we were downloading
                         if (string.IsNullOrWhiteSpace(EditIconUrl))
                         {
                             string base64String = Convert.ToBase64String(finalBytes);
@@ -193,14 +267,12 @@ public partial class EditTrackForm : ObservableObject
                 }
             }
         }
-        catch (TaskCanceledException) { /* User kept typing, abort download */ }
+        catch (TaskCanceledException) { }
         catch (Exception ex)
         {
             System.Diagnostics.Debug.WriteLine($"Failed to download/crop fetched icon: {ex.Message}");
         }
     }
-
-    // ------------- IMAGE HANDLING LOGIC -------------
 
     [RelayCommand]
     private async Task PickIconAsync()
@@ -241,6 +313,34 @@ public partial class EditTrackForm : ObservableObject
     }
 
     [RelayCommand]
+    private async Task ImportPlaylistVideosAsync()
+    {
+        if (_availablePlaylistVideos == null || _availablePlaylistVideos.Count == 0) return;
+
+        Page? activePage = Application.Current?.Windows.FirstOrDefault()?.Page;
+        bool confirm = true;
+
+        if (activePage != null)
+        {
+            confirm = await activePage.DisplayAlertAsync(
+                "Import Playlist",
+                $"This will import {_availablePlaylistVideos.Count} tracks from this playlist. Continue?",
+                "Import", "Cancel");
+        }
+
+        if (!confirm) return;
+
+        // Broadcast to MainViewModel to insert the tracks
+        WeakReferenceMessenger.Default.Send(new ImportPlaylistTracksMessage(
+            _originalTrack,
+            _availablePlaylistVideos));
+
+        await SheetManager.CloseCurrentAsync(false);
+    }
+
+// Add this message record at the bottom of the file
+
+[RelayCommand]
     private void ResetIcon()
     {
         EditIconUrl = string.Empty;
@@ -350,3 +450,5 @@ public partial class EditTrackForm : ObservableObject
     }
 #endif
 }
+public record SplitTrackIntoChaptersMessage(PlaylistItem OriginalTrack, IReadOnlyList<VideoChapter> Chapters, string VideoUrl, string IconUrl);
+public record ImportPlaylistTracksMessage(PlaylistItem OriginalTrack, IReadOnlyList<YouTubePlaylistVideo> Videos);

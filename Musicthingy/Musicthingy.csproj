@@ -6,7 +6,7 @@
 
 		<AndroidPackageFormat>apk</AndroidPackageFormat>
 		<AndroidCreatePackagePerAbi>false</AndroidCreatePackagePerAbi>
-
+		
 		<LangVersion>latest</LangVersion>
 
 		<OutputType>Exe</OutputType>

@@ -41,6 +41,7 @@ public partial class MainViewModel
         }, TaskScheduler.Default);
     }
 
+    
     private async Task SaveLibraryAsync(List<Playlist> libraryData)
     {
         if (_isLibraryLoadFailed) return;

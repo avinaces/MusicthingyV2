@@ -6,13 +6,16 @@ using System.Net;
 using System.Net.Sockets;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Text.RegularExpressions;
 using YoutubeExplode;
+using YoutubeExplode.Playlists;
 using YoutubeExplode.Videos;
 using YoutubeExplode.Videos.Streams;
 
 namespace Musicthingy.Services;
 
-public class YouTubeResolverService
+// Must be partial to support [GeneratedRegex]
+public partial class YouTubeResolverService
 {
     private const double CacheExpiryHours = 2.0;
     private const int ManifestFetchTimeoutSeconds = 60;
@@ -65,9 +68,112 @@ public class YouTubeResolverService
     private static string? _visitorData = null;
     private static readonly JsonSerializerOptions _jsonOptions = new() { DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull };
 
+    // Matches timestamps like "0:00", "01:23", "1:02:30" and captures the title
+    [GeneratedRegex(@"\[?(?:(?:(\d{1,2}):)?(\d{1,2}):(\d{2}))\]?\s*(?:[-:]\s*)?(.+)")]
+    private static partial Regex ChapterRegex();
+
     public YouTubeResolverService()
     {
         _youtubeClient = new YoutubeClient(new HttpClient(_ipv4Handler));
+    }
+
+    /// <summary>
+    /// Fetches a YouTube video and extracts chapters from the description.
+    /// Strictly adheres to YouTube's rules (starts at 0:00, >= 3 chapters, ascending order).
+    /// </summary>
+    public async Task<IReadOnlyList<VideoChapter>> GetVideoChaptersAsync(string trackUrl)
+    {
+        VideoId? videoId = VideoId.TryParse(trackUrl);
+        if (videoId == null) return Array.Empty<VideoChapter>();
+
+        try
+        {
+            using CancellationTokenSource cts = new CancellationTokenSource(TimeSpan.FromSeconds(VideoInfoFetchTimeoutSeconds));
+            Video video = await _youtubeClient.Videos.GetAsync(videoId.Value, cts.Token);
+            string description = video.Description;
+
+            if (string.IsNullOrWhiteSpace(description))
+            {
+                return Array.Empty<VideoChapter>();
+            }
+
+            MatchCollection matches = ChapterRegex().Matches(description);
+            List<VideoChapter> validChapters = new();
+            bool hasFoundStart = false;
+
+            foreach (Match match in matches)
+            {
+                int hours = match.Groups[1].Success ? int.Parse(match.Groups[1].Value) : 0;
+                int minutes = int.Parse(match.Groups[2].Value);
+                int seconds = int.Parse(match.Groups[3].Value);
+
+                TimeSpan timestamp = new TimeSpan(hours, minutes, seconds);
+                string title = match.Groups[4].Value.Trim();
+
+                if (!hasFoundStart)
+                {
+                    if (timestamp == TimeSpan.Zero)
+                    {
+                        hasFoundStart = true;
+                        validChapters.Add(new VideoChapter(timestamp, title));
+                    }
+                }
+                else
+                {
+                    if (timestamp > validChapters[^1].Timestamp)
+                    {
+                        validChapters.Add(new VideoChapter(timestamp, title));
+                    }
+                }
+            }
+
+            if (validChapters.Count >= 3)
+            {
+                return validChapters;
+            }
+
+            return Array.Empty<VideoChapter>();
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"[Chapters] Error parsing chapters for {trackUrl}: {ex.Message}");
+            return Array.Empty<VideoChapter>();
+        }
+    }
+
+    /// <summary>
+    /// Fetches all video items in a YouTube playlist.
+    /// </summary>
+    public async Task<IReadOnlyList<YouTubePlaylistVideo>> GetPlaylistVideosAsync(string playlistUrl, CancellationToken cancellationToken = default)
+    {
+        PlaylistId? playlistId = PlaylistId.TryParse(playlistUrl);
+        if (playlistId == null) return Array.Empty<YouTubePlaylistVideo>();
+
+        try
+        {
+            List<YouTubePlaylistVideo> videos = new();
+
+            await foreach (PlaylistVideo video in _youtubeClient.Playlists.GetVideosAsync(playlistId.Value, cancellationToken))
+            {
+                // Always use mqdefault (16:9) to prevent YouTube's 4:3 black bars
+                string thumb = MediaUrlHelper.GetYouTubeThumbnail(video.Url)
+                               ?? $"https://img.youtube.com/vi/{video.Id}/mqdefault.jpg";
+
+                videos.Add(new YouTubePlaylistVideo(
+                    Title: video.Title,
+                    Url: video.Url,
+                    ThumbnailUrl: thumb,
+                    Duration: video.Duration
+                ));
+            }
+
+            return videos;
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"[Playlist] Error resolving videos for {playlistUrl}: {ex.Message}");
+            return Array.Empty<YouTubePlaylistVideo>();
+        }
     }
 
     public async Task<ResolvedMedia?> ResolveMediaSourceAsync(string trackUrl)

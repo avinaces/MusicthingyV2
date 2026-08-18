@@ -2,6 +2,7 @@
 using CommunityToolkit.Maui.Extensions;
 using CommunityToolkit.Maui.Storage;
 using CommunityToolkit.Mvvm.Input;
+using CommunityToolkit.Mvvm.Messaging;
 using Musicthingy.Models;
 using Musicthingy.Views;
 using System.Diagnostics;
@@ -36,6 +37,116 @@ public partial class MainViewModel
 
         // Listen for future cache downloads/deletions in the background
         _trackCacheService.CacheUpdated += (s, e) => RefreshCachedTracksPlaylist();
+
+        // Listen for when the user imports tracks from a YouTube Playlist
+        WeakReferenceMessenger.Default.Register<ImportPlaylistTracksMessage>(this, (r, m) =>
+        {
+            if (m.OriginalTrack.Playlist == null) return;
+
+            MainThread.BeginInvokeOnMainThread(() =>
+            {
+                Playlist playlist = m.OriginalTrack.Playlist;
+                int insertIndex = playlist.Items.IndexOf(m.OriginalTrack);
+
+                if (insertIndex >= 0)
+                {
+                    playlist.Items.RemoveAt(insertIndex);
+                }
+                else
+                {
+                    insertIndex = playlist.Items.Count;
+                }
+
+                List<PlaylistItem> newTracks = new();
+
+                foreach (YouTubePlaylistVideo video in m.Videos)
+                {
+                    PlaylistItem newTrack = new PlaylistItem
+                    {
+                        Title = video.Title,
+                        Url = video.Url,
+                        IconUrl = video.ThumbnailUrl ?? string.Empty,
+                        Duration = video.Duration ?? TimeSpan.Zero,
+                        Playlist = playlist
+                    };
+
+                    newTracks.Add(newTrack);
+                }
+
+                for (int i = 0; i < newTracks.Count; i++)
+                {
+                    playlist.Items.Insert(insertIndex + i, newTracks[i]);
+                }
+
+                playlist.RequestRecalculateDuration();
+                UpdateFilterTags();
+                RefreshDisplayedItems();
+                RequestSaveLibrary();
+            });
+        });
+
+        // Listen for when the user chooses to split a track into chapters
+        WeakReferenceMessenger.Default.Register<SplitTrackIntoChaptersMessage>(this, (r, m) =>
+        {
+            if (m.OriginalTrack.Playlist == null) return;
+
+            MainThread.BeginInvokeOnMainThread(() =>
+            {
+                var playlist = m.OriginalTrack.Playlist;
+                int insertIndex = playlist.Items.IndexOf(m.OriginalTrack);
+
+                // If the track was already in the playlist (Editing mode), remove it
+                if (insertIndex >= 0)
+                {
+                    playlist.Items.RemoveAt(insertIndex);
+                }
+                else
+                {
+                    // If it was a "New Track", it isn't in the list yet, so just append to the end
+                    insertIndex = playlist.Items.Count;
+                }
+
+                var newTracks = new List<PlaylistItem>();
+
+                for (int i = 0; i < m.Chapters.Count; i++)
+                {
+                    var chapter = m.Chapters[i];
+
+                    // Fix: Cast the double to int
+                    int startTime = (int)chapter.Timestamp.TotalSeconds;
+                    int? endTime = null;
+
+                    if (i < m.Chapters.Count - 1)
+                    {
+                        // Fix: Cast the double to int
+                        endTime = (int)m.Chapters[i + 1].Timestamp.TotalSeconds;
+                    }
+
+                    var newTrack = new PlaylistItem
+                    {
+                        Title = chapter.Title,
+                        Url = m.VideoUrl,
+                        IconUrl = m.IconUrl,
+                        StartTime = startTime,
+                        EndTime = endTime,
+                        Playlist = playlist
+                    };
+
+                    newTracks.Add(newTrack);
+                }
+
+                // Insert the new tracks precisely where the original one was
+                for (int i = 0; i < newTracks.Count; i++)
+                {
+                    playlist.Items.Insert(insertIndex + i, newTracks[i]);
+                }
+
+                playlist.RequestRecalculateDuration();
+                UpdateFilterTags();
+                RefreshDisplayedItems();
+                RequestSaveLibrary();
+            });
+        });
     }
 
     private void RefreshCachedTracksPlaylist()
