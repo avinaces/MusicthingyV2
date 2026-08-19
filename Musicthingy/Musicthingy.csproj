@@ -6,9 +6,8 @@
 
 		<AndroidPackageFormat>apk</AndroidPackageFormat>
 		<AndroidCreatePackagePerAbi>false</AndroidCreatePackagePerAbi>
-		
-		<LangVersion>latest</LangVersion>
 
+		<LangVersion>latest</LangVersion>
 		<OutputType>Exe</OutputType>
 		<RootNamespace>Musicthingy</RootNamespace>
 		<UseMaui>true</UseMaui>
@@ -19,37 +18,29 @@
 		<!-- Enable Material 3 -->
 		<UseMaterial3>true</UseMaterial3>
 
-		<!-- Display name -->
+		<!-- Suppress noisy XAML compiled binding warnings and Windows PRI warning -->
+		<NoWarn>$(NoWarn);XC0022;XC0025;PRI257</NoWarn>
+
 		<ApplicationTitle>Musicthingy</ApplicationTitle>
-
-		<!-- App Identifier -->
 		<ApplicationId>com.EnchantedSwords.musicthingy</ApplicationId>
-
-		<!-- Versions -->
 		<ApplicationDisplayVersion>1.0</ApplicationDisplayVersion>
 		<ApplicationVersion>1</ApplicationVersion>
 
-		<!-- Windows Unpackaged configuration -->
 		<WindowsPackageType>None</WindowsPackageType>
 
 		<SupportedOSPlatformVersion Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'android'">26.0</SupportedOSPlatformVersion>
 		<SupportedOSPlatformVersion Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'windows'">10.0.17763.0</SupportedOSPlatformVersion>
 		<TargetPlatformMinVersion Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'windows'">10.0.17763.0</TargetPlatformMinVersion>
-		<DefaultLanguage>en</DefaultLanguage>
+
+		<!-- Fix PRI257: Use en-US instead of en -->
+		<DefaultLanguage>en-US</DefaultLanguage>
 	</PropertyGroup>
 
 	<ItemGroup>
-		<!-- App Icon -->
 		<MauiIcon Include="Resources\AppIcon\appicon.svg" />
-
-		<!-- Splash Screen -->
 		<MauiSplashScreen Include="Resources\Splash\music_4_icon_splash.svg" Color="#111214" BaseSize="512,512" />
-
-		<!-- Images -->
 		<MauiImage Include="Resources\Images\*" />
 		<MauiImage Update="Resources\Images\dotnet_bot.png" Resize="True" BaseSize="300,185" />
-
-		<!-- Raw Assets -->
 		<MauiAsset Include="Resources\Raw\**" LogicalName="%(RecursiveDir)%(Filename)%(Extension)" />
 	</ItemGroup>
 
@@ -60,20 +51,14 @@
 
 	<ItemGroup>
 		<MauiImage Include="Resources\Images\lucide\*" TintColor="#FFFFFF" />
+		<MauiImage Include="Resources\Splash\music_4_icon_splash.svg">
+			<TintColor>#C8D1D9</TintColor>
+		</MauiImage>
 	</ItemGroup>
 
 	<ItemGroup>
 		<None Remove="Platforms\Android\Environment.txt" />
-	</ItemGroup>
-
-	<ItemGroup>
 		<AndroidEnvironment Include="Platforms\Android\Environment.txt" />
-	</ItemGroup>
-
-	<ItemGroup>
-		<MauiImage Include="Resources\Splash\music_4_icon_splash.svg">
-			<TintColor>#C8D1D9</TintColor>
-		</MauiImage>
 	</ItemGroup>
 
 	<ItemGroup>
@@ -98,11 +83,12 @@
 	</ItemGroup>
 
 	<ItemGroup Condition="'$(TargetFramework)' == 'net10.0-android'">
-		<PackageReference Include="Xamarin.AndroidX.Media3.ExoPlayer">
-			<Version>1.10.1.1</Version>
-		</PackageReference>
+		<PackageReference Include="Xamarin.AndroidX.Media3.ExoPlayer" Version="1.10.1.1" />
+
+		<!-- CRITICAL: Prevent Release Trimmer from stripping Google Material 3 classes -->
+		<TrimmerRootAssembly Include="Xamarin.Google.Android.Material" />
+		<TrimmerRootAssembly Include="Microsoft.Maui.Controls" />
 	</ItemGroup>
 
-	<!-- Import signing file if exists -->
 	<Import Project="Signing.props" Condition="Exists('Signing.props')" />
 </Project>
