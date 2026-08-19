@@ -365,3 +365,4 @@ MigrationBackup/
 # Fody - auto-generated XML schema
 FodyWeavers.xsd
 /PACKAGE_VERSIONS_AND_INFO.txt
+/Musicthingy/Platforms/Windows/ffmpeg.exe
