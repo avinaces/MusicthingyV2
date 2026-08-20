@@ -32,6 +32,7 @@ public partial class MainViewModel
             if (context != null)
             {
                 Intent intent = new Intent(context, typeof(AndroidMediaService));
+                context.UnregisterReceiver(_volumeReceiver);
                 intent.SetAction("STOP");
                 context.StartService(intent);
             }

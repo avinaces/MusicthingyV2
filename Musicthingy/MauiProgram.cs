@@ -21,10 +21,19 @@ namespace Musicthingy
             // Use reflection-based automatic registration for app settings
             builder.Services.AddAppSettings();
             builder.Services.AddSingleton<ColorExtractionService>();
-            builder.Services.AddSingleton<YouTubeResolverService>();
-            builder.Services.AddSingleton<Services.TrackCacheService>();
 
-            builder.Services.AddSingleton(sp => new HttpClient(YouTubeResolverService.Ipv4Handler));
+            // Replace this line:
+            builder.Services.AddSingleton<YouTubeResolverService>();
+            // With:
+            builder.Services.AddHttpClient("youtube", c => {
+                c.Timeout = TimeSpan.FromSeconds(30);
+                c.DefaultRequestHeaders.UserAgent.ParseAdd(YouTubeResolverService.DefaultUserAgent);
+            }).ConfigurePrimaryHttpMessageHandler(_ => YouTubeResolverService.Ipv4Handler)
+              .SetHandlerLifetime(TimeSpan.FromMinutes(2));
+            builder.Services.AddSingleton<YouTubeResolverService>(sp =>
+                new YouTubeResolverService(sp.GetRequiredService<IHttpClientFactory>()));
+
+            builder.Services.AddSingleton<Services.TrackCacheService>();
 
 
 #if WINDOWS
