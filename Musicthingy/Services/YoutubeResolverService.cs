@@ -4,6 +4,7 @@ using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Net;
 using System.Net.Sockets;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -17,22 +18,18 @@ using YoutubeExplode.Videos.Streams;
 namespace Musicthingy.Services;
 
 // ────────────────────────────────────────────────────────────────────────────
-// Updated YoutubeResolverService — incorporates review findings + OpenTune patterns:
-//   §3.1  API key is a static property (overridable at startup, not a hardcoded const)
-//   §4.9  CancellationToken threaded through every async call
-//   §4.11 Static _visitorData replaced with immutable PlaybackAuthState + Interlocked.Exchange
-//   §5    Ipv4Handler now has PooledConnectionLifetime=2min (DNS refresh on Wi-Fi↔cellular)
-//   §5    Stream URL cache uses LRU eviction instead of "clear all" at capacity
-//   §7.2  Immutable PlaybackAuthState record (ported from OpenTune)
-//   §7.3  WithRetryAsync helper (catches IOException only, never OperationCanceledException)
-//   §7.4  Per-client circuit breaker (10-min cooldown on HTTP 403)
-//   §7.5  visitorData populates naturally from player responses (no separate bootstrap)
-//   §7.1  Codec-aware stream selection (opus > mp4a > other) with bitrate ceiling
-//   §4.8  No empty catch blocks — every catch logs to Debug.WriteLine
+// YoutubeResolverService — YouTube stream resolution with multi-client fallback.
 //
-//   Client strategy (Aug 2026): VISIONOS 1.02 is primary (sole surviving anonymous
-//   client after YouTube killed ANDROID_VR on Aug 17). ANDROID 21.26.364 is fallback
-//   for "made for kids" videos. See InnerTubeClients below for full context.
+// Client chain (Aug 2026):
+//   1. VISIONOS 1.02 (anonymous, fast) — works for ~90% of videos
+//   2. WEB + cookies (authenticated) — for restricted videos
+//   3. ANDROID (anonymous) — last resort, muxed itag 18 only
+//   4. YoutubeExplode (with cookies if available) — cipher deciphering fallback
+//
+// SABR: YouTube's new streaming protocol. When a video only returns SABR formats
+// (no direct URLs, no signatureCipher), we can't play it with ExoPlayer. This
+// is detected and logged. Future SABR support would require a custom ExoPlayer
+// DataSource
 // ────────────────────────────────────────────────────────────────────────────
 
 public partial class YouTubeResolverService
@@ -43,44 +40,21 @@ public partial class YouTubeResolverService
     private const int VideoInfoFetchTimeoutSeconds = 10;
     private const int MaxClientAttempts = 2;
     private const int MaxCacheSize = 500;
-    private const int CacheEvictBatch = 50;          // evict oldest 50 when full (LRU)
-    private const int StreamProbeTimeoutSeconds = 5;
+    private const int CacheEvictBatch = 50;
 
     /// <summary>
-    /// When true, validates each resolved stream URL with a lightweight HTTP HEAD
-    /// probe before returning it to the player. Default <c>false</c> — adds
-    /// ~100-300ms per track load. Enable for diagnostics or if you see the player
-    /// frequently receiving dead URLs.
+    /// YouTube's public Android-client API key. Not a secret — it's embedded in
+    /// the YouTube APK and documented in every open-source YouTube scraper.
+    /// Static property so it can be overridden if YouTube rotates it.
     /// </summary>
-    public bool EnableStreamProbe { get; set; } = false;
+    public static string InnerTubeApiKey { get; set; } = "AIzaSyA8eiZmM1FaDVjRy-df2KTyQ_vz_yYM39w";
 
-    /// <summary>
-    /// Per-client circuit-breaker backoff. When a client returns HTTP 403 for a
-    /// specific video, it is skipped for this duration (ported from OpenTune).
-    /// </summary>
-    private static readonly TimeSpan FailedClientBackoff = TimeSpan.FromMinutes(10);
-
-    /// <summary>
-    /// Default User-Agent for InnerTube requests that don't specify a client UA.
-    /// Made public so MauiProgram.cs can reference it when registering named HttpClients.
-    /// </summary>
     public const string DefaultUserAgent =
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
         "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
 
-    /// <summary>
-    /// InnerTube API key. This is YouTube's well-known public Android-client key
-    /// (not a secret — it's embedded in the YouTube APK and documented in every
-    /// open-source YouTube scraper). It's a static property (not const) so it can
-    /// be overridden at startup if YouTube ever rotates it:
-    ///   YouTubeResolverService.InnerTubeApiKey = newKey;
-    /// </summary>
-    public static string InnerTubeApiKey { get; set; } = "AIzaSyA8eiZmM1FaDVjRy-df2KTyQ_vz_yYM39w";
-
     // ── IPv4-only handler (shared singleton) ────────────────────────────────
-    // §5: PooledConnectionLifetime added so DNS changes (Wi-Fi ↔ cellular) are
-    // picked up every 2 minutes. The original code left this at Infinite.
-    private static readonly SocketsHttpHandler _ipv4Handler = new SocketsHttpHandler
+    private static readonly SocketsHttpHandler _ipv4Handler = new()
     {
         AutomaticDecompression = DecompressionMethods.GZip | DecompressionMethods.Deflate,
         PooledConnectionLifetime = TimeSpan.FromMinutes(2),
@@ -94,10 +68,7 @@ public partial class YouTubeResolverService
             if (ipAddresses.Length == 0)
                 throw new SocketException((int)SocketError.HostNotFound);
 
-            Socket socket = new Socket(
-                AddressFamily.InterNetwork,
-                SocketType.Stream,
-                ProtocolType.Tcp);
+            Socket socket = new(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
 
             try
             {
@@ -112,18 +83,14 @@ public partial class YouTubeResolverService
         }
     };
 
-    /// <summary>Shared IPv4-forced handler. Exposed so MauiProgram can register it with IHttpClientFactory.</summary>
     public static SocketsHttpHandler Ipv4Handler => _ipv4Handler;
 
     // ── HTTP clients ────────────────────────────────────────────────────────
-    // _innerTubeClient is used for direct InnerTube API calls (player endpoint).
-    // _youtubeClient is the YoutubeExplode client (fallback path).
     private readonly HttpClient _innerTubeClient;
     private readonly YoutubeClient _youtubeClient;
+    private static YoutubeClient? _cookieClientCache;
 
-    // ── Immutable auth state (§4.11 / §7.2) ─────────────────────────────────
-    // Replaces the old `static string? _visitorData` field. Thread-safe via
-    // Volatile.Read + Interlocked.Exchange on an immutable record.
+    // ── Immutable auth state (thread-safe via Interlocked.Exchange) ──────────
     private static PlaybackAuthState _authState = PlaybackAuthState.Empty;
 
     private static PlaybackAuthState AuthState
@@ -132,118 +99,141 @@ public partial class YouTubeResolverService
         set => Interlocked.Exchange(ref _authState, value);
     }
 
-    /// <summary>
-    /// The current visitorData string, extracted from the immutable auth state.
-    /// Setting it produces a new immutable record and atomically swaps it in.
-    /// </summary>
-    private static string? VisitorData
+    public static string? Cookies
     {
-        get => AuthState.VisitorData;
-        set => AuthState = AuthState with { VisitorData = value };
+        get => AuthState.Cookie;
+        set
+        {
+            AuthState = AuthState with { Cookie = string.IsNullOrWhiteSpace(value) ? null : value };
+            _cookieClientCache = null; // invalidate cache
+        }
     }
 
-    // ── Per-client circuit breaker (§7.4) ───────────────────────────────────
-    // Keyed by $"{videoId}:{CLIENT_NAME}". A 403 marks the client as failed for
-    // that video for 10 minutes, so we don't re-trigger the same failing combo.
-    private static readonly ConcurrentDictionary<string, DateTime> _failedUntil = new();
+    public static bool HasCookies => !string.IsNullOrWhiteSpace(AuthState.Cookie);
 
-    private static void MarkStreamClientFailed(string videoId, string clientKey, int? httpStatus)
+    public static string? VisitorData
+    {
+        get => AuthState.VisitorData;
+        set => AuthState = AuthState with { VisitorData = string.IsNullOrWhiteSpace(value) ? null : value };
+    }
+
+    /// <summary>dataSyncId for authenticated session continuity. Stored for future use.</summary>
+    public static string? DataSyncId
+    {
+        get => AuthState.DataSyncId;
+        set => AuthState = AuthState with { DataSyncId = string.IsNullOrWhiteSpace(value) ? null : value };
+    }
+
+    /// <summary>PO Token for bot-attestation bypass. Stored for future use.</summary>
+    public static string? PoToken
+    {
+        get => AuthState.PoToken;
+        set => AuthState = AuthState with { PoToken = string.IsNullOrWhiteSpace(value) ? null : value };
+    }
+
+    // ── Per-client circuit breaker (10-min cooldown on HTTP 403) ─────────────
+    private static readonly ConcurrentDictionary<string, DateTime> _failedUntil = new();
+    private static readonly TimeSpan FailedClientBackoff = TimeSpan.FromMinutes(10);
+
+    private static void MarkStreamClientFailed(string videoId, string clientKey, int httpStatus)
     {
         if (httpStatus != 403) return;
         _failedUntil[$"{videoId}:{clientKey}"] = DateTime.UtcNow + FailedClientBackoff;
-        Debug.WriteLine($"[Resolve] Circuit breaker OPEN for {videoId}:{clientKey} ({FailedClientBackoff.TotalMinutes:F0} min)");
+        Debug.WriteLine($"[Resolve] Circuit breaker OPEN for {videoId}:{clientKey}");
     }
 
     private static bool IsStreamClientBlocked(string videoId, string clientKey)
     {
         string key = $"{videoId}:{clientKey}";
-        if (!_failedUntil.TryGetValue(key, out DateTime until))
-            return false;
-        if (until <= DateTime.UtcNow)
-        {
-            _failedUntil.TryRemove(key, out _);
-            return false;
-        }
+        if (!_failedUntil.TryGetValue(key, out DateTime until)) return false;
+        if (until <= DateTime.UtcNow) { _failedUntil.TryRemove(key, out _); return false; }
         return true;
     }
 
-    // ── Stream URL cache (LRU, §5) ──────────────────────────────────────────
-    // Replaces the old "clear all at 500" eviction. Now evicts the oldest 50
-    // entries by FetchedAt when capacity is hit, preserving the hot entries.
+    // ── Stream URL cache (LRU eviction) ──────────────────────────────────────
     private readonly ConcurrentDictionary<string, (ResolvedMedia Media, DateTime FetchedAt)> _streamUrlCache = new();
 
     private void CacheStreamUrl(string trackUrl, ResolvedMedia media)
     {
         if (_streamUrlCache.Count >= MaxCacheSize)
         {
-            // LRU eviction: remove the oldest CacheEvictBatch entries.
-            // This is O(n log n) but only runs when the cache is full, which is rare.
             var oldest = _streamUrlCache
-                .OrderByDescending(kv => kv.Value.FetchedAt)   // newest first
-                .Skip(MaxCacheSize - CacheEvictBatch)           // skip the newest, keep the oldest batch
+                .OrderByDescending(kv => kv.Value.FetchedAt)
+                .Skip(MaxCacheSize - CacheEvictBatch)
                 .Select(kv => kv.Key)
                 .ToList();
-
             foreach (string key in oldest)
                 _streamUrlCache.TryRemove(key, out _);
-
-            Debug.WriteLine($"[Resolve] LRU evicted {oldest.Count} entries (cache was full)");
         }
         _streamUrlCache[trackUrl] = (media, DateTime.Now);
     }
-
-    // ── Visitor data ────────────────────────────────────────────────────────
-    // visitorData populates naturally from player responses (responseContext.visitorData).
-    // No separate bootstrap fetch — the first player request works without it, and
-    // subsequent requests pick it up from the immutable PlaybackAuthState above.
 
     private static readonly JsonSerializerOptions _jsonOptions = new()
     {
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
     };
 
-    // ── Regexes (compiled at startup via source generator) ──────────────────
     [GeneratedRegex(@"\[?(?:(?:(\d{1,2}):)?(\d{1,2}):(\d{2}))\]?\s*(?:[-:]\s*)?(.+)")]
     private static partial Regex ChapterRegex();
 
-    // (visitorData regex removed — no longer needed without the sw.js_data bootstrap.)
-
-    // ── Constructors ────────────────────────────────────────────────────────
-    /// <summary>
-    /// DI-friendly constructor. MauiProgram should register this as a singleton
-    /// and (optionally) pass an IHttpClientFactory so all HTTP egress uses the
-    /// shared IPv4 handler via named clients. See review §6.
-    /// </summary>
+    // ── Constructor ──────────────────────────────────────────────────────────
     public YouTubeResolverService(IHttpClientFactory? httpFactory = null)
     {
         if (httpFactory != null)
-        {
-            // Named-client path: each call site gets its own HttpClient but they
-            // all share the Ipv4Handler connection pool.
             _innerTubeClient = httpFactory.CreateClient("youtube");
-        }
         else
-        {
-            // Fallback for direct instantiation (e.g. EditTrackGeneralTab.xaml.cs).
-            // Still uses the shared Ipv4Handler, just without IHttpClientFactory.
-            _innerTubeClient = new HttpClient(_ipv4Handler)
-            {
-                Timeout = TimeSpan.FromSeconds(30)
-            };
-        }
+            _innerTubeClient = new HttpClient(_ipv4Handler) { Timeout = TimeSpan.FromSeconds(30) };
 
-        // YoutubeExplode always gets a fresh HttpClient over the IPv4 handler.
         _youtubeClient = new YoutubeClient(new HttpClient(_ipv4Handler));
+    }
+
+    /// <summary>
+    /// Creates (or returns cached) YoutubeExplode client with cookies attached.
+    /// Cached statically — invalidated when Cookies setter is called.
+    /// </summary>
+    private static YoutubeClient? GetYoutubeClientWithCookies()
+    {
+        if (!HasCookies) return null;
+        if (_cookieClientCache != null) return _cookieClientCache;
+
+        try
+        {
+            var cookies = ParseCookieString(Cookies!);
+            if (cookies.Count == 0) return null;
+
+            var http = new HttpClient(_ipv4Handler, disposeHandler: false);
+            _cookieClientCache = new YoutubeClient(http, cookies);
+            return _cookieClientCache;
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"[Resolve] Failed to create YoutubeExplode with cookies: {ex.Message}");
+            return null;
+        }
+    }
+
+    private static List<Cookie> ParseCookieString(string cookieString)
+    {
+        var cookies = new List<Cookie>();
+        foreach (string part in cookieString.Split(';', '&'))
+        {
+            string trimmed = part.Trim();
+            int eq = trimmed.IndexOf('=');
+            if (eq <= 0) continue;
+
+            string name = trimmed[..eq].Trim();
+            string value = trimmed[(eq + 1)..].Trim();
+
+            if (!string.IsNullOrEmpty(name))
+                cookies.Add(new Cookie(name, value) { Domain = ".youtube.com" });
+        }
+        return cookies;
     }
 
     // ─────────────────────────────────────────────────────────────────────────
     //  Public API
     // ─────────────────────────────────────────────────────────────────────────
 
-    /// <summary>
-    /// Fetches a YouTube video and extracts chapters from the description.
-    /// Strictly adheres to YouTube's rules (starts at 0:00, ≥3 chapters, ascending order).
-    /// </summary>
     public async Task<IReadOnlyList<VideoChapter>> GetVideoChaptersAsync(string trackUrl)
     {
         VideoId? videoId = VideoId.TryParse(trackUrl);
@@ -289,14 +279,11 @@ public partial class YouTubeResolverService
         }
         catch (Exception ex)
         {
-            Debug.WriteLine($"[Chapters] Error parsing chapters for {trackUrl}: {ex.Message}");
+            Debug.WriteLine($"[Chapters] Error for {trackUrl}: {ex.Message}");
             return Array.Empty<VideoChapter>();
         }
     }
 
-    /// <summary>
-    /// Fetches all video items in a YouTube playlist.
-    /// </summary>
     public async Task<IReadOnlyList<YouTubePlaylistVideo>> GetPlaylistVideosAsync(
         string playlistUrl, CancellationToken cancellationToken = default)
     {
@@ -324,18 +311,15 @@ public partial class YouTubeResolverService
         }
         catch (Exception ex)
         {
-            Debug.WriteLine($"[Playlist] Error resolving videos for {playlistUrl}: {ex.Message}");
+            Debug.WriteLine($"[Playlist] Error for {playlistUrl}: {ex.Message}");
             return Array.Empty<YouTubePlaylistVideo>();
         }
     }
 
     /// <summary>
     /// Resolves a track URL to a direct stream URL.
-    /// For YouTube URLs: tries the fast InnerTube path, then falls back to YoutubeExplode.
-    /// For local/web URLs: returns them unchanged.
+    /// Tries the InnerTube client chain, then YoutubeExplode as a fallback.
     /// </summary>
-    /// <param name="trackUrl">YouTube URL, local file path, or web URL.</param>
-    /// <param name="cancellationToken">Cancellation token (§4.9). Optional for backwards compat.</param>
     public async Task<ResolvedMedia?> ResolveMediaSourceAsync(
         string trackUrl,
         CancellationToken cancellationToken = default)
@@ -346,7 +330,7 @@ public partial class YouTubeResolverService
         if (!MediaUrlHelper.IsYouTubeUrl(trackUrl))
             return new ResolvedMedia(trackUrl, DefaultUserAgent);
 
-        // ── Cache check ─────────────────────────────────────────────────────
+        // Cache check
         if (_streamUrlCache.TryGetValue(trackUrl, out (ResolvedMedia Media, DateTime FetchedAt) cached)
             && (DateTime.Now - cached.FetchedAt).TotalHours < CacheExpiryHours)
         {
@@ -359,105 +343,106 @@ public partial class YouTubeResolverService
 
         if (videoId != null)
         {
-            // §4.9: pass the cancellation token all the way down.
+            Debug.WriteLine($"[Resolve] HasCookies={HasCookies}, trying InnerTube clients for {videoId.Value.Value}");
             resolvedMedia = await GetFastStreamUrlAsync(videoId.Value.Value, cancellationToken);
 
+            // YoutubeExplode fallback — always try, even if InnerTube failed.
+            // YoutubeExplode has its own cipher deciphering + watch-page scraping.
             if (resolvedMedia == null)
             {
-                // ── YoutubeExplode fallback ──────────────────────────────────
+                Debug.WriteLine("[Resolve] InnerTube chain failed — trying YoutubeExplode fallback");
                 try
                 {
-                    string? url = await Task.Run(async () =>
+                    YoutubeClient? yteClient = HasCookies
+                        ? GetYoutubeClientWithCookies()
+                        : _youtubeClient;
+
+                    if (yteClient != null)
                     {
-                        using CancellationTokenSource cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-                        cts.CancelAfter(TimeSpan.FromSeconds(ManifestFetchTimeoutSeconds));
+                        string? url = await Task.Run(async () =>
+                        {
+                            using CancellationTokenSource cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                            cts.CancelAfter(TimeSpan.FromSeconds(ManifestFetchTimeoutSeconds));
 
-                        StreamManifest manifest = await _youtubeClient.Videos.Streams.GetManifestAsync(videoId.Value, cts.Token);
+                            StreamManifest manifest = await yteClient.Videos.Streams.GetManifestAsync(videoId.Value, cts.Token);
 
-                        // §7.1: codec-aware selection (opus > mp4a > other, then bitrate).
-                        AudioOnlyStreamInfo? bestStream = manifest.GetAudioOnlyStreams()
-                            .OrderByDescending(CodecRank)
-                            .ThenByDescending(s => s.Bitrate)
-                            .FirstOrDefault();
+                            return manifest.GetAudioOnlyStreams()
+                                .OrderByDescending(CodecRank)
+                                .ThenByDescending(s => s.Bitrate)
+                                .FirstOrDefault()?.Url;
+                        }, cancellationToken);
 
-                        return bestStream?.Url;
-                    }, cancellationToken);
-
-                    Debug.WriteLine("[Resolve] YOUTUBE EXPLODE SUCCESS");
-
-                    if (!string.IsNullOrEmpty(url))
-                        resolvedMedia = new ResolvedMedia(url, DefaultUserAgent);
+                        if (!string.IsNullOrEmpty(url))
+                        {
+                            resolvedMedia = new ResolvedMedia(url, DefaultUserAgent);
+                            Debug.WriteLine("[Resolve] YoutubeExplode SUCCESS");
+                        }
+                    }
                 }
-                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-                {
-                    // Clean cancellation — don't swallow as an error.
-                    throw;
-                }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
                 catch (Exception ex)
                 {
-                    Debug.WriteLine($"[Resolve] YOUTUBE EXPLODE ERROR: {ex.Message}");
+                    Debug.WriteLine($"[Resolve] YoutubeExplode error: {ex.Message}");
                 }
             }
         }
 
-        // ── Final fallback: return the original URL and let the player try ──
         if (resolvedMedia == null)
-            resolvedMedia = new ResolvedMedia(trackUrl, DefaultUserAgent);
-        else if (resolvedMedia.Url != trackUrl)
+        {
+            Debug.WriteLine($"[Resolve] ALL CLIENTS FAILED for {trackUrl} — returning null");
+            return null;
+        }
+
+        if (resolvedMedia.Url != trackUrl)
             CacheStreamUrl(trackUrl, resolvedMedia);
 
         return resolvedMedia;
     }
 
-    /// <summary>
-    /// Fetches the duration of a YouTube video via the InnerTube player endpoint,
-    /// falling back to YoutubeExplode.
-    /// </summary>
     public async Task<TimeSpan?> GetVideoDurationAsync(string trackUrl, CancellationToken cancellationToken)
     {
         VideoId? videoId = VideoId.TryParse(trackUrl);
         if (videoId == null) return null;
 
-        // ── InnerTube player endpoint (fast path) ───────────────────────────
-        // Uses VISIONOS — the most reliable client as of Aug 2026. Returns
-        // videoDetails.lengthSeconds without needing a playable stream.
-        try
+        // Try InnerTube player endpoint — try VISIONOS first, then WEB+cookies if available.
+        // This is important: duration lookup for restricted videos needs the same client
+        // chain as stream resolution, otherwise duration fails silently.
+        InnerTubeClientInfo[] durationClients = HasCookies
+            ? new[] { InnerTubeClients.VisionOS, InnerTubeClients.Web }
+            : new[] { InnerTubeClients.VisionOS };
+
+        foreach (var client in durationClients)
         {
-            InnerTubeClientInfo client = InnerTubeClients.VisionOS;
-
-            HttpRequestMessage request = BuildPlayerRequest(videoId.Value.Value, client, cancellationToken);
-            request.Content = BuildPlayerPayload(videoId.Value.Value, client);
-
-            // §7.3: wrap in WithRetryAsync for transient network failures.
-            HttpResponseMessage response = await WithRetryAsync(
-                () => _innerTubeClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken),
-                cancellationToken: cancellationToken);
-
-            using (response)
+            try
             {
-                string json = await response.Content.ReadAsStringAsync(cancellationToken);
+                HttpRequestMessage request = BuildPlayerRequest(videoId.Value.Value, client);
+                request.Content = BuildPlayerPayload(videoId.Value.Value, client);
 
-                using JsonDocument doc = JsonDocument.Parse(json);
-                JsonElement root = doc.RootElement;
+                HttpResponseMessage response = await _innerTubeClient.SendAsync(
+                    request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
 
-                if (root.TryGetProperty("videoDetails", out JsonElement videoDetails) &&
-                    videoDetails.TryGetProperty("lengthSeconds", out JsonElement lengthSeconds) &&
-                    long.TryParse(lengthSeconds.GetString(), out long secs))
+                using (response)
                 {
-                    return TimeSpan.FromSeconds(secs);
+                    string json = await response.Content.ReadAsStringAsync(cancellationToken);
+                    using JsonDocument doc = JsonDocument.Parse(json);
+                    JsonElement root = doc.RootElement;
+
+                    if (root.TryGetProperty("videoDetails", out JsonElement videoDetails) &&
+                        videoDetails.TryGetProperty("lengthSeconds", out JsonElement lengthSeconds) &&
+                        long.TryParse(lengthSeconds.GetString(), out long secs))
+                    {
+                        return TimeSpan.FromSeconds(secs);
+                    }
                 }
             }
-        }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-        {
-            throw;
-        }
-        catch (Exception ex)
-        {
-            Debug.WriteLine($"[InnerTube Duration] Error resolving duration for {trackUrl}: {ex.Message}");
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"[Duration] {client.Name} error: {ex.Message}");
+            }
         }
 
-        // ── YoutubeExplode fallback ──────────────────────────────────────────
+        // YoutubeExplode fallback
         try
         {
             using CancellationTokenSource cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
@@ -466,36 +451,39 @@ public partial class YouTubeResolverService
             Video videoInfo = await _youtubeClient.Videos.GetAsync(videoId.Value, cts.Token);
             return videoInfo.Duration;
         }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-        {
-            throw;
-        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
         catch (Exception ex)
         {
-            Debug.WriteLine($"[YoutubeExplode Duration] Error: {ex.Message}");
+            Debug.WriteLine($"[Duration] YoutubeExplode error: {ex.Message}");
         }
 
         return null;
     }
 
     // ─────────────────────────────────────────────────────────────────────────
-    //  Private: InnerTube player request
+    //  Private: client fallback chain
     // ─────────────────────────────────────────────────────────────────────────
 
-    /// <summary>
-    /// Tries each InnerTube client in order to resolve a direct stream URL.
-    /// Honours the per-client circuit breaker (§7.4) and cancellation (§4.9).
-    /// </summary>
     private async Task<ResolvedMedia?> GetFastStreamUrlAsync(string videoId, CancellationToken cancellationToken)
     {
-        // visitorData populates naturally from the first successful player response
-        // (see responseContext.visitorData extraction below). No separate bootstrap
-        // — VISIONOS works without visitorData on the first request, and subsequent
-        // calls pick it up automatically.
-
-        foreach (InnerTubeClientInfo client in InnerTubeClients.All)
+        // Build the client chain. WEB is only included if cookies are available.
+        List<InnerTubeClientInfo> clientsToTry = new()
         {
-            // §7.4: skip clients that recently returned 403 for this video.
+            InnerTubeClients.VisionOS
+        };
+
+        if (HasCookies)
+        {
+            clientsToTry.Add(InnerTubeClients.Web);
+            Debug.WriteLine("[Resolve] Cookies detected — WEB client added to fallback chain");
+        }
+
+        clientsToTry.Add(InnerTubeClients.Android);
+
+        Debug.WriteLine($"[Resolve] Client chain: {string.Join(" → ", clientsToTry.Select(c => c.Name))}");
+
+        foreach (InnerTubeClientInfo client in clientsToTry)
+        {
             if (IsStreamClientBlocked(videoId, client.Name))
             {
                 Debug.WriteLine($"[Resolve] Skipping {client.Name} — circuit breaker open for {videoId}");
@@ -506,25 +494,22 @@ public partial class YouTubeResolverService
             {
                 try
                 {
-                    HttpRequestMessage request = BuildPlayerRequest(videoId, client, cancellationToken);
+                    HttpRequestMessage request = BuildPlayerRequest(videoId, client);
                     request.Content = BuildPlayerPayload(videoId, client);
 
-                    // §4.9: pass the cancellation token (the original omitted it).
                     HttpResponseMessage response = await _innerTubeClient.SendAsync(
                         request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
 
                     using (response)
                     {
-                        // §7.4: record 403s in the circuit breaker.
                         if ((int)response.StatusCode == 403)
                             MarkStreamClientFailed(videoId, client.Name, 403);
 
                         string json = await response.Content.ReadAsStringAsync(cancellationToken);
-
                         using JsonDocument doc = JsonDocument.Parse(json);
                         JsonElement root = doc.RootElement;
 
-                        // ── Update visitorData if present (§4.11 / §7.2) ─────────
+                        // Update visitorData from response (for non-cookie-authenticated requests)
                         if (root.TryGetProperty("responseContext", out JsonElement rc) &&
                             rc.TryGetProperty("visitorData", out JsonElement vd))
                         {
@@ -536,64 +521,76 @@ public partial class YouTubeResolverService
                             }
                         }
 
-                        // ── Check playabilityStatus ─────────────────────────────
+                        // Check playabilityStatus
                         if (root.TryGetProperty("playabilityStatus", out JsonElement statusProp) &&
                             statusProp.TryGetProperty("status", out JsonElement status))
                         {
                             string? statusStr = status.GetString();
-
                             if (statusStr != "OK")
                             {
-                                // LOGIN_REQUIRED / UNPLAYABLE means YouTube won't serve this
-                                // client/video combo. The circuit breaker + client fallback
-                                // chain handles this — just move to the next client.
-                                Debug.WriteLine($"[Resolve] {client.Name} returned status {statusStr} for {videoId}");
-                                break;  // try next client
+                                string? reason = statusProp.TryGetProperty("reason", out JsonElement reasonEl)
+                                    ? reasonEl.GetString() : null;
+                                Debug.WriteLine($"[Resolve] {client.Name} returned {statusStr} for {videoId}: {reason ?? "no reason"}");
+                                break; // try next client
                             }
                         }
 
-                        // ── Extract best audio stream (§7.1 codec-aware) ────────
+                        // Extract best audio stream
                         if (root.TryGetProperty("streamingData", out JsonElement streamingData) &&
                             streamingData.TryGetProperty("adaptiveFormats", out JsonElement adaptiveFormats))
                         {
-                            JsonElement bestAudio = SelectBestAudioFormat(adaptiveFormats);
+                            // Enumerate ONCE, collect stats
+                            var formats = adaptiveFormats.EnumerateArray().ToList();
+                            int audioCount = 0, withUrl = 0, withCipher = 0;
 
-                            if (bestAudio.ValueKind != JsonValueKind.Undefined &&
-                                bestAudio.TryGetProperty("url", out JsonElement urlProp))
+                            foreach (var f in formats)
                             {
-                                string streamUrl = urlProp.GetString()!;
-                                Debug.WriteLine($"[Resolve] FAST PATH SUCCESS — client: {client.Name}");
+                                bool isAudio = f.TryGetProperty("mimeType", out JsonElement m) &&
+                                               m.GetString()!.Contains("audio/");
+                                if (!isAudio) continue;
 
-                                // §7.1: stream probe is OFF by default. It adds ~100-300ms
-                                // per track load. Enable via EnableStreamProbe=true if you
-                                // want pre-validation (useful for diagnosing bad URLs but
-                                // not worth the latency in normal use — the player already
-                                // handles broken URLs by failing and retrying).
-                                if (EnableStreamProbe)
+                                audioCount++;
+                                if (f.TryGetProperty("url", out _)) withUrl++;
+                                if (f.TryGetProperty("signatureCipher", out _)) withCipher++;
+                            }
+
+                            Debug.WriteLine($"[Resolve] {client.Name}: {formats.Count} formats, {audioCount} audio, {withUrl} direct, {withCipher} ciphered");
+
+                            // SABR detection: if there are formats but none have url or signatureCipher,
+                            // they're SABR streams (YouTube's new protocol) which ExoPlayer can't play.
+                            if (audioCount > 0 && withUrl == 0 && withCipher == 0)
+                            {
+                                Debug.WriteLine($"[Resolve] {client.Name}: SABR-only response detected (no playable URLs) — ExoPlayer cannot play SABR streams");
+                                break; // try next client
+                            }
+
+                            if (withUrl > 0)
+                            {
+                                // Direct URL — find best audio with a URL
+                                string? streamUrl = FindBestAudioWithUrl(formats);
+                                if (streamUrl != null)
                                 {
-                                    bool valid = await ProbeStreamUrlAsync(streamUrl, client.UA, cancellationToken);
-                                    if (!valid)
-                                    {
-                                        Debug.WriteLine($"[Resolve] Stream probe failed for {client.Name}, trying next client");
-                                        break;
-                                    }
+                                    Debug.WriteLine($"[Resolve] SUCCESS — client: {client.Name} (direct URL)");
+                                    return new ResolvedMedia(streamUrl, client.UA);
                                 }
+                            }
 
-                                return new ResolvedMedia(streamUrl, client.UA);
+                            if (withCipher > 0)
+                            {
+                                Debug.WriteLine($"[Resolve] {client.Name}: ciphered URLs only — will use YoutubeExplode fallback");
                             }
                         }
+                        else
+                        {
+                            Debug.WriteLine($"[Resolve] {client.Name}: no streamingData in response");
+                        }
 
-                        break;  // no streaming data, try next client
+                        break; // no usable streaming data, try next client
                     }
                 }
-                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-                {
-                    // Clean cancellation — propagate, don't swallow.
-                    throw;
-                }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
                 catch (IOException ex)
                 {
-                    // §7.3: transient network error — retry this client.
                     Debug.WriteLine($"[Resolve] {client.Name} attempt {attempt} IOException: {ex.Message}");
                     if (attempt < MaxClientAttempts)
                         await Task.Delay(500 * attempt, cancellationToken).ConfigureAwait(false);
@@ -601,7 +598,7 @@ public partial class YouTubeResolverService
                 catch (Exception ex)
                 {
                     Debug.WriteLine($"[Resolve] {client.Name} attempt {attempt} error: {ex.Message}");
-                    break;  // non-transient, try next client
+                    break;
                 }
             }
         }
@@ -609,18 +606,16 @@ public partial class YouTubeResolverService
         return null;
     }
 
-    /// <summary>
-    /// Builds an InnerTube player request with the public API key and client headers.
-    /// </summary>
-    private static HttpRequestMessage BuildPlayerRequest(string videoId, InnerTubeClientInfo client, CancellationToken ct)
+    // ─────────────────────────────────────────────────────────────────────────
+    //  Private: request building
+    // ─────────────────────────────────────────────────────────────────────────
+
+    private static HttpRequestMessage BuildPlayerRequest(string videoId, InnerTubeClientInfo client)
     {
         string baseUrl = client.Name.Contains("MUSIC") || client.Name == "WEB_REMIX"
             ? "https://music.youtube.com"
             : "https://www.youtube.com";
 
-        // The API key is YouTube's public Android-client key. VISIONOS doesn't
-        // strictly require it, but the ANDROID fallback client benefits from it.
-        // Sending it for all clients is harmless.
         string apiUrl = $"{baseUrl}/youtubei/v1/player?key={InnerTubeApiKey}&prettyPrint=false";
 
         HttpRequestMessage request = new(HttpMethod.Post, apiUrl);
@@ -630,22 +625,79 @@ public partial class YouTubeResolverService
         request.Headers.Add("X-YouTube-Client-Name", client.Id);
         request.Headers.Add("X-YouTube-Client-Version", client.Version);
 
-        if (client.Name.StartsWith("WEB") || client.Name == "VISIONOS")
+        // X-Origin + Referer for WEB and VISIONOS clients
+        bool needsOrigin = client.Name.StartsWith("WEB") || client.Name == "VISIONOS";
+        if (needsOrigin)
         {
             request.Headers.Add("X-Origin", baseUrl);
             request.Headers.Add("Referer", $"{baseUrl}/");
         }
 
+        // ── Cookie authentication ────────────────────────────────────────────
+        // Cookies are ONLY attached to the WEB client. VISIONOS and ANDROID are
+        // anonymous clients — sending cookies to them confuses YouTube and causes
+        // "no streamingData" responses.
+        string? cookie = Cookies;
+        bool needsCookies = client.Name.StartsWith("WEB");
+        bool hasCookiesForThisClient = !string.IsNullOrEmpty(cookie) && needsCookies;
+
+        // Don't send visitorData with cookie-authenticated requests — stale
+        // visitorData causes "The page needs to be reloaded" errors.
         string? vd = VisitorData;
-        if (!string.IsNullOrEmpty(vd))
+        if (!string.IsNullOrEmpty(vd) && !hasCookiesForThisClient)
             request.Headers.Add("X-Goog-Visitor-Id", vd);
+
+        if (hasCookiesForThisClient)
+        {
+            request.Headers.Add("Cookie", cookie);
+
+            string? sapisidHash = GenerateSapisidHash(cookie!, baseUrl);
+            if (sapisidHash != null)
+            {
+                request.Headers.Add("Authorization", sapisidHash);
+                Debug.WriteLine($"[Resolve] Attached cookies + SAPISIDHASH for {client.Name} client");
+            }
+        }
 
         return request;
     }
 
     /// <summary>
-    /// Builds the JSON payload for the player endpoint.
+    /// Generates the SAPISIDHASH authorization header.
+    /// SHA1(timestamp + " " + sapisid + " " + origin) → "SAPISIDHASH {timestamp}_{hash}"
     /// </summary>
+    private static string? GenerateSapisidHash(string cookieString, string origin)
+    {
+        string? sapisid = null;
+        foreach (string part in cookieString.Split(';', '&'))
+        {
+            string trimmed = part.Trim();
+
+            if (trimmed.StartsWith("__Secure-3PAPISID=", StringComparison.OrdinalIgnoreCase))
+            {
+                sapisid = trimmed["__Secure-3PAPISID=".Length..].Trim();
+                break; // prefer __Secure-3PAPISID
+            }
+            if (trimmed.StartsWith("SAPISID=", StringComparison.OrdinalIgnoreCase))
+            {
+                sapisid = trimmed["SAPISID=".Length..].Trim();
+                // don't break — keep looking for __Secure-3PAPISID
+            }
+        }
+
+        if (string.IsNullOrEmpty(sapisid))
+            return null;
+
+        long timestamp = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+        string input = $"{timestamp} {sapisid} {origin}";
+
+        using SHA1 sha1 = SHA1.Create();
+        byte[] hashBytes = sha1.ComputeHash(Encoding.UTF8.GetBytes(input));
+        string hash = Convert.ToHexString(hashBytes).ToLowerInvariant();
+
+        return $"SAPISIDHASH {timestamp}_{hash}";
+    }
+
     private static HttpContent BuildPlayerPayload(string videoId, InnerTubeClientInfo client)
     {
         Dictionary<string, string> clientObj = new()
@@ -662,60 +714,75 @@ public partial class YouTubeResolverService
         if (client.Model != null) clientObj["deviceModel"] = client.Model;
         if (client.Sdk != null) clientObj["androidSdkVersion"] = client.Sdk;
 
+        // Don't include visitorData for cookie-authenticated requests.
+        // Cookies are only for WEB — VISIONOS and ANDROID are anonymous.
+        bool needsCookies = client.Name.StartsWith("WEB");
+        bool cookieAuth = !string.IsNullOrEmpty(Cookies) && needsCookies;
+
         string? vd = VisitorData;
-        if (!string.IsNullOrEmpty(vd))
+        if (!string.IsNullOrEmpty(vd) && !cookieAuth)
             clientObj["visitorData"] = vd;
 
-        object payload = new
+        object defaultPayload = new
         {
             videoId,
             context = new { client = clientObj, user = new { } }
         };
-
-        string jsonString = JsonSerializer.Serialize(payload, _jsonOptions);
-        return new StringContent(jsonString, Encoding.UTF8, "application/json");
+        string defaultJson = JsonSerializer.Serialize(defaultPayload, _jsonOptions);
+        return new StringContent(defaultJson, Encoding.UTF8, "application/json");
     }
 
     // ─────────────────────────────────────────────────────────────────────────
-    //  Private: stream selection (§7.1 codec-aware, ported from OpenTune)
+    //  Private: stream selection (codec-aware: opus > mp4a > other)
     // ─────────────────────────────────────────────────────────────────────────
 
     /// <summary>
-    /// Selects the best audio-only format from the adaptiveFormats array.
-    /// Ranking: codec (opus > mp4a > other) → bitrate (higher first) → has URL.
-    /// Ported from OpenTune's YTPlayerUtils.selectAudioFormatCandidates.
+    /// Finds the best audio format with a direct (non-ciphered) URL.
+    /// Enumerates the list once, picks by codec rank → bitrate → sample rate.
     /// </summary>
-    private static JsonElement SelectBestAudioFormat(JsonElement adaptiveFormats)
+    private static string? FindBestAudioWithUrl(List<JsonElement> formats)
     {
-        return adaptiveFormats.EnumerateArray()
-            .Where(f => f.TryGetProperty("mimeType", out JsonElement mime) &&
-                        mime.GetString()!.Contains("audio/"))
-            .Where(f => f.TryGetProperty("url", out _))
-            .OrderByDescending(CodecRank)
-            .ThenByDescending(f => f.TryGetProperty("bitrate", out JsonElement b) ? b.GetInt32() : 0)
-            .ThenByDescending(f => f.TryGetProperty("audioSampleRate", out JsonElement sr) &&
-                                   int.TryParse(sr.GetString(), out int rate) ? rate : 0)
-            .FirstOrDefault();
+        JsonElement best = default;
+        int bestRank = 0, bestBitrate = 0, bestSampleRate = 0;
+        bool found = false;
+
+        foreach (var f in formats)
+        {
+            if (!f.TryGetProperty("mimeType", out JsonElement mime) ||
+                !mime.GetString()!.Contains("audio/")) continue;
+            if (!f.TryGetProperty("url", out _)) continue;
+
+            int rank = CodecRank(f);
+            int bitrate = f.TryGetProperty("bitrate", out JsonElement b) ? b.GetInt32() : 0;
+            int sampleRate = f.TryGetProperty("audioSampleRate", out JsonElement sr) &&
+                             int.TryParse(sr.GetString(), out int rate) ? rate : 0;
+
+            if (!found || rank > bestRank ||
+                (rank == bestRank && bitrate > bestBitrate) ||
+                (rank == bestRank && bitrate == bestBitrate && sampleRate > bestSampleRate))
+            {
+                best = f;
+                bestRank = rank;
+                bestBitrate = bitrate;
+                bestSampleRate = sampleRate;
+                found = true;
+            }
+        }
+
+        return found && best.TryGetProperty("url", out JsonElement urlProp)
+            ? urlProp.GetString()
+            : null;
     }
 
-    /// <summary>
-    /// Codec ranking: opus (3) > mp4a (2) > other (1).
-    /// OpenTune uses the same ranking — opus has the best quality/bitrate ratio
-    /// for YouTube's audio-only streams.
-    /// </summary>
     private static int CodecRank(JsonElement format)
     {
-        if (!format.TryGetProperty("mimeType", out JsonElement mimeEl))
-            return 0;
+        if (!format.TryGetProperty("mimeType", out JsonElement mimeEl)) return 0;
         string mime = mimeEl.GetString() ?? "";
-
-        // The codec is in the mimeType, e.g. "audio/webm; codecs=\"opus\""
         if (mime.Contains("opus")) return 3;
         if (mime.Contains("mp4a")) return 2;
         return 1;
     }
 
-    // For YoutubeExplode streams (which have a different type).
     private static int CodecRank(AudioOnlyStreamInfo stream)
     {
         string codec = stream.AudioCodec.ToLowerInvariant();
@@ -725,123 +792,11 @@ public partial class YouTubeResolverService
     }
 
     // ─────────────────────────────────────────────────────────────────────────
-    //  Private: stream URL validation (§7.1 live Range-probe)
-    // ─────────────────────────────────────────────────────────────────────────
-
-    /// <summary>
-    /// Issues a lightweight HTTP Range probe (bytes=0-0) to validate the stream
-    /// URL before handing it to the player. Returns true on 200-399 or 416.
-    /// Best-effort — on network errors, returns true (let the player retry).
-    /// Ported from OpenTune's YTPlayerUtils stream validation.
-    /// </summary>
-    private async Task<bool> ProbeStreamUrlAsync(string url, string userAgent, CancellationToken ct)
-    {
-        try
-        {
-            using CancellationTokenSource cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-            cts.CancelAfter(TimeSpan.FromSeconds(StreamProbeTimeoutSeconds));
-
-            // Use GET with Range instead of HEAD — YouTube's CDN is more reliable
-            // with Range GETs, and we only read the response headers anyway.
-            using HttpRequestMessage probe = new(HttpMethod.Get, url);
-            probe.Headers.UserAgent.ParseAdd(userAgent);
-            probe.Headers.Range = new System.Net.Http.Headers.RangeHeaderValue(0, 0);
-
-            using HttpResponseMessage response = await _innerTubeClient.SendAsync(
-                probe, HttpCompletionOption.ResponseHeadersRead, cts.Token);
-
-            // 200-399 = OK, 416 = Range Not Satisfiable (still means the URL is valid).
-            int code = (int)response.StatusCode;
-            if (code is >= 200 and < 400 or 416)
-                return true;
-
-            Debug.WriteLine($"[Resolve] Stream probe returned {code}");
-            return false;
-        }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
-        {
-            throw;
-        }
-        catch (Exception ex)
-        {
-            // Network errors don't necessarily mean the URL is bad — let the player try.
-            Debug.WriteLine($"[Resolve] Stream probe network error (allowing): {ex.Message}");
-            return true;
-        }
-    }
-
-    // ─────────────────────────────────────────────────────────────────────────
-    //  Private: WithRetryAsync (§7.3 — ported from OpenTune's withRetry)
-    // ─────────────────────────────────────────────────────────────────────────
-
-    /// <summary>
-    /// Retries a transient operation with exponential backoff.
-    /// Catches ONLY IOException (network errors) — OperationCanceledException
-    /// always propagates so cancellation works correctly.
-    /// Ported from OpenTune's InnerTube.withRetry.
-    /// </summary>
-    private static async Task<T> WithRetryAsync<T>(
-        Func<Task<T>> block,
-        int maxAttempts = 3,
-        int initialDelayMs = 500,
-        double factor = 2.0,
-        CancellationToken cancellationToken = default)
-    {
-        int attempt = 0;
-        int delay = initialDelayMs;
-        while (true)
-        {
-            try
-            {
-                return await block().ConfigureAwait(false);
-            }
-            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-            {
-                throw;  // never swallow cancellation
-            }
-            catch (IOException) when (attempt < maxAttempts)
-            {
-                attempt++;
-                Debug.WriteLine($"[Resolve] WithRetry attempt {attempt}/{maxAttempts} failed, backing off {delay}ms");
-                await Task.Delay(delay, cancellationToken).ConfigureAwait(false);
-                delay = (int)(delay * factor);
-            }
-        }
-    }
-
-    // ─────────────────────────────────────────────────────────────────────────
     //  InnerTube client definitions
     // ─────────────────────────────────────────────────────────────────────────
 
-    /// <summary>
-    /// InnerTube client fallback chain. Ordered by likelihood of success.
-    ///
-    /// IMPORTANT (Aug 2026): YouTube killed the Android clients for anonymous
-    /// playback. ANDROID_VR CDN URLs started returning 403 on Aug 17, 2026
-    /// (yt-dlp issue #17456, PR #17461). ANDROID_TESTSUITE returns UNPLAYABLE.
-    /// ANDROID_UNPLUGGED returns LOGIN_REQUIRED. These are NOT fixable by adding
-    /// fields — YouTube's CDN itself rejects the URLs they return.
-    ///
-    /// The community (yt-dlp, YoutubeExplode, NewPipeExtractor) has converged on
-    /// VISIONOS as the sole surviving anonymous client. We lead with it.
-    /// ANDROID (not _VR, not _TESTSUITE — plain ANDROID) is kept as a fallback
-    /// because VISIONOS can't play "made for kids" videos; ANDROID returns
-    /// muxed itag 18 for those without requiring a PoToken.
-    ///
-    /// Sources:
-    /// - yt-dlp PR #17461 (2026-08-18): removed android_vr from defaults
-    /// - yt-dlp PR #17184 (2026-07-09): added visionos as default JS-less client
-    /// - YoutubeExplode PR #965 (2026-08-19): switched primary to VISIONOS 1.02
-    /// - NewPipeExtractor PR #1529 (2026-08-06): removed ANDROID/IOS/WEB_EMBEDDED
-    /// - yt-dlp PO Token Guide: VISIONOS does not require PO Token
-    /// </summary>
     private static class InnerTubeClients
     {
-        // ── PRIMARY: VISIONOS 1.02 ──────────────────────────────────────────
-        // The only anonymous client that reliably returns progressive stream
-        // URLs without PoToken or signature deciphering as of Aug 2026.
-        // Updated from the old 0.1 / RealityDevice14,1 to the current 1.02 /
-        // RealityDevice17,1 profile used by yt-dlp and YoutubeExplode.
         public static readonly InnerTubeClientInfo VisionOS = new()
         {
             Name = "VISIONOS",
@@ -855,44 +810,26 @@ public partial class YouTubeResolverService
             UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 15_7_3) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 Safari/605.1.15"
         };
 
-        // ── FALLBACK: ANDROID 21.26.364 ─────────────────────────────────────
-        // Used when VISIONOS can't play a video (e.g. "made for kids"). Returns
-        // muxed itag 18 only, but doesn't require PoToken for that specific
-        // format. This is plain ANDROID, NOT ANDROID_VR / ANDROID_TESTSUITE /
-        // ANDROID_UNPLUGGED — those are all dead.
+        public static readonly InnerTubeClientInfo Web = new()
+        {
+            Name = "WEB",
+            Version = "2.20260819.00.00",
+            Id = "1",
+            OsName = null, OsVersion = null, Make = null, Model = null, Sdk = null,
+            UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+        };
+
+        // NOTE: TVHTML5_SIMPLY_EMBEDDED_PLAYER was removed — it returns
+        // "YouTube is no longer supported in this application or device."
+        // as of Aug 2026. Do not re-add it.
+
         public static readonly InnerTubeClientInfo Android = new()
         {
             Name = "ANDROID",
             Version = "21.26.364",
             Id = "3",
-            OsName = "Android",
-            OsVersion = "11",
-            Make = "Google",
-            Model = "Pixel 8 Pro",
-            Sdk = "30",
+            OsName = "Android", OsVersion = "11", Make = "Google", Model = "Pixel 8 Pro", Sdk = "30",
             UA = "com.google.android.youtube/21.26.364 (Linux; U; Android 11; en_US; Pixel 8 Pro; Build/RQ3A.211001.001) gzip"
-        };
-
-        // ── LEGACY (disabled — kept for reference / future re-enablement) ────
-        // These are dead as of Aug 17, 2026. CDN URLs they return are 403'd
-        // regardless of PoToken. Do NOT add to the All array. If YouTube ever
-        // relaxes enforcement, re-enable here and add back to All.
-        //
-        // public static readonly InnerTubeClientInfo AndroidVr = new() { ... };
-        //   Name = "ANDROID_VR", Version = "1.37", Id = "28", ...
-        // public static readonly InnerTubeClientInfo AndroidTestSuite = new() { ... };
-        //   Name = "ANDROID_TESTSUITE", Version = "1.9", Id = "30", ...
-        // public static readonly InnerTubeClientInfo AndroidUnplugged = new() { ... };
-        //   Name = "ANDROID_UNPLUGGED", Version = "8.49.0", Id = "29", ...
-
-        /// <summary>
-        /// Ordered fallback chain. VISIONOS first (fast path, no PoToken),
-        /// ANDROID second (made-for-kids fallback).
-        /// </summary>
-        public static readonly InnerTubeClientInfo[] All =
-        {
-            VisionOS,
-            Android
         };
     }
 
@@ -910,22 +847,15 @@ public partial class YouTubeResolverService
     }
 
     // ─────────────────────────────────────────────────────────────────────────
-    //  Immutable auth state (§7.2 — ported from OpenTune's PlaybackAuthState)
+    //  Immutable auth state
     // ─────────────────────────────────────────────────────────────────────────
 
-    /// <summary>
-    /// Immutable record holding all YouTube auth material. Updated atomically
-    /// via Interlocked.Exchange so concurrent readers never see a torn state.
-    /// Ported from OpenTune's PlaybackAuthState.kt.
-    /// </summary>
     private sealed record PlaybackAuthState(
         string? Cookie,
         string? VisitorData,
         string? DataSyncId,
-        string? PoToken,
-        string? PoTokenGvs,
-        string? PoTokenPlayer)
+        string? PoToken)
     {
-        public static readonly PlaybackAuthState Empty = new(null, null, null, null, null, null);
+        public static readonly PlaybackAuthState Empty = new(null, null, null, null);
     }
 }

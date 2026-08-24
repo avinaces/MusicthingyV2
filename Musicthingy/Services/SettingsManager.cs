@@ -46,6 +46,13 @@ public class SettingsManager
 
     public IEnumerable<ISetting> GetVisibleSettings() => _allSettings.Where(s => s.Category != SettingCategory.Hidden);
 
+    /// <summary>
+    /// Returns ALL settings including Hidden ones. Used by the YouTube auth
+    /// import/clear actions, which need to access the individual hidden auth
+    /// settings (InnerTubeCookieSetting, VisitorDataSetting, etc.).
+    /// </summary>
+    public IEnumerable<ISetting> GetAllSettings() => _allSettings;
+
     public void LoadAll()
     {
         foreach (var setting in _allSettings) setting.Load();

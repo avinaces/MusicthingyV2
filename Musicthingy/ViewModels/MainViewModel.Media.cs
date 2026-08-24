@@ -302,7 +302,28 @@ public partial class MainViewModel
 
             if (token.IsCancellationRequested || resolvedMedia == null || string.IsNullOrEmpty(resolvedMedia.Url))
             {
+                // Show a user-facing error if the track couldn't be resolved
+                // (e.g. embedding-disabled video without cookies, or YouTube bot check).
+                if (!token.IsCancellationRequested && resolvedMedia == null)
+                {
+                    Debug.WriteLine("[Playback] Resolve returned null — showing error to user");
+                    await MainThread.InvokeOnMainThreadAsync(async () =>
+                    {
+                        string cookieHint = Services.YouTubeResolverService.HasCookies
+                            ? "even with your YouTube cookies.\n\nThis video may require:\n• A fresh YouTube login (re-export cookies)\n• SABR streaming support (not yet available)\n• The official YouTube app (ReVanced)"
+                            : ".\n\nThis video may require YouTube account cookies.\nGo to Settings → Import YouTube Account.";
+
+                        await ShowConfirmAsync(
+                            "Playback Error",
+                            "This video could not be loaded" + cookieHint,
+                            "OK",
+                            ModalBackgroundTapBehavior.Confirm,
+                            isDanger: true);
+                    });
+                }
+
                 ReleaseTransientWakeLock();
+                IsLoadingMedia = false;
                 return;
             }
 

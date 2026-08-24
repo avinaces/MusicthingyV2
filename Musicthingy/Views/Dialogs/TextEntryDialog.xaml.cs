@@ -14,6 +14,10 @@ public partial class TextEntryDialog : Popup
         BindingContext = setting;
 
         if (setting.DialogType == "Number") InputEntry.Keyboard = Keyboard.Numeric;
+
+        // Set the initial text without binding — this lets the user type freely
+        // and only commits the value when OK is clicked.
+        InputEntry.Text = setting.DisplayValue;
     }
 
     private async void OnResetClicked(object sender, EventArgs e)

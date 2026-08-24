@@ -35,6 +35,18 @@
                     <Label x:Name="MaxStorageLabel" Grid.Column="1" HorizontalOptions="End" TextColor="{DynamicResource MutedColor}" FontSize="12"/>
                 </Grid>
 
+                <!-- Download Progress (only visible while downloading) -->
+                <Border x:Name="DownloadProgressContainer" IsVisible="False" Margin="0,4,0,4" Padding="12" BackgroundColor="{DynamicResource BgColor}" Stroke="{DynamicResource BorderColor}" StrokeThickness="1" StrokeShape="RoundRectangle 8">
+                    <VerticalStackLayout Spacing="6">
+                        <Grid ColumnDefinitions="*, Auto">
+                            <Label Grid.Column="0" x:Name="DownloadUrlLabel" TextColor="{DynamicResource TextColor}" FontSize="12" LineBreakMode="TailTruncation" />
+                            <Label Grid.Column="1" x:Name="DownloadSpeedLabel" TextColor="{DynamicResource MutedColor}" FontSize="12" HorizontalOptions="End" />
+                        </Grid>
+                        <ProgressBar x:Name="DownloadProgressBar" Progress="0" ProgressColor="{DynamicResource AccentColor}" HeightRequest="4"/>
+                        <Label x:Name="DownloadSizeLabel" TextColor="{DynamicResource MutedColor}" FontSize="11"/>
+                    </VerticalStackLayout>
+                </Border>
+
                 <Button Text="Clear Cache Now" Clicked="OnClearCacheClicked" BackgroundColor="{DynamicResource DangerColor}" TextColor="White" CornerRadius="8" HeightRequest="40" Margin="0,8,0,0"/>
             </VerticalStackLayout>
         </Border>

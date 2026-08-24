@@ -85,6 +85,15 @@ public abstract class BaseSetting<T> : ObservableObject, ISetting
         }
         catch { _value = DefaultValue; }
 
+        // Push the loaded value to OnValueChanged even during state restoration.
+        // IsRestoringState guards the Value SETTER (line 31) to prevent saves
+        // during load, but Load() sets _value directly (bypassing the setter),
+        // so OnValueChanged is never called. This means auth settings (cookies,
+        // visitorData, etc.) are loaded from Preferences but never pushed to
+        // YouTubeResolverService at startup. Fix: call OnValueChanged here.
+        try { OnValueChanged(_value); }
+        catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"[Settings] OnValueChanged error during Load for {Key}: {ex.Message}"); }
+
         MainThread.BeginInvokeOnMainThread(() => OnPropertyChanged(nameof(Value)));
     }
 

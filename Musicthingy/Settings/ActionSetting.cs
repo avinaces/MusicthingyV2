@@ -13,7 +13,7 @@ public abstract class ActionSetting : ObservableObject, IActionSetting
     public string TemplateName => "ActionTemplate";
     public string DialogType => string.Empty;
 
-    public string Icon => "action_icon.png";
+    public virtual string Icon => "action_icon.png";
 
     public virtual string Description => GetBaseDescription();
     protected abstract string GetBaseDescription();
