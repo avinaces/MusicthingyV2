@@ -91,6 +91,15 @@ public partial class Playlist : ObservableObject
     [JsonIgnore]
     public partial bool IsSelected { get; set; }
 
+    /// <summary>Multi-selection state for playlist-level selection mode.</summary>
+    [ObservableProperty]
+    [JsonIgnore]
+    public partial bool IsMultiSelected { get; set; }
+
+    /// <summary>Order in which this playlist was selected (for play-in-selection-order).</summary>
+    [JsonIgnore]
+    public int SelectionOrder { get; set; }
+
     [RelayCommand]
     private void OnPointerEntered() => IsHovered = true;
 

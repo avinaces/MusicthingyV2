@@ -38,6 +38,164 @@ public partial class MainViewModel : ObservableObject, IDisposable
     [ObservableProperty] public partial ObservableCollection<PlaylistItem> DisplayedItems { get; set; } = new();
 
     // ==========================================
+    // MULTI-SELECTION MODE
+    // ==========================================
+    [ObservableProperty] public partial bool IsTrackSelectionMode { get; set; }
+    [ObservableProperty] public partial bool IsPlaylistSelectionMode { get; set; }
+    [ObservableProperty] public partial int SelectedTrackCount { get; set; }
+    [ObservableProperty] public partial int SelectedPlaylistCount { get; set; }
+
+    public bool IsSelectionToolbarVisible => SelectedTrackCount > 0 || SelectedPlaylistCount > 0;
+
+    public string SelectionCountText
+    {
+        get
+        {
+            var parts = new List<string>();
+            if (SelectedPlaylistCount > 0) parts.Add($"{SelectedPlaylistCount} playlist{(SelectedPlaylistCount > 1 ? "s" : "")}");
+            if (SelectedTrackCount > 0) parts.Add($"{SelectedTrackCount} track{(SelectedTrackCount > 1 ? "s" : "")}");
+            return parts.Count > 0 ? string.Join(", ", parts) + " selected" : "";
+        }
+    }
+
+    private int _playlistSelectionCounter = 0;
+
+    partial void OnIsTrackSelectionModeChanged(bool value)
+    {
+        if (!value)
+        {
+            foreach (var item in DisplayedItems) item.IsMultiSelected = false;
+            SelectedTrackCount = 0;
+            OnPropertyChanged(nameof(IsSelectionToolbarVisible));
+            OnPropertyChanged(nameof(SelectionCountText));
+        }
+    }
+
+    partial void OnIsPlaylistSelectionModeChanged(bool value)
+    {
+        if (!value)
+        {
+            foreach (var p in Playlists) { p.IsMultiSelected = false; p.SelectionOrder = 0; }
+            SelectedPlaylistCount = 0;
+            _playlistSelectionCounter = 0;
+            OnPropertyChanged(nameof(IsSelectionToolbarVisible));
+            OnPropertyChanged(nameof(SelectionCountText));
+        }
+    }
+
+    public void ToggleItemSelection(PlaylistItem item)
+    {
+        item.IsMultiSelected = !item.IsMultiSelected;
+        if (item.IsMultiSelected && !IsTrackSelectionMode) IsTrackSelectionMode = true;
+        UpdateSelectedTrackCount();
+    }
+
+    public void UpdateSelectedCountPublic() => UpdateSelectedTrackCount();
+    private void UpdateSelectedTrackCount()
+    {
+        SelectedTrackCount = DisplayedItems.Count(i => i.IsMultiSelected);
+        if (SelectedTrackCount == 0 && IsTrackSelectionMode) IsTrackSelectionMode = false;
+        OnPropertyChanged(nameof(IsSelectionToolbarVisible));
+        OnPropertyChanged(nameof(SelectionCountText));
+    }
+
+    public void TogglePlaylistSelection(Playlist playlist)
+    {
+        playlist.IsMultiSelected = !playlist.IsMultiSelected;
+        if (playlist.IsMultiSelected)
+        {
+            _playlistSelectionCounter++;
+            playlist.SelectionOrder = _playlistSelectionCounter;
+            if (!IsPlaylistSelectionMode) IsPlaylistSelectionMode = true;
+        }
+        else playlist.SelectionOrder = 0;
+        UpdateSelectedPlaylistCount();
+    }
+
+    private void UpdateSelectedPlaylistCount()
+    {
+        SelectedPlaylistCount = Playlists.Count(p => p.IsMultiSelected);
+        if (SelectedPlaylistCount == 0 && IsPlaylistSelectionMode) IsPlaylistSelectionMode = false;
+        OnPropertyChanged(nameof(IsSelectionToolbarVisible));
+        OnPropertyChanged(nameof(SelectionCountText));
+    }
+
+    [RelayCommand]
+    private void ToggleSelectAllTracks()
+    {
+        bool allSelected = DisplayedItems.All(i => i.IsMultiSelected);
+        foreach (var item in DisplayedItems) item.IsMultiSelected = !allSelected;
+        if (!allSelected && !IsTrackSelectionMode) IsTrackSelectionMode = true;
+        UpdateSelectedTrackCount();
+    }
+
+    [RelayCommand]
+    private void ToggleSelectAllPlaylists()
+    {
+        bool allSelected = Playlists.All(p => p.IsMultiSelected);
+        if (allSelected)
+        {
+            foreach (var p in Playlists) { p.IsMultiSelected = false; p.SelectionOrder = 0; }
+            _playlistSelectionCounter = 0;
+        }
+        else
+        {
+            foreach (var p in Playlists)
+            {
+                if (!p.IsMultiSelected)
+                {
+                    p.IsMultiSelected = true;
+                    _playlistSelectionCounter++;
+                    p.SelectionOrder = _playlistSelectionCounter;
+                }
+            }
+            if (!IsPlaylistSelectionMode) IsPlaylistSelectionMode = true;
+        }
+        UpdateSelectedPlaylistCount();
+    }
+
+    private List<PlaylistItem> CollectSelectedItems()
+    {
+        var result = new List<PlaylistItem>();
+        var seen = new HashSet<string>();
+        foreach (var playlist in Playlists.Where(p => p.IsMultiSelected).OrderBy(p => p.SelectionOrder))
+            foreach (var item in playlist.Items)
+                if (seen.Add(item.Url)) result.Add(item);
+        foreach (var item in DisplayedItems.Where(i => i.IsMultiSelected))
+            if (seen.Add(item.Url)) result.Add(item);
+        return result;
+    }
+
+    [RelayCommand]
+    private void PlaySelected()
+    {
+        var items = CollectSelectedItems();
+        if (items.Count == 0) return;
+        IsShuffleEnabled = false;
+        SetupPlaybackQueue(items);
+        IsTrackSelectionMode = false;
+        IsPlaylistSelectionMode = false;
+    }
+
+    [RelayCommand]
+    private void ShuffleSelected()
+    {
+        var items = CollectSelectedItems();
+        if (items.Count == 0) return;
+        IsShuffleEnabled = true;
+        SetupPlaybackQueue(items);
+        IsTrackSelectionMode = false;
+        IsPlaylistSelectionMode = false;
+    }
+
+    [RelayCommand]
+    private void CancelSelection()
+    {
+        IsTrackSelectionMode = false;
+        IsPlaylistSelectionMode = false;
+    }
+
+    // ==========================================
     // TAG FILTERING LOGIC
     // ==========================================
 

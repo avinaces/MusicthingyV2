@@ -28,13 +28,17 @@ public partial class ColorPickerDialog : Popup
             }
             catch
             {
-                SetColor(Colors.Red); // Fallback for invalid formats
+                SetColor(Colors.Red);
             }
         }
         else
         {
             SetColor(Colors.Red);
         }
+
+        // Force a redraw after the popup is laid out — fixes the issue where
+        // the color wheel doesn't render until you interact with it.
+        this.SizeChanged += (s, e) => HueWheelView.Invalidate();
     }
 
     private void SetColor(Color color)

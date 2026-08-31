@@ -184,18 +184,21 @@
 						</CollectionView.Footer>
 					</CollectionView>
 
-					<ScrollView VerticalOptions="Fill" IsVisible="{Binding HasStaticLyrics}">
-						<Label Text="{Binding CurrentTrack.Lyrics}" 
-							   TextColor="{DynamicResource TextColor}" 
-							   HorizontalOptions="Center" 
-							   HorizontalTextAlignment="Center" 
-							   VerticalOptions="Start" 
-							   Margin="10,0,10,40" 
-							   FontSize="18" 
-							   LineHeight="1.4"/>
-					</ScrollView>
+                    <ScrollView VerticalOptions="Fill" IsVisible="{Binding HasStaticLyrics}">
+                        <VerticalStackLayout>
+                            <Label Text="{Binding CurrentTrack.Lyrics}" 
+								   TextColor="{DynamicResource TextColor}" 
+								   HorizontalOptions="Center" 
+								   HorizontalTextAlignment="Center" 
+								   VerticalOptions="Start" 
+								   Margin="10,0,10,0" 
+								   FontSize="18" 
+								   LineHeight="1.4"/>
+                            <BoxView HeightRequest="120" BackgroundColor="Transparent"/>
+                        </VerticalStackLayout>
+                    </ScrollView>
 
-					<!-- Prompt to Find Lyrics -->
+                    <!-- Prompt to Find Lyrics -->
 					<ContentView IsVisible="{Binding HasNoLyrics}">
 						<VerticalStackLayout x:Name="NoLyricsPrompt" VerticalOptions="Center" Spacing="16" IsVisible="False" Opacity="0">
 							<Label Text="No lyrics available for this track." TextColor="{DynamicResource MutedColor}" HorizontalOptions="Center" />

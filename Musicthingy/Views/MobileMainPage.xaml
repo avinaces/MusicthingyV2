@@ -198,12 +198,26 @@
                                                     <TapGestureRecognizer Tapped="OnTrackTapped" />
                                                 </Grid.GestureRecognizers>
 
+                                                <!-- Icon area — tap to toggle selection -->
                                                 <Grid Grid.Column="0" WidthRequest="44" HeightRequest="44" VerticalOptions="Center">
+                                                    <Grid.GestureRecognizers>
+                                                        <TapGestureRecognizer Tapped="OnTrackIconTapped" />
+                                                    </Grid.GestureRecognizers>
                                                     <Image Source="{Binding ItemIconSource}" Aspect="AspectFill">
                                                         <Image.Clip>
                                                             <RoundRectangleGeometry CornerRadius="7" Rect="0,0,44,44" />
                                                         </Image.Clip>
                                                     </Image>
+                                                    <Border WidthRequest="44" HeightRequest="44" BackgroundColor="#A0000000" IsVisible="{Binding IsMultiSelected}" StrokeThickness="0">
+                                                        <Border.StrokeShape>
+                                                            <RoundRectangle CornerRadius="7" />
+                                                        </Border.StrokeShape>
+                                                        <Image Source="check_icon.png" WidthRequest="28" HeightRequest="28" VerticalOptions="Center" HorizontalOptions="Center">
+                                                            <Image.Behaviors>
+                                                                <toolkit:IconTintColorBehavior TintColor="#FFFFFF" />
+                                                            </Image.Behaviors>
+                                                        </Image>
+                                                    </Border>
                                                 </Grid>
 
                                                 <VerticalStackLayout Grid.Column="1" VerticalOptions="Center">
@@ -264,6 +278,33 @@
                         <ContentView ControlTemplate="{StaticResource SharedToolbarTemplate}" />
                         <BoxView HeightRequest="1" Color="{DynamicResource BorderColor}" VerticalOptions="End" />
                     </Grid>
+
+                    <!-- TRACK SELECTION TOOLBAR (visible only when tracks are selected) -->
+                    <Grid VerticalOptions="Start" HeightRequest="56"
+                          IsVisible="{Binding IsSelectionToolbarVisible}" ZIndex="6"
+                          BackgroundColor="{DynamicResource BgColor}">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <BoxView HeightRequest="1" Color="{DynamicResource BorderColor}" VerticalOptions="End" Grid.ColumnSpan="5" />
+                        <ImageButton Grid.Column="0" Source="x_icon.png" Clicked="OnCancelSelectionClicked" WidthRequest="48" HeightRequest="48" Padding="10" BackgroundColor="Transparent" BorderColor="Transparent" BorderWidth="0" CornerRadius="24" VerticalOptions="Center" Margin="4,0,0,0">
+                            <ImageButton.Behaviors><toolkit:IconTintColorBehavior TintColor="{DynamicResource TitleColor}" /></ImageButton.Behaviors>
+                        </ImageButton>
+                        <Label Grid.Column="1" Text="{Binding SelectionCountText}" FontSize="14" FontAttributes="Bold" TextColor="{DynamicResource TitleColor}" VerticalOptions="Center" Margin="8,0,0,0" />
+                        <ImageButton Grid.Column="2" Source="check_icon.png" Clicked="OnSelectAllClicked" WidthRequest="48" HeightRequest="48" Padding="12" BackgroundColor="Transparent" BorderColor="Transparent" BorderWidth="0" CornerRadius="24" VerticalOptions="Center">
+                            <ImageButton.Behaviors><toolkit:IconTintColorBehavior TintColor="{DynamicResource TitleColor}" /></ImageButton.Behaviors>
+                        </ImageButton>
+                        <ImageButton Grid.Column="3" Source="play_icon.png" Clicked="OnPlaySelectedClicked" WidthRequest="48" HeightRequest="48" Padding="12" BackgroundColor="Transparent" BorderColor="Transparent" BorderWidth="0" CornerRadius="24" VerticalOptions="Center">
+                            <ImageButton.Behaviors><toolkit:IconTintColorBehavior TintColor="{DynamicResource TitleColor}" /></ImageButton.Behaviors>
+                        </ImageButton>
+                        <ImageButton Grid.Column="4" Source="shuffle_icon.png" Clicked="OnShuffleSelectedClicked" WidthRequest="48" HeightRequest="48" Padding="12" BackgroundColor="Transparent" BorderColor="Transparent" BorderWidth="0" CornerRadius="24" VerticalOptions="Center" Margin="0,0,4,0">
+                            <ImageButton.Behaviors><toolkit:IconTintColorBehavior TintColor="{DynamicResource TitleColor}" /></ImageButton.Behaviors>
+                        </ImageButton>
+                    </Grid>
                 </Grid>
 
                 <ContentView Grid.Row="1" HeightRequest="70" BackgroundColor="{DynamicResource BgColor}" IsVisible="{Binding IsMediaSelected}" />
@@ -289,7 +330,7 @@
             <Grid.GestureRecognizers>
                 <PanGestureRecognizer PanUpdated="OnSidebarPanUpdated" />
             </Grid.GestureRecognizers>
-            <Grid RowDefinitions="Auto, *">
+            <Grid RowDefinitions="Auto, Auto, *">
                 <Grid Grid.Row="0" Padding="12,12,16,16" ColumnDefinitions="Auto, *, Auto">
                     <ImageButton Grid.Column="0" Source="arrow_left_icon.png" Clicked="OnCloseSidebarClicked" Margin="0,0,12,0" VerticalOptions="Center" WidthRequest="40" HeightRequest="40" CornerRadius="20" Padding="8" BackgroundColor="Transparent" />
                     <Label Grid.Column="1" Text="Playlists" TextColor="{DynamicResource TitleColor}" FontSize="24" FontAttributes="Bold" VerticalOptions="Center" />
@@ -298,7 +339,60 @@
                         <ImageButton Source="plus_icon.png" Command="{Binding AddNewPlaylistCommand}" Style="{StaticResource IconImageButton}" />
                     </HorizontalStackLayout>
                 </Grid>
-                <mpowerkit:VirtualizeListView Grid.Row="1" ItemsSource="{Binding Playlists}" Scrolled="OnListScrolled">
+
+                <!-- Playlist Selection Toolbar (inside sidebar) -->
+                <Grid Grid.Row="1" HeightRequest="52" IsVisible="{Binding IsPlaylistSelectionMode}"
+                      BackgroundColor="{DynamicResource BgColor}" ZIndex="5">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+
+                    <ImageButton Grid.Column="0" Source="x_icon.png" Clicked="OnCancelSelectionClicked"
+                                 WidthRequest="48" HeightRequest="48" Padding="10" BackgroundColor="Transparent"
+                                 BorderColor="Transparent" BorderWidth="0" CornerRadius="24" VerticalOptions="Center"
+                                 Margin="4,0,0,0">
+                        <ImageButton.Behaviors>
+                            <toolkit:IconTintColorBehavior TintColor="{DynamicResource TitleColor}" />
+                        </ImageButton.Behaviors>
+                    </ImageButton>
+
+                    <Label Grid.Column="1" Text="{Binding SelectedPlaylistCount, StringFormat='{0} selected'}"
+                           FontSize="14" FontAttributes="Bold" TextColor="{DynamicResource TitleColor}"
+                           VerticalOptions="Center" Margin="8,0,0,0" />
+
+                    <ImageButton Grid.Column="2" Source="check_icon.png" Clicked="OnSelectAllPlaylistsClicked"
+                                 WidthRequest="48" HeightRequest="48" Padding="12" BackgroundColor="Transparent"
+                                 BorderColor="Transparent" BorderWidth="0" CornerRadius="24" VerticalOptions="Center">
+                        <ImageButton.Behaviors>
+                            <toolkit:IconTintColorBehavior TintColor="{DynamicResource TitleColor}" />
+                        </ImageButton.Behaviors>
+                    </ImageButton>
+
+                    <ImageButton Grid.Column="3" Source="play_icon.png" Clicked="OnPlaySelectedClicked"
+                                 WidthRequest="48" HeightRequest="48" Padding="12" BackgroundColor="Transparent"
+                                 BorderColor="Transparent" BorderWidth="0" CornerRadius="24" VerticalOptions="Center">
+                        <ImageButton.Behaviors>
+                            <toolkit:IconTintColorBehavior TintColor="{DynamicResource TitleColor}" />
+                        </ImageButton.Behaviors>
+                    </ImageButton>
+
+                    <ImageButton Grid.Column="4" Source="shuffle_icon.png" Clicked="OnShuffleSelectedClicked"
+                                 WidthRequest="48" HeightRequest="48" Padding="12" BackgroundColor="Transparent"
+                                 BorderColor="Transparent" BorderWidth="0" CornerRadius="24" VerticalOptions="Center"
+                                 Margin="0,0,4,0">
+                        <ImageButton.Behaviors>
+                            <toolkit:IconTintColorBehavior TintColor="{DynamicResource TitleColor}" />
+                        </ImageButton.Behaviors>
+                    </ImageButton>
+                    
+                    <BoxView HeightRequest="1" Color="{DynamicResource BorderColor}" VerticalOptions="End" Grid.ColumnSpan="5" />
+                </Grid>
+
+                <mpowerkit:VirtualizeListView Grid.Row="2" ItemsSource="{Binding Playlists}" Scrolled="OnListScrolled">
                     <mpowerkit:VirtualizeListView.ItemTemplate>
                         <DataTemplate x:DataType="models:Playlist">
                             <mpowerkit:VirtualizeListViewCell>
@@ -316,11 +410,27 @@
                                                 <TapGestureRecognizer Tapped="OnPlaylistTapped" />
                                             </Grid.GestureRecognizers>
 
-                                            <Image Grid.Column="0" Source="{Binding IconImageSource}" HeightRequest="60" WidthRequest="60" Aspect="AspectFill" VerticalOptions="Center">
-                                                <Image.Clip>
-                                                    <RoundRectangleGeometry CornerRadius="8" Rect="0,0,60,60" />
-                                                </Image.Clip>
-                                            </Image>
+                                            <!-- Playlist icon — tap to toggle selection -->
+                                            <Grid Grid.Column="0" VerticalOptions="Center">
+                                                <Grid.GestureRecognizers>
+                                                    <TapGestureRecognizer Tapped="OnPlaylistIconTapped" />
+                                                </Grid.GestureRecognizers>
+                                                <Image Source="{Binding IconImageSource}" HeightRequest="60" WidthRequest="60" Aspect="AspectFill">
+                                                    <Image.Clip>
+                                                        <RoundRectangleGeometry CornerRadius="8" Rect="0,0,60,60" />
+                                                    </Image.Clip>
+                                                </Image>
+                                                <Border HeightRequest="60" WidthRequest="60" BackgroundColor="#A0000000" IsVisible="{Binding IsMultiSelected}" StrokeThickness="0">
+                                                    <Border.StrokeShape>
+                                                        <RoundRectangle CornerRadius="8" />
+                                                    </Border.StrokeShape>
+                                                    <Image Source="check_icon.png" WidthRequest="32" HeightRequest="32" VerticalOptions="Center" HorizontalOptions="Center">
+                                                        <Image.Behaviors>
+                                                            <toolkit:IconTintColorBehavior TintColor="#FFFFFF" />
+                                                        </Image.Behaviors>
+                                                    </Image>
+                                                </Border>
+                                            </Grid>
 
                                             <VerticalStackLayout Grid.Column="1" VerticalOptions="Center" Spacing="2">
                                                 <Label Text="{Binding Name}" FontSize="15" FontAttributes="Bold" LineBreakMode="TailTruncation" />

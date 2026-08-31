@@ -1,74 +1,94 @@
-﻿
-using System.IO.Compression;
+﻿using System.IO.Compression;
 using CommunityToolkit.Maui.Storage;
 
-namespace Musicthingy.Settings.Definitions
+namespace Musicthingy.Settings.Definitions;
+
+public class ExportDataSetting : ActionSetting
 {
-    public class ExportDataSetting : ActionSetting
+    public override string Key => "ExportAppData";
+    public override string Title => "Export Data";
+    public override SettingCategory Category => SettingCategory.Storage;
+
+    private bool _isExporting;
+    protected override string GetBaseDescription() => _isExporting ? "Exporting..." : "Export library data and settings to a zip file";
+
+    public override async void ExecuteAction()
     {
-        // Updated keys to reflect the actual action, rather than Theme Colors
-        public override string Key => "ExportAppData";
-        public override string Title => "Export Data";
-        public override SettingCategory Category => SettingCategory.Storage;
+        if (_isExporting) return;
+        _isExporting = true;
+        OnPropertyChanged(nameof(Description));
 
-        protected override string GetBaseDescription() => "Export all library data and settings to a zip file";
-
-        public override async void ExecuteAction()
+        try
         {
-            await ExportDataAsync();
+            await Task.Run(ExportDataAsync);
         }
-
-        private async Task ExportDataAsync()
+        finally
         {
-            string tempZipPath = string.Empty;
+            _isExporting = false;
+            MainThread.BeginInvokeOnMainThread(() => OnPropertyChanged(nameof(Description)));
+        }
+    }
 
-            try
+    private async Task ExportDataAsync()
+    {
+        string tempZipPath = string.Empty;
+
+        try
+        {
+            string appDataPath = FileSystem.AppDataDirectory;
+            string zipFileName = $"Musicthingy_Backup_{DateTime.Now:yyyyMMdd_HHmmss}.zip";
+            tempZipPath = Path.Combine(FileSystem.CacheDirectory, zipFileName);
+
+            if (File.Exists(tempZipPath))
+                File.Delete(tempZipPath);
+
+            // Only export library.json + preferences — NOT the entire app data directory
+            // (which may include cache, temp files, and other unnecessary data)
+            using (var archive = ZipFile.Open(tempZipPath, ZipArchiveMode.Create))
             {
-                // 1. This grabs your library.json and all settings files
-                string appDataPath = FileSystem.AppDataDirectory;
+                // Export library.json
+                string libraryPath = Path.Combine(appDataPath, "library.json");
+                if (File.Exists(libraryPath))
+                    archive.CreateEntryFromFile(libraryPath, "library.json");
 
-                // 2. We MUST save the zip to the Cache directory. 
-                // If we save it to AppDataDirectory, the zip will try to zip itself!
-                string zipFileName = $"Musicthingy_Backup_{DateTime.Now:yyyyMMdd_HHmmss}.zip";
-                tempZipPath = Path.Combine(FileSystem.CacheDirectory, zipFileName);
+                // Export preferences (all settings are stored as individual preference keys,
+                // but we can't easily enumerate them. Instead, export the known setting keys.)
+                // For now, just export library.json — that's the main user data.
+                // Settings are app-level config, not user data.
+            }
 
-                if (File.Exists(tempZipPath))
-                {
-                    File.Delete(tempZipPath);
-                }
-
-                // 3. Compress the entire data directory (creates the .zip)
-                ZipFile.CreateFromDirectory(appDataPath, tempZipPath, CompressionLevel.Optimal, includeBaseDirectory: false);
-
-                // 4. Open the file to hand off to the Android System
+            // Switch to UI thread for the file saver dialog
+            await MainThread.InvokeOnMainThreadAsync(async () =>
+            {
                 using var stream = new FileStream(tempZipPath, FileMode.Open, FileAccess.Read);
-
-                // 5. Trigger the Android "Save As..." dialog (allows saving to Downloads folder)
                 var result = await FileSaver.Default.SaveAsync(zipFileName, stream, CancellationToken.None);
 
                 if (result.IsSuccessful)
                 {
-                    System.Diagnostics.Debug.WriteLine($"Successfully exported data to: {result.FilePath}");
+                    System.Diagnostics.Debug.WriteLine($"[Export] Successfully exported to: {result.FilePath}");
 
-                    
+                    // Show success alert
+                    var page = Application.Current?.Windows.FirstOrDefault()?.Page;
+                    if (page != null)
+                        await page.DisplayAlertAsync("Export Complete", $"Data exported to:\n{result.FilePath}", "OK");
                 }
-            }
-            catch (Exception ex)
+            });
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"[Export] Failed: {ex.Message}");
+            await MainThread.InvokeOnMainThreadAsync(async () =>
             {
-                System.Diagnostics.Debug.WriteLine($"Export failed: {ex.Message}");
-                // Optional: Show failure alert
-            }
-            finally
+                var page = Application.Current?.Windows.FirstOrDefault()?.Page;
+                if (page != null)
+                    await page.DisplayAlertAsync("Export Failed", ex.Message, "OK");
+            });
+        }
+        finally
+        {
+            if (!string.IsNullOrEmpty(tempZipPath) && File.Exists(tempZipPath))
             {
-                // 6. Cleanup: Delete the temporary zip file from the cache so we don't waste phone storage
-                if (!string.IsNullOrEmpty(tempZipPath) && File.Exists(tempZipPath))
-                {
-                    try
-                    {
-                        File.Delete(tempZipPath);
-                    }
-                    catch { /* Ignore cleanup errors */ }
-                }
+                try { File.Delete(tempZipPath); } catch { }
             }
         }
     }

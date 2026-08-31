@@ -28,6 +28,9 @@ public partial class PlaylistItem : ObservableObject
     [ObservableProperty][JsonIgnore] public partial bool IsHovered { get; set; }
     [ObservableProperty][JsonIgnore] public partial bool IsSelected { get; set; }
 
+    /// <summary>Multi-selection state (toggled by tapping the icon).</summary>
+    [ObservableProperty][JsonIgnore] public partial bool IsMultiSelected { get; set; }
+
     [ObservableProperty]
     [JsonIgnore]
     public partial Playlist? SourcePlaylist { get; set; }

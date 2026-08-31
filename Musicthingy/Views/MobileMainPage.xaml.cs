@@ -199,10 +199,24 @@ public partial class MobileMainPage : ContentPage
         {
             if (BindingContext is ViewModels.MainViewModel vm)
             {
+                if (vm.IsPlaylistSelectionMode)
+                {
+                    vm.TogglePlaylistSelection(playlist);
+                    return;
+                }
                 vm.IsAutoFollowEnabled = false;
                 vm.SelectedPlaylist = playlist;
             }
             await CloseSidebarInternalAsync();
+        }
+    }
+
+    private void OnPlaylistIconTapped(object? sender, TappedEventArgs e)
+    {
+        if (sender is BindableObject bindable && bindable.BindingContext is Playlist playlist)
+        {
+            if (BindingContext is ViewModels.MainViewModel vm)
+                vm.TogglePlaylistSelection(playlist);
         }
     }
 
@@ -212,10 +226,54 @@ public partial class MobileMainPage : ContentPage
         {
             if (BindingContext is ViewModels.MainViewModel vm)
             {
+                if (vm.IsTrackSelectionMode)
+                {
+                    vm.ToggleItemSelection(track);
+                    return;
+                }
                 vm.IsAutoFollowEnabled = false;
                 vm.CurrentTrack = track;
             }
         }
+    }
+
+    private void OnTrackIconTapped(object? sender, TappedEventArgs e)
+    {
+        if (sender is BindableObject bindable && bindable.BindingContext is PlaylistItem track)
+        {
+            if (BindingContext is ViewModels.MainViewModel vm)
+                vm.ToggleItemSelection(track);
+        }
+    }
+
+    private void OnPlaySelectedClicked(object? sender, EventArgs e)
+    {
+        if (BindingContext is ViewModels.MainViewModel vm)
+            vm.PlaySelectedCommand.Execute(null);
+    }
+
+    private void OnShuffleSelectedClicked(object? sender, EventArgs e)
+    {
+        if (BindingContext is ViewModels.MainViewModel vm)
+            vm.ShuffleSelectedCommand.Execute(null);
+    }
+
+    private void OnSelectAllClicked(object? sender, EventArgs e)
+    {
+        if (BindingContext is ViewModels.MainViewModel vm)
+            vm.ToggleSelectAllTracksCommand.Execute(null);
+    }
+
+    private void OnSelectAllPlaylistsClicked(object? sender, EventArgs e)
+    {
+        if (BindingContext is ViewModels.MainViewModel vm)
+            vm.ToggleSelectAllPlaylistsCommand.Execute(null);
+    }
+
+    private void OnCancelSelectionClicked(object? sender, EventArgs e)
+    {
+        if (BindingContext is ViewModels.MainViewModel vm)
+            vm.CancelSelectionCommand.Execute(null);
     }
 
     private void OnTrackOptionsClicked(object? sender, EventArgs e)
