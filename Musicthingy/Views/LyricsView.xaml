@@ -1,0 +1,110 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentView xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+                         xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+                         x:Class="Musicthingy.Views.LyricsView"
+                         xmlns:models="clr-namespace:Musicthingy.Models">
+
+    <!-- Lyrics Zone: synced (timed) lyrics, static lyrics, and the "no lyrics" prompt.
+             BindingContext is inherited from the host page (MainViewModel). -->
+    <Grid BackgroundColor="Transparent">
+
+        <!-- Timed / Synced Lyrics -->
+        <!-- ScrollView + BindableLayout (not CollectionView): the scroll offset is computed
+                     manually from the laid-out position of the active line, and centered inside the
+                     VISIBLE viewport (the middle of the VIEW, not of the screen).
+                     ComputeHiddenBottom() stays as a safety net for any residual clipping and for
+                     the Android navigation-bar inset (edge-to-edge). -->
+        <ScrollView x:Name="TimedLyricsScrollView" IsVisible="{Binding HasTimedLyrics}">
+            <VerticalStackLayout Spacing="0">
+
+                <!-- Half-viewport padding (kept in sync in code-behind) so the FIRST
+                                     and LAST lines can also be centered in the visible area.
+                                     (The huge blank that used to appear above line 1 was N empty
+                                     0s anchor lines stacked by a ViewModel bug - fixed there.) -->
+                <BoxView x:Name="TopSpacer" HeightRequest="0" BackgroundColor="Transparent" />
+
+                <VerticalStackLayout x:Name="LyricsItemsHost" BindableLayout.ItemsSource="{Binding ActiveTimedLyrics}">
+                    <BindableLayout.ItemTemplate>
+                        <DataTemplate x:DataType="models:TimedLyric">
+                            <!-- Uniform style: every line bold, 22px, base light gray.
+                                                             Active line = white, depth fade vs the active line is
+                                                             applied per-distance from code-behind. Color/opacity
+                                                             never change layout, so centering math stays exact. -->
+                            <Label Text="{Binding Text}"
+                                                                   FontAttributes="Bold"
+                                                                   FontSize="22"
+                                                                   TextColor="{DynamicResource MutedColor}"
+                                                                   HorizontalOptions="Fill"
+                                                                   HorizontalTextAlignment="Center"
+                                                                   LineHeight="1.4"
+                                                                   Margin="10,6,10,6">
+                                <Label.Triggers>
+                                    <!-- The VM inserts ONE empty 0s anchor line so auto-follow
+                                                                             always has a target at the very start. It must not add a
+                                                                             phantom blank line at the top of the list - collapse it. -->
+                                    <DataTrigger TargetType="Label" Binding="{Binding Text}" Value="">
+                                        <Setter Property="IsVisible" Value="False" />
+                                    </DataTrigger>
+                                </Label.Triggers>
+                                <Label.GestureRecognizers>
+                                    <TapGestureRecognizer NumberOfTapsRequired="1" Tapped="OnLyricLineTapped" />
+                                </Label.GestureRecognizers>
+                            </Label>
+                        </DataTemplate>
+                    </BindableLayout.ItemTemplate>
+                </VerticalStackLayout>
+
+                <!-- Half-viewport padding + the hidden bottom strip (nav-bar area),
+                                     kept in sync in code-behind: the spacer is LONGER in content
+                                     coordinates because its lowest part sits under the system nav
+                                     bar - that way the VISIBLE blank below the last line matches
+                                     the one above the first line. -->
+                <BoxView x:Name="BottomSpacer" HeightRequest="0" BackgroundColor="Transparent" />
+
+            </VerticalStackLayout>
+        </ScrollView>
+
+        <!-- The fade/depth effect is applied to the TEXT itself and is anchored
+                     on the HIGHLIGHTED line (distance to it) in BOTH modes: while auto-
+                     following it ramps deep (blend/opacity + real blur); while browsing
+                     it stays gentle with readable limits (opacity floor 0.55, no blur)
+                     so the highlighted line keeps minimum contrast. No gradient overlay
+                     BoxViews exist here, so nothing is ever drawn over the player
+                     controls in Medium state. -->
+
+        <!-- Static (plain text) Lyrics - same look, no highlight/follow features -->
+        <ScrollView VerticalOptions="Fill" IsVisible="{Binding HasStaticLyrics}">
+            <VerticalStackLayout>
+                <Label Text="{Binding CurrentTrack.Lyrics}"
+                                           TextColor="{DynamicResource MutedColor}"
+                                           FontAttributes="Bold"
+                                           FontSize="22"
+                                           HorizontalOptions="Center"
+                                           HorizontalTextAlignment="Center"
+                                           VerticalOptions="Start"
+                                           Margin="10,6,10,6"
+                                           LineHeight="1.4"/>
+                <BoxView HeightRequest="120" BackgroundColor="Transparent"/>
+            </VerticalStackLayout>
+        </ScrollView>
+
+        <!-- Prompt to Find Lyrics -->
+        <ContentView IsVisible="{Binding HasNoLyrics}">
+            <VerticalStackLayout x:Name="NoLyricsPrompt" VerticalOptions="Center" Spacing="16" IsVisible="False" Opacity="0">
+                <Label Text="No lyrics available for this track." TextColor="{DynamicResource MutedColor}" HorizontalOptions="Center" />
+
+                <Button Text="Find Lyrics" Command="{Binding FindLyricsCommand}"
+                                                BackgroundColor="{DynamicResource SurfaceRaised}" TextColor="{DynamicResource AccentColor}" CornerRadius="8" WidthRequest="160" HorizontalOptions="Center">
+                    <Button.Triggers>
+                        <DataTrigger TargetType="Button" Binding="{Binding IsFetchingLyrics}" Value="True">
+                            <Setter Property="IsEnabled" Value="False" />
+                            <Setter Property="Text" Value="Searching..." />
+                        </DataTrigger>
+                    </Button.Triggers>
+                </Button>
+
+                <ActivityIndicator IsRunning="True" Color="{DynamicResource AccentColor}" WidthRequest="24" HeightRequest="24" IsVisible="{Binding IsFetchingLyrics}"/>
+            </VerticalStackLayout>
+        </ContentView>
+    </Grid>
+</ContentView>

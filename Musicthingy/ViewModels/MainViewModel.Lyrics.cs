@@ -87,6 +87,14 @@ public partial class MainViewModel
             {
                 ActiveTimedLyrics.Add(new TimedLyric { Time = kvp.Key, Text = kvp.Value });
             }
+
+            // Always anchor the start so auto-follow has a target immediately
+            // after a track switch. Inserted ONCE, AFTER the loop - the old code
+            // inserted it INSIDE the loop, stacking one empty 0s line PER lyric
+            // (N empty lines = several screens of blank above the first real
+            // line, and auto-follow centering invisible empty lines at the
+            // intro, which looked like the highlight was desynced).
+            ActiveTimedLyrics.Insert(0, new TimedLyric { Time = TimeSpan.Zero, Text = string.Empty });
         }
         else
         {

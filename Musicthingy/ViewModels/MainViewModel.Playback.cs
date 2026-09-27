@@ -348,6 +348,14 @@ public partial class MainViewModel
         _playbackService.Seek((CurrentPositionSeconds * 1000.0) + startMs);
 
         _isDragging = false;
+
+        // Re-sync the highlighted lyric line immediately. TimeChanged is gated
+        // on PlayWhenReady in the playback service, so while PAUSED nothing
+        // else would update the highlight - it stayed on the pre-seek line
+        // (desync) until playback resumed. Tap-to-seek on a lyric line also
+        // goes through here.
+        SyncActiveLyric(TimeSpan.FromSeconds(Math.Max(0, CurrentPositionSeconds)));
+
         SyncOSPlaybackState();
     }
 

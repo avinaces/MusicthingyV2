@@ -19,6 +19,10 @@ public partial class MobilePlayerPaneView : ContentView
     // Flag to pause layout-heavy actions (like ScrollTo) during 60fps animations
     private bool _isAnimating;
 
+    // Increments on every animation start; the stuck-animation watchdog below
+    // uses it to detect that ITS animation is still the current one.
+    private int _animationToken;
+
     private const double MiniHeight = 72;
     private const double MediumHeight = 280;
 
@@ -35,6 +39,9 @@ public partial class MobilePlayerPaneView : ContentView
 
         OpenTagsCommand = new Command<PlaylistItem>(OnOpenTagsClicked);
 
+        // Tapping a timed lyric line seeks the player to that timestamp
+        LyricsZone.LyricTapped += OnLyricTapped;
+
         WeakReferenceMessenger.Default.Register<ActiveLyricChangedMessage>(this, (r, m) =>
         {
             if (_isAnimating || _currentGesture != GestureIntent.None)
@@ -44,7 +51,9 @@ public partial class MobilePlayerPaneView : ContentView
             {
                 if (_targetState != PlayerState.Mini && m.Lyric != null)
                 {
-                    LyricsCollectionView.ScrollTo(m.Lyric, position: ScrollToPosition.Center, animate: true);
+                    // allowResume: this call IS a lyric switch, so paused auto-follow
+                    // may resume (LyricsView still checks its own idle/middle-zone rules)
+                    LyricsZone.ScrollToLyric(m.Lyric, animate: true, allowResume: true);
                 }
             });
         });
@@ -273,7 +282,26 @@ public partial class MobilePlayerPaneView : ContentView
         ExpandedHeaderControls.IsVisible = true;
         DragHandle.IsVisible = true;
         ExpandedContentZone.IsVisible = true;
-        if (NoLyricsPrompt != null) NoLyricsPrompt.IsVisible = true;
+        LyricsZone.PrepareForAnimation();
+
+        // Watchdog: ONLY the animations' finished callbacks clear _isAnimating,
+        // and an interrupted MAUI animation can leave its finished callback
+        // (and its await) permanently pending. While _isAnimating is stuck,
+        // every ActiveLyricChangedMessage is dropped in the handler below and
+        // the highlighted line + auto-follow drift out of sync with playback.
+        // If the flag is still set well after the longest possible animation
+        // (~350ms) - and no drag is in progress - force-finalize so lyric
+        // following always recovers.
+        int token = ++_animationToken;
+        Dispatcher.StartTimer(TimeSpan.FromMilliseconds(700), () =>
+        {
+            if (token != _animationToken || !_isAnimating)
+                return false; // superseded by a newer animation, or finished normally
+            if (_currentGesture != GestureIntent.None)
+                return true; // user is still dragging - keep waiting
+            FinalizeVisibilityForState();
+            return false;
+        });
     }
 
     private void FinalizeVisibilityForState()
@@ -286,15 +314,12 @@ public partial class MobilePlayerPaneView : ContentView
         DragHandle.IsVisible = DragHandle.Opacity > 0.01;
         ExpandedContentZone.IsVisible = PlayerRoot.HeightRequest > (MiniHeight + 5);
 
-        if (NoLyricsPrompt != null)
-            NoLyricsPrompt.IsVisible = NoLyricsPrompt.Opacity > 0.01;
+        LyricsZone.FinalizeVisibility();
 
         // Re-sync lyrics to current position now that the animation has safely completed
         if (_targetState != PlayerState.Mini)
         {
-            var activeLyric = LyricsCollectionView.ItemsSource?.Cast<TimedLyric>().FirstOrDefault(l => l.IsActive);
-            if (activeLyric != null)
-                LyricsCollectionView.ScrollTo(activeLyric, position: ScrollToPosition.Center, animate: true);
+            LyricsZone.ScrollToActiveLyric(animate: true);
         }
     }
 
@@ -309,9 +334,21 @@ public partial class MobilePlayerPaneView : ContentView
             progressToFull = Math.Clamp((height - MediumHeight) / (fullHeight - MediumHeight), 0, 1);
         }
 
-        if (ExpandedContentZone.HeightRequest < 0 || Math.Abs(ExpandedContentZone.HeightRequest - fullHeight) > 1)
+        // The zone is anchored (VerticalOptions=Start) to the TOP of the pane
+        // and pushed down by the header shift (TranslationY further below), so
+        // its height must be the pane height MINUS that shift - its bottom then
+        // lands exactly on the pane's bottom edge when fully expanded. The old
+        // full-height value made the zone overshoot past the screen bottom by
+        // the header height, pushing the lyric viewport - and its scrollbar -
+        // off screen and skewing every centering/spacer math below it.
+        // Uses the FULL-EXPANSION header height (72 + 30), not the animated
+        // one, so the zone's height stays constant during the Mini->Medium
+        // transition instead of forcing a full relayout every animation frame.
+        const double ExpandedHeaderShift = 102;
+        double zoneHeight = Math.Max(0, fullHeight - ExpandedHeaderShift);
+        if (ExpandedContentZone.HeightRequest < 0 || Math.Abs(ExpandedContentZone.HeightRequest - zoneHeight) > 1)
         {
-            ExpandedContentZone.HeightRequest = fullHeight;
+            ExpandedContentZone.HeightRequest = zoneHeight;
         }
 
         double imgSize = 44 + (24 * progressToMedium);
@@ -352,9 +389,9 @@ public partial class MobilePlayerPaneView : ContentView
         double headerHeight = 72 + (30 * progressToMedium);
         ExpandedContentZone.TranslationY = headerHeight;
 
-        if (fullHeight > MediumHeight && NoLyricsPrompt != null)
+        if (fullHeight > MediumHeight)
         {
-            NoLyricsPrompt.Opacity = Math.Clamp(progressToFull * 2, 0, 1);
+            LyricsZone.UpdateForFullScreenProgress(progressToFull);
         }
     }
 
@@ -381,6 +418,22 @@ public partial class MobilePlayerPaneView : ContentView
         {
             _ = Services.SheetManager.Host.ShowAsync(editSheet);
         }
+    }
+
+    /// <summary>
+    /// Seeks the player to the timestamp of the tapped lyric line.
+    /// Uses the same pattern as the position slider: set CurrentPositionSeconds,
+    /// then run the Seek command.
+    /// </summary>
+    private void OnLyricTapped(object? sender, TimedLyric lyric)
+    {
+        if (lyric == null || this.BindingContext is not Musicthingy.ViewModels.MainViewModel vm)
+            return;
+
+        vm.CurrentPositionSeconds = lyric.Time.TotalSeconds;
+
+        if (vm.SeekCommand is System.Windows.Input.ICommand seek && seek.CanExecute(null))
+            seek.Execute(null);
     }
 
     /// <summary>

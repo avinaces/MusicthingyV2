@@ -26,7 +26,12 @@ public class TrackCacheService
     {
         _settingsManager = settingsManager;
         _cacheDir = Path.Combine(FileSystem.CacheDirectory, "TrackCache");
-        _httpClient = new HttpClient { Timeout = TimeSpan.FromMinutes(10) };
+        // Use the shared IPv4-forced handler — same as the resolver, avoids
+        // IPv6 DNS issues and gets the same throttling behavior as playback.
+        _httpClient = new HttpClient(YouTubeResolverService.Ipv4Handler)
+        {
+            Timeout = TimeSpan.FromMinutes(10)
+        };
 
         if (!Directory.Exists(_cacheDir))
             Directory.CreateDirectory(_cacheDir);
@@ -65,19 +70,25 @@ public class TrackCacheService
         // Prevent multiple simultaneous downloads of the same file
         return _activeDownloads.GetOrAdd(id, async _ =>
         {
+            var totalSw = System.Diagnostics.Stopwatch.StartNew();
             try
             {
                 string tempPath = finalPath + "." + Guid.NewGuid() + ".tmp";
 
+                Debug.WriteLine($"[Cache] Starting download: {originalUrl} (stream URL length: {streamUrl.Length})");
+                var getSw = System.Diagnostics.Stopwatch.StartNew();
                 using var response = await _httpClient.GetAsync(streamUrl, HttpCompletionOption.ResponseHeadersRead);
+                getSw.Stop();
+                Debug.WriteLine($"[Cache] GET response took {getSw.ElapsedMilliseconds}ms, status={response.StatusCode}");
+
                 response.EnsureSuccessStatusCode();
 
                 long? totalBytes = response.Content.Headers.ContentLength;
+                Debug.WriteLine($"[Cache] Content-Length: {totalBytes?.ToString() ?? "unknown"} bytes");
+
                 using var fs = new FileStream(tempPath, FileMode.Create, FileAccess.Write, FileShare.None, bufferSize: 65536, useAsync: true);
                 using var stream = await response.Content.ReadAsStreamAsync();
 
-                // 64KB buffer — matches the default FileStream buffer but avoids
-                // the per-byte overhead of the 8KB default in CopyToAsync.
                 byte[] buffer = new byte[65536];
                 int read;
                 long downloadedBytes = 0;
@@ -98,6 +109,7 @@ public class TrackCacheService
                         double speedKBps = elapsedSec > 0 ? bytesSinceLastReport / 1024.0 / elapsedSec : 0;
 
                         DownloadProgressChanged?.Invoke(new DownloadProgress(originalUrl, downloadedBytes, totalBytes, speedKBps));
+                        Debug.WriteLine($"[Cache] Progress: {downloadedBytes}/{totalBytes?.ToString() ?? "?"} bytes ({speedKBps:F0} KB/s)");
 
                         lastReportBytes = downloadedBytes;
                         lastReportTicks = sw.ElapsedTicks;
@@ -105,6 +117,8 @@ public class TrackCacheService
                 }
 
                 fs.Close();
+                totalSw.Stop();
+                Debug.WriteLine($"[Cache] Download complete: {downloadedBytes} bytes in {totalSw.ElapsedMilliseconds}ms ({downloadedBytes / 1024.0 / totalSw.Elapsed.TotalSeconds:F0} KB/s avg)");
 
                 // Atomically move the fully downloaded file to mark it as valid
                 File.Move(tempPath, finalPath, overwrite: true);
@@ -118,7 +132,8 @@ public class TrackCacheService
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"[Cache] Error caching track: {ex.Message}");
+                totalSw.Stop();
+                Debug.WriteLine($"[Cache] Error after {totalSw.ElapsedMilliseconds}ms: {ex.Message}");
             }
             finally
             {

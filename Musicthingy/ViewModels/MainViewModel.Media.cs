@@ -335,12 +335,54 @@ public partial class MainViewModel
             _playbackService.Play(resolvedMedia.Url, resolvedMedia.UserAgent, targetStartMs);
 
             // ==========================================
-            // NEW CACHE LOGIC: Trigger Background Cache
+            // BACKGROUND CACHE: Use YoutubeExplode to get a fresh stream URL.
+            // YoutubeExplode 6.6.2 now uses VISIONOS (same as our resolver) but
+            // may select a different itag or URL variant that downloads faster.
+            // It also handles cipher deciphering for videos where VISIONOS returns
+            // ciphered URLs instead of direct ones.
             // ==========================================
             if (!isCached && !resolvedMedia.Url.StartsWith("/") && !resolvedMedia.Url.StartsWith("file://"))
             {
-                // Fire and forget downloading the track quietly in the background while it streams!
-                _ = _trackCacheService.CacheTrackAsync(newValue.Url, resolvedMedia.Url);
+                string cacheOriginalUrl = newValue.Url;
+                string fallbackCacheUrl = resolvedMedia.Url; // use resolved URL as fallback
+
+                _ = Task.Run(async () =>
+                {
+                    string cacheUrl = fallbackCacheUrl;
+
+                    try
+                    {
+                        // Try YoutubeExplode first — it may get a different/faster URL
+                        YoutubeExplode.YoutubeClient? yteClient = Services.YouTubeResolverService.HasCookies
+                            ? Services.YouTubeResolverService.GetYoutubeClientWithCookies()
+                            : _youtubeResolver.GetYoutubeExplodeClient();
+
+                        if (yteClient != null)
+                        {
+                            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+                            var manifest = await yteClient.Videos.Streams.GetManifestAsync(
+                                YoutubeExplode.Videos.VideoId.Parse(cacheOriginalUrl), cts.Token);
+
+                            var bestStream = manifest.GetAudioOnlyStreams()
+                                .OrderByDescending(s => s.AudioCodec.Contains("opus") ? 3 :
+                                                         s.AudioCodec.Contains("mp4a") ? 2 : 1)
+                                .ThenByDescending(s => s.Bitrate)
+                                .FirstOrDefault();
+
+                            if (bestStream != null && !string.IsNullOrEmpty(bestStream.Url))
+                            {
+                                cacheUrl = bestStream.Url;
+                                Debug.WriteLine($"[Cache] Using YoutubeExplode URL for caching (itag may differ from playback)");
+                            }
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        Debug.WriteLine($"[Cache] YoutubeExplode URL fetch failed, using VISIONOS URL: {ex.Message}");
+                    }
+
+                    await _trackCacheService.CacheTrackAsync(cacheOriginalUrl, cacheUrl);
+                });
             }
 
             totalSw.Stop();

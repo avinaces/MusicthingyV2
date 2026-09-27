@@ -187,11 +187,14 @@ public partial class YouTubeResolverService
         _youtubeClient = new YoutubeClient(new HttpClient(_ipv4Handler));
     }
 
+    /// <summary>Exposes the shared anonymous YoutubeExplode client for external use (e.g. cache downloads).</summary>
+    public YoutubeClient GetYoutubeExplodeClient() => _youtubeClient;
+
     /// <summary>
     /// Creates (or returns cached) YoutubeExplode client with cookies attached.
     /// Cached statically — invalidated when Cookies setter is called.
     /// </summary>
-    private static YoutubeClient? GetYoutubeClientWithCookies()
+    public static YoutubeClient? GetYoutubeClientWithCookies()
     {
         if (!HasCookies) return null;
         if (_cookieClientCache != null) return _cookieClientCache;
@@ -815,7 +818,11 @@ public partial class YouTubeResolverService
             Name = "WEB",
             Version = "2.20260819.00.00",
             Id = "1",
-            OsName = null, OsVersion = null, Make = null, Model = null, Sdk = null,
+            OsName = null,
+            OsVersion = null,
+            Make = null,
+            Model = null,
+            Sdk = null,
             UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
         };
 
@@ -828,7 +835,11 @@ public partial class YouTubeResolverService
             Name = "ANDROID",
             Version = "21.26.364",
             Id = "3",
-            OsName = "Android", OsVersion = "11", Make = "Google", Model = "Pixel 8 Pro", Sdk = "30",
+            OsName = "Android",
+            OsVersion = "11",
+            Make = "Google",
+            Model = "Pixel 8 Pro",
+            Sdk = "30",
             UA = "com.google.android.youtube/21.26.364 (Linux; U; Android 11; en_US; Pixel 8 Pro; Build/RQ3A.211001.001) gzip"
         };
     }

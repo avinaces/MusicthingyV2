@@ -91,5 +91,11 @@
 		<TrimmerRootAssembly Include="Microsoft.Maui.Controls" />
 	</ItemGroup>
 
+	<ItemGroup>
+	  <MauiXaml Update="Views\LyricsView.xaml">
+	    <Generator>MSBuild:Compile</Generator>
+	  </MauiXaml>
+	</ItemGroup>
+
 	<Import Project="Signing.props" Condition="Exists('Signing.props')" />
 </Project>
