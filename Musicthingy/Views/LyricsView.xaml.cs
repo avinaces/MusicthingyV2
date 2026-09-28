@@ -21,11 +21,7 @@ namespace Musicthingy.Views;
 ///
 /// Behavior notes:
 /// - Centering targets the middle of the VISIBLE viewport (the middle of the
-///   view, not of the screen), raised by a manual offset of ManualRiseLines
-///   (1.5 line pitches) - the user-tuned compensation for the residual
-///   top/bottom geometry asymmetry (spread across zone padding, nav-bar
-///   inset and native text layout; not worth modeling exactly). Half-viewport
-///   spacers above the first / below
+///   view, not of the screen). Half-viewport spacers above the first / below
 ///   the last line let EVERY line - including the first and last - be
 ///   centered; the bottom spacer additionally carries the hidden bottom strip
 ///   (Android nav-bar area) so the VISIBLE blank below the last line matches
@@ -34,15 +30,19 @@ namespace Musicthingy.Views;
 ///   The expanded pane zone is sized to fit the screen; ComputeHiddenBottom()
 ///   subtracts the Android navigation-bar area (edge-to-edge) - see
 ///   LyricsPlatformInsets.
-/// - Depth effect is anchored on the HIGHLIGHTED line, never on the viewport
-///   middle: distance 1 keeps the normal inactive color, farther lines blend
-///   toward the background and fade, converging to the limit WITHIN THE
-///   FIRST 3 LINES (FadeConvergeLines). While AUTO-FOLLOWING the far lines are
-///   additionally blurred (Android RenderEffect via LyricsBlurPlatform - no
-///   effect registration needed). While BROWSING the fade STAYS ON with
-///   readable limits (opacity floor 0.55, blend cap 0.40, NO blur) - the
-///   highlighted line keeps minimum contrast (full white) and pops against
-///   the gently faded rest, near or far.
+/// - Depth effect is anchored on the HIGHLIGHTED line and is the SAME for
+///   auto-follow on and off: an illumination falloff (quadratic, inverse-
+///   square-like) - the highlighted line lights up the surrounding rows and
+///   reaches the minimum contrast at the SIXTH line (~5.5 visible rows per
+///   side, so the 6th is right at the view edge). The highlighted line keeps
+///   FULL white/opacity in both modes (the min-contrast rule). The ONLY mode
+///   difference is the blur: while AUTO-FOLLOWING the rows around the active
+///   one are progressively blurred (barely / readable / more / nearly
+///   unreadable / smeared from the edge outward); while BROWSING no blur.
+///   Styling is applied PER ROW within a window around the active line, not
+///   to every element of the list, and collection-change restyles are
+///   coalesced into one pass - both keep the native work bounded (a
+///   RenderEffect per far label caused multi-second lag spikes on open).
 /// - The fade is the text color/opacity itself; there is no gradient overlay
 ///   and no viewport-position-based melting, so nothing is ever drawn over
 ///   the player controls in Medium state.
@@ -56,13 +56,6 @@ public partial class LyricsView : ContentView
 {
     // Fallback when a label has not been laid out yet (FontSize 22 * LineHeight 1.4 + 6px top/bottom margins)
     private const double EstimatedLineHeight = 43;
-
-    // Manual vertical offset of the centered line, in LINE PITCHES: the active
-    // line is made to sit this much HIGHER than the exact middle of the view.
-    // The residual top/bottom padding asymmetry comes from spread-out native
-    // geometry (pane zone padding, nav-bar inset, text layout) and is not
-    // worth modeling exactly - the user tuned this constant instead.
-    private const double ManualRiseLines = 1.5;
 
     // Spacer heights are quantized so the lyric list is NOT re-measured on
     // every frame of the player's resize animation. Quantization is FINE (8dp)
@@ -103,6 +96,29 @@ public partial class LyricsView : ContentView
     // sets are skipped (labels are recreated on every track change, so the
     // cache is cleared there).
     private readonly Dictionary<Label, (Color Color, double Opacity)> _lastAppliedStyles = new();
+
+    // Coalesces styling after collection changes. The ViewModel rebuilds the
+    // lyric list with Clear + N Add events; restyling on EVERY event re-styled
+    // the whole growing list N+1 times (O(N^2) native property sets, plus a
+    // native RenderEffect per far label in each pass) - the multi-second lag
+    // spike when opening lyrics. One queued pass sees the final list instead.
+    private bool _restyleScheduled;
+
+    private void ScheduleDistanceStyles(bool clearCache)
+    {
+        if (clearCache)
+            _lastAppliedStyles.Clear(); // labels are recreated - drop stale entries
+
+        if (_restyleScheduled)
+            return; // a pass is already queued - it will see the final state
+
+        _restyleScheduled = true;
+        Dispatcher.Dispatch(() =>
+        {
+            _restyleScheduled = false;
+            ApplyDistanceStyles();
+        });
+    }
 
     // Track-change auto-follow: when the lyric list is rebuilt we ALWAYS resume
     // following and scroll to the start of the new list (the empty 0s anchor
@@ -196,11 +212,7 @@ public partial class LyricsView : ContentView
         if (visibleHeight <= 0)
             return; // lyric strip not visible (e.g. Medium state) - styling only
 
-        // Manual rise: scrolling further DOWN by the rise moves the content UP
-        // on screen, so the active line ends up ManualRiseLines ABOVE the
-        // middle of the visible viewport.
-        double rise = ManualRiseLines * GetLinePitch(targetLabel);
-        double unclampedOffset = GetContentCenterY(targetLabel, index) - visibleHeight / 2 + rise;
+        double unclampedOffset = GetContentCenterY(targetLabel, index) - visibleHeight / 2;
         double maxOffset = Math.Max(0, TimedLyricsScrollView.ContentSize.Height - TimedLyricsScrollView.Height);
         double targetOffset = Math.Clamp(unclampedOffset, 0, maxOffset);
         bool clamped = Math.Abs(unclampedOffset - targetOffset) > 0.5; // line cannot reach center (song start/end)
@@ -210,7 +222,7 @@ public partial class LyricsView : ContentView
         System.Diagnostics.Debug.WriteLine(
             $"[LyricsView] center: idx={index} lineCenterY={GetContentCenterY(targetLabel, index):F1} " +
             $"viewportH={TimedLyricsScrollView.Height:F1} contentH={TimedLyricsScrollView.ContentSize.Height:F1} " +
-            $"hiddenBottom={hidden:F1} visibleH={visibleHeight:F1} rise={rise:F1} target={targetOffset + _centerBiasDp:F1} " +
+            $"hiddenBottom={hidden:F1} visibleH={visibleHeight:F1} target={targetOffset + _centerBiasDp:F1} " +
             $"(raw {unclampedOffset:F1}, max {maxOffset:F1}, bias {_centerBiasDp:F1})");
 
         // Scroll, then MEASURE the line's real on-screen position, snap it to
@@ -314,20 +326,6 @@ public partial class LyricsView : ContentView
         return TopSpacer.HeightRequest + index * EstimatedLineHeight + EstimatedLineHeight / 2;
     }
 
-    /// <summary>
-    /// Distance between the tops of two successive lyric lines: the label's
-    /// laid-out height plus its vertical margins (the XAML template uses
-    /// Margin="10,6,10,6"), or the design estimate when layout has not run.
-    /// Defines what "one line" means for the manual rise offset.
-    /// </summary>
-    private double GetLinePitch(Label label)
-    {
-        double pitch = label.Height > 0
-            ? label.Height + label.Margin.VerticalThickness
-            : EstimatedLineHeight;
-        return pitch > 0 ? pitch : EstimatedLineHeight;
-    }
-
     private bool IsInMiddleZone(Label label, int index)
     {
         double hidden = ComputeHiddenBottom();
@@ -336,10 +334,7 @@ public partial class LyricsView : ContentView
             return false;
 
         double centerYOnScreen = GetContentCenterY(label, index) - TimedLyricsScrollView.ScrollY;
-        // The "middle" is the RISEN center - the same reference the centering
-        // itself uses - so the resume check matches where lines actually sit.
-        double risenCenter = visibleHeight / 2 - ManualRiseLines * GetLinePitch(label);
-        return Math.Abs(centerYOnScreen - risenCenter) <= visibleHeight * MiddleZoneRatio;
+        return Math.Abs(centerYOnScreen - visibleHeight / 2) <= visibleHeight * MiddleZoneRatio;
     }
 
     /// <summary>
@@ -484,17 +479,12 @@ public partial class LyricsView : ContentView
         if (measured == null || ideal == null)
             return; // cannot measure (no handler yet / non-Android) - estimate-only centering
 
-        // The desired position is ManualRiseLines ABOVE the visible middle -
-        // the same rise the estimate target used, so measurement and target
-        // agree and the learned bias stays a pure geometry residual.
-        double desired = ideal.Value - ManualRiseLines * GetLinePitch(targetLabel);
-
         // Ignore the sample if the active line changed while we were measuring.
         bool stillActive = targetLabel.BindingContext is TimedLyric tl && tl.IsActive;
-        double delta = measured.Value - desired;
+        double delta = measured.Value - ideal.Value;
 
         System.Diagnostics.Debug.WriteLine(
-            $"[LyricsView] feedback: measured={measured.Value:F1} ideal={desired:F1} delta={delta:F1} " +
+            $"[LyricsView] feedback: measured={measured.Value:F1} ideal={ideal.Value:F1} delta={delta:F1} " +
             $"biasWas={_centerBiasDp:F1} learn={(allowLearn && stillActive ? 1 : 0)}");
 
         if (Math.Abs(delta) <= FeedbackToleranceDp)
@@ -508,7 +498,7 @@ public partial class LyricsView : ContentView
             _centerBiasDp = Math.Clamp(_centerBiasDp + delta, -200, 200);
 
         // Instant corrective scroll: moving the content down by delta moves
-        // the line up by delta, onto the risen center.
+        // the line up by delta, onto the exact center.
         await ProgrammaticScrollAsync(TimedLyricsScrollView.ScrollY + delta, animate: false);
     }
 
@@ -581,22 +571,22 @@ public partial class LyricsView : ContentView
 
     /// <summary>
     /// Applies the depth + highlight look in one pass. The effect is anchored
-    /// on the ACTIVE line - each line's DISTANCE to it decides the styling -
+    /// on the ACTIVE line - each row's DISTANCE to it decides the styling -
     /// never on the viewport middle, so the look is identical wherever the
-    /// list is scrolled. Two regimes:
-    /// - AUTO-FOLLOWING: full depth - active = white; distance 1 = normal
-    ///   inactive gray; farther lines blend toward the background, fade and
-    ///   are blurred (Android RenderEffect). The fade is what makes the blur
-    ///   read as "depth" instead of a smudge.
-    /// - BROWSING (auto-follow off): NO blur, but the fade STAYS ON with
-    ///   readable contrast limits (blend cap 0.40, opacity floor 0.55) - the
-    ///   min-contrast rule: the highlighted line keeps FULL white/opacity and
-    ///   pops against the gently faded rest, whether it is near or far.
-    /// In BOTH regimes the ramp CONVERGES WITHIN THE FIRST 3 LINES away from
-    /// the active one (FadeConvergeLines): distance 1 is still a normal
-    /// inactive line, distance 2 is halfway, distance >= 3 sits at the limit.
-    /// The fade is the text color/opacity itself; nothing is ever drawn over
-    /// the player (no gradient overlay, no viewport-position melting). Styling
+    /// list is scrolled. ONE fade for both modes: an illumination falloff
+    /// (quadratic, inverse-square-like) - the highlighted line lights up the
+    /// surrounding rows, the glow decays with the square of the normalized
+    /// distance and reaches the minimum contrast at the SIXTH row (~5.5
+    /// visible rows per side, so the 6th is the view edge). The highlighted
+    /// line keeps FULL white/opacity in both modes (the min-contrast rule).
+    /// The ONLY mode difference is the blur: while AUTO-FOLLOWING the rows
+    /// around the active one are progressively blurred (barely / readable /
+    /// more / nearly unreadable / smeared from the view edge outward); while
+    /// BROWSING there is no blur.
+    /// Styling is applied PER ROW inside a window around the active line, not
+    /// to every element of the list - beyond the window every row sits at the
+    /// same floor look anyway. This bounds the native work (a RenderEffect per
+    /// far label caused multi-second lag spikes when opening lyrics). Styling
     /// only changes when the active line or the follow state changes, NOT on
     /// scroll - redundant native updates are skipped via _lastAppliedStyles.
     /// </summary>
@@ -609,20 +599,23 @@ public partial class LyricsView : ContentView
         Color mutedColor = GetThemeColor("MutedColor", Color.FromArgb("#989C9F"));
         Color bgColor = GetThemeColor("SurfaceCanvas", Color.FromArgb("#111214"));
 
-        // Two depth regimes:
-        //  - Following: full "melt into the background" - real blur, strong
-        //    color blend, low opacity floor.
-        //  - Browsing: readable contrast limits, NO blur - distant lines keep
-        //    >= 55% opacity while the highlighted line stays at 100%.
-        double blendCap = _isFollowing ? 0.75 : 0.40;
-        double opacityFloor = _isFollowing ? 0.10 : 0.55;
-        const double blurCap = 14.0;
+        // ONE fade for both modes (user spec): an illumination falloff - the
+        // highlighted line "lights up" the surrounding rows and the glow
+        // decays with the SQUARE of the normalized distance (inverse-square
+        // flavored), reaching the minimum contrast at the SIXTH line. There
+        // are ~5.5 visible rows on each side, so the 6th is the view edge.
+        // The old 3-line ramp collapsed far too early.
+        const double FadeConvergeLines = 6.0;
+        const double BlendCap = 0.75;     // how far the color melts into the bg
+        const double OpacityFloor = 0.10; // minimum contrast of far rows
 
-        // The fade reaches its minimum-contrast limit WITHIN THE FIRST 3 LINES
-        // away from the highlighted one (user-tuned): much steeper than the old
-        // linear per-step ramp, which needed ~9 lines to fully converge and
-        // made the whole list look uniformly flat.
-        const double FadeConvergeLines = 3.0;
+        // Styling is applied PER ROW inside a window around the active line,
+        // not to every element of the list: beyond the window every row sits
+        // at the same floor look anyway. This bounds the native work - a
+        // RenderEffect per far label caused multi-second lag spikes on open.
+        const int StyleWindowLines = 12;
+
+        Color floorColor = BlendColors(mutedColor, bgColor, BlendCap);
 
         var children = LyricsItemsHost.Children;
         for (int i = 0; i < children.Count; i++)
@@ -649,15 +642,40 @@ public partial class LyricsView : ContentView
             }
             else
             {
-                // distance 1 -> t = 0: the lines right next to the active one
-                // look EXACTLY like normal inactive lines. t reaches 1 at
-                // distance FadeConvergeLines - fully converged to the floor/cap.
                 int distance = Math.Abs(i - activeIndex);
-                double t = Math.Clamp((distance - 1) / (FadeConvergeLines - 1), 0, 1);
-                targetColor = BlendColors(mutedColor, bgColor, blendCap * t);
-                targetOpacity = 1.0 - (1.0 - opacityFloor) * t;
-                if (_isFollowing)
-                    blur = blurCap * t;
+                if (distance > StyleWindowLines)
+                {
+                    // Outside the window: uniform floor look, no blur (cheap
+                    // cached path - keeps native RenderEffects bounded).
+                    targetColor = floorColor;
+                    targetOpacity = OpacityFloor;
+                }
+                else
+                {
+                    // distance 1 -> x = 0: the row right next to the active
+                    // one keeps the normal inactive color. t reaches 1 at
+                    // distance FadeConvergeLines (the 6th row - view edge).
+                    double x = (distance - 1) / (FadeConvergeLines - 1);
+                    double t = Math.Clamp(x * x, 0, 1);
+                    targetColor = BlendColors(mutedColor, bgColor, BlendCap * t);
+                    targetOpacity = 1.0 - (1.0 - OpacityFloor) * t;
+                    if (_isFollowing)
+                    {
+                        // Per-row blur curve (user-tuned, one step softer than
+                        // before): next to the highlight BARELY blurred, then
+                        // a bit more but still READABLE, then more, then
+                        // nearly unreadable - from the view edge outward the
+                        // rows melt into the background with the fade.
+                        blur = distance switch
+                        {
+                            1 => 1.0,
+                            2 => 2.0,
+                            3 => 5.0,
+                            4 => 11.0,
+                            _ => 14.0
+                        };
+                    }
+                }
             }
 
             // Skip redundant native updates.
@@ -773,8 +791,7 @@ public partial class LyricsView : ContentView
         // it, treat it as a track change, and restyle the fresh labels.
         EnsureItemsHooked();
         NotifyTrackChanged();
-        _lastAppliedStyles.Clear(); // fresh labels incoming
-        Dispatcher.Dispatch(() => ApplyDistanceStyles());
+        ScheduleDistanceStyles(clearCache: true); // fresh labels incoming
     }
 
     private void OnLyricsCollectionChanged(object? sender, NotifyCollectionChangedEventArgs e)
@@ -785,8 +802,7 @@ public partial class LyricsView : ContentView
         if (e.Action == NotifyCollectionChangedAction.Reset)
             NotifyTrackChanged();
 
-        _lastAppliedStyles.Clear(); // labels are recreated - drop stale entries
-        Dispatcher.Dispatch(() => ApplyDistanceStyles());
+        ScheduleDistanceStyles(clearCache: e.Action == NotifyCollectionChangedAction.Reset);
     }
 
     /// <summary>
@@ -859,7 +875,7 @@ public partial class LyricsView : ContentView
     {
         base.OnBindingContextChanged();
         EnsureItemsHooked();
-        Dispatcher.Dispatch(() => ApplyDistanceStyles());
+        ScheduleDistanceStyles(clearCache: true);
     }
 }
 
