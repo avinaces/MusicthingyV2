@@ -1,4 +1,5 @@
-﻿using System;
+using System;
+using System.Collections.Generic;
 using Microsoft.Maui.Controls;
 #if ANDROID
 using Android.Graphics;
@@ -29,6 +30,17 @@ public static class LyricsBlurPlatform
     public static readonly BindableProperty RadiusProperty =
         BindableProperty.CreateAttached("Radius", typeof(double), typeof(LyricsBlurPlatform), 0.0,
             propertyChanged: OnRadiusChanged);
+
+    // Cache of shared native blur effects, keyed by the rounded sigma in px.
+    // Creating a RenderEffect is not free and the blur ladder only ever uses
+    // a handful of distinct values, so every tier maps to ONE shared native
+    // instance (created once, reused across all labels and restyles) instead
+    // of a fresh allocation per label per change - hundreds of per-open
+    // allocations were part of the lag spike when opening lyrics. Bounded
+    // (one entry per tier); entries are never disposed before process exit.
+#if ANDROID
+    private static readonly Dictionary<int, RenderEffect> _effectCache = new();
+#endif
 
     public static void SetRadius(BindableObject view, double radiusDp) => view.SetValue(RadiusProperty, radiusDp);
 
@@ -82,9 +94,21 @@ public static class LyricsBlurPlatform
         // a "14dp" cap arrives as 14px (~4dp on a 3.5x screen) and is invisible.
         float sigma = (float)(radiusDp * density);
 
-        view.SetRenderEffect(radiusDp > 0.01
-            ? RenderEffect.CreateBlurEffect(sigma, sigma, Shader.TileMode.Clamp)
-            : null);
+        if (radiusDp > 0.01)
+        {
+            int sigmaPx = Math.Max(1, (int)Math.Round(sigma));
+            if (!_effectCache.TryGetValue(sigmaPx, out RenderEffect? effect))
+            {
+                effect = RenderEffect.CreateBlurEffect(sigmaPx, sigmaPx, Shader.TileMode.Clamp);
+                _effectCache[sigmaPx] = effect;
+            }
+
+            view.SetRenderEffect(effect);
+        }
+        else
+        {
+            view.SetRenderEffect(null);
+        }
 
         System.Diagnostics.Debug.WriteLine(
             $"[LyricsBlur] applied {radiusDp:F1}dp -> sigma {sigma:F1}px on {view.GetType().Name}");

@@ -26,30 +26,33 @@
                                 <VerticalStackLayout x:Name="LyricsItemsHost" BindableLayout.ItemsSource="{Binding ActiveTimedLyrics}">
                                         <BindableLayout.ItemTemplate>
                                                 <DataTemplate x:DataType="models:TimedLyric">
-                                                        <!-- Uniform style: every line bold, 22px, base light gray.
-                                                             Active line = white, depth fade vs the active line is
-                                                             applied per-distance from code-behind. Color/opacity
-                                                             never change layout, so centering math stays exact. -->
-                                                        <Label Text="{Binding Text}"
-                                                                   FontAttributes="Bold"
-                                                                   FontSize="22"
-                                                                   TextColor="{DynamicResource MutedColor}"
-                                                                   HorizontalOptions="Fill"
-                                                                   HorizontalTextAlignment="Center"
-                                                                   LineHeight="1.4"
-                                                                   Margin="10,6,10,6">
-                                                                <Label.Triggers>
+                                                        <!-- One BLOCK per lyric line. Uniform style: every line bold,
+                                                             22px, base light gray. Active line = white; the depth fade
+                                                             vs the active line is applied PER WRAPPED ROW from code-behind
+                                                             (a long line that wraps is split into one Label per visual
+                                                             row, each styled/blurred independently). Color/opacity never
+                                                             change layout, so centering math stays exact. -->
+                                                        <VerticalStackLayout Spacing="0" Margin="10,6,10,6">
+                                                                <VerticalStackLayout.Triggers>
                                                                         <!-- The VM inserts ONE empty 0s anchor line so auto-follow
                                                                              always has a target at the very start. It must not add a
                                                                              phantom blank line at the top of the list - collapse it. -->
-                                                                        <DataTrigger TargetType="Label" Binding="{Binding Text}" Value="">
+                                                                        <DataTrigger TargetType="VerticalStackLayout" Binding="{Binding Text}" Value="">
                                                                                 <Setter Property="IsVisible" Value="False" />
                                                                         </DataTrigger>
-                                                                </Label.Triggers>
-                                                                <Label.GestureRecognizers>
-                                                                        <TapGestureRecognizer NumberOfTapsRequired="1" Tapped="OnLyricLineTapped" />
-                                                                </Label.GestureRecognizers>
-                                                        </Label>
+                                                                </VerticalStackLayout.Triggers>
+                                                                <Label Text="{Binding Text}"
+                                                                           FontAttributes="Bold"
+                                                                           FontSize="22"
+                                                                           TextColor="{DynamicResource MutedColor}"
+                                                                           HorizontalOptions="Fill"
+                                                                           HorizontalTextAlignment="Center"
+                                                                           LineHeight="1.4">
+                                                                        <Label.GestureRecognizers>
+                                                                                <TapGestureRecognizer NumberOfTapsRequired="1" Tapped="OnLyricLineTapped" />
+                                                                        </Label.GestureRecognizers>
+                                                                </Label>
+                                                        </VerticalStackLayout>
                                                 </DataTemplate>
                                         </BindableLayout.ItemTemplate>
                                 </VerticalStackLayout>
@@ -65,13 +68,15 @@
                 </ScrollView>
 
                 <!-- The fade/depth effect is applied to the TEXT itself, anchored on the
-                     HIGHLIGHTED line (distance to it), IDENTICAL with auto-follow on or
-                     off: an illumination falloff (quadratic, inverse-square-like) that
-                     reaches the minimum contrast at the SIXTH visible row. The only mode
-                     difference is blur: following = per-row blur around the highlight
-                     (barely / readable / more / nearly unreadable / smeared at the edge),
-                     browsing = no blur. No gradient overlay BoxViews exist here, so
-                     nothing is ever drawn over the player controls in Medium state. -->
+                     HIGHLIGHTED line (distance to it), with the same illumination falloff
+                     (quadratic, inverse-square-like) in both modes: it reaches its minimum
+                     at the SIXTH visible row. While BROWSING the minimum contrast floor
+                     ALWAYS stays readable; while FOLLOWING the fade goes deeper and the
+                     rows around the highlight are progressively blurred (barely / readable
+                     / more / nearly unreadable / smeared at the edge). Effects are applied
+                     PER WRAPPED ROW (code-behind splits long lines into one Label per
+                     visual row). No gradient overlay BoxViews exist here, so nothing is
+                     ever drawn over the player controls in Medium state. -->
 
                 <!-- Static (plain text) Lyrics - same look, no highlight/follow features -->
                 <ScrollView VerticalOptions="Fill" IsVisible="{Binding HasStaticLyrics}">

@@ -30,19 +30,25 @@ namespace Musicthingy.Views;
 ///   The expanded pane zone is sized to fit the screen; ComputeHiddenBottom()
 ///   subtracts the Android navigation-bar area (edge-to-edge) - see
 ///   LyricsPlatformInsets.
-/// - Depth effect is anchored on the HIGHLIGHTED line and is the SAME for
-///   auto-follow on and off: an illumination falloff (quadratic, inverse-
-///   square-like) - the highlighted line lights up the surrounding rows and
-///   reaches the minimum contrast at the SIXTH line (~5.5 visible rows per
-///   side, so the 6th is right at the view edge). The highlighted line keeps
-///   FULL white/opacity in both modes (the min-contrast rule). The ONLY mode
-///   difference is the blur: while AUTO-FOLLOWING the rows around the active
-///   one are progressively blurred (barely / readable / more / nearly
-///   unreadable / smeared from the edge outward); while BROWSING no blur.
-///   Styling is applied PER ROW within a window around the active line, not
-///   to every element of the list, and collection-change restyles are
-///   coalesced into one pass - both keep the native work bounded (a
-///   RenderEffect per far label caused multi-second lag spikes on open).
+/// - Depth effect is anchored on the HIGHLIGHTED line: the same illumination
+///   falloff (quadratic, inverse-square-like) in BOTH modes - the highlighted
+///   line lights up the surrounding rows and reaches its minimum at the SIXTH
+///   line (~5.5 visible rows per side, so the 6th is right at the view edge).
+///   While BROWSING the minimum contrast floor ALWAYS stays readable (opacity
+///   0.55, color only 40% into the background) so the lyrics can still be
+///   read; while FOLLOWING the fade goes deep (floor 0.10) and the rows
+///   around the highlight are progressively blurred (barely / readable /
+///   more / nearly unreadable / smeared at the edge).
+/// - Effects are applied PER WRAPPED ROW: a line too long for the viewport
+///   wraps into several visual rows, and the code-behind splits it into one
+///   Label per visual row (Android text measurement, matching the native
+///   line breaks). Every row's PHYSICAL distance to the highlighted block
+///   then decides its blur/fade, so a wrapped line reads as several separate
+///   elements - the rows of a long line darken and blur row by row.
+///   Styling runs in a window around the active line, restyles are coalesced
+///   into one pass, and redundant native updates are skipped - all to keep
+///   the native work bounded (per-label RenderEffect churn caused
+///   multi-second lag spikes when opening lyrics).
 /// - The fade is the text color/opacity itself; there is no gradient overlay
 ///   and no viewport-position-based melting, so nothing is ever drawn over
 ///   the player controls in Medium state.
@@ -91,11 +97,24 @@ public partial class LyricsView : ContentView
     // - keeping it made the whole list sit visibly too low/high ("offset").
     private double _lastBiasHeight;
 
-    // Last color/opacity applied to each label - styling re-runs whenever the
-    // active line or the follow state changes, so redundant native property
-    // sets are skipped (labels are recreated on every track change, so the
-    // cache is cleared there).
+    // Last color/opacity applied to each row label - styling re-runs whenever
+    // the active line or the follow state changes, so redundant native
+    // property sets are skipped (labels are recreated on every track change,
+    // so the cache is cleared there).
     private readonly Dictionary<Label, (Color Color, double Opacity)> _lastAppliedStyles = new();
+
+    // Per-wrapped-row splitting: attached state on each line block recording
+    // the label width (dp) at which its row structure was last computed.
+    // -1 = not measured yet. The state lives ON the block, so there is
+    // nothing to clear on track changes (fresh blocks come with fresh state).
+    private static readonly BindableProperty SplitWidthProperty =
+        BindableProperty.CreateAttached("SplitWidth", typeof(double), typeof(LyricsView), -1.0);
+
+    // Row-splitting measurement retries: the native views may not exist yet
+    // on the first passes after a track change. Refreshed on track/size
+    // changes so a retry budget exhausted while hidden is restored.
+    private int _splitRetriesLeft = 20;
+    private bool _splitRetryQueued;
 
     // Coalesces styling after collection changes. The ViewModel rebuilds the
     // lyric list with Clear + N Add events; restyling on EVERY event re-styled
@@ -116,6 +135,7 @@ public partial class LyricsView : ContentView
         Dispatcher.Dispatch(() =>
         {
             _restyleScheduled = false;
+            EnsureRowSplit(); // split wrapped lines into per-row labels first
             ApplyDistanceStyles();
         });
     }
@@ -155,19 +175,19 @@ public partial class LyricsView : ContentView
             return;
 
         int index = 0;
-        Label? targetLabel = null;
+        VerticalStackLayout? targetBlock = null;
         var children = LyricsItemsHost.Children;
         for (int i = 0; i < children.Count; i++)
         {
-            if (children[i] is Label lbl && ReferenceEquals(lbl.BindingContext, lyric))
+            if (children[i] is VerticalStackLayout block && ReferenceEquals(block.BindingContext, lyric))
             {
-                targetLabel = lbl;
+                targetBlock = block;
                 index = i;
                 break;
             }
         }
 
-        if (targetLabel == null)
+        if (targetBlock == null)
             return;
 
         // Restyle IMMEDIATELY on every lyric switch - BEFORE the auto-follow
@@ -194,7 +214,7 @@ public partial class LyricsView : ContentView
             double idleSeconds = (DateTime.UtcNow - _lastUserScrollAt).TotalSeconds;
             if (idleSeconds < AutoFollowResumeDelaySeconds)
                 return;
-            bool inMiddle = IsInMiddleZone(targetLabel, index);
+            bool inMiddle = IsInMiddleZone(targetBlock, index);
             if (idleSeconds < AutoFollowResumeForcedSeconds && !inMiddle)
                 return;
 
@@ -212,7 +232,7 @@ public partial class LyricsView : ContentView
         if (visibleHeight <= 0)
             return; // lyric strip not visible (e.g. Medium state) - styling only
 
-        double unclampedOffset = GetContentCenterY(targetLabel, index) - visibleHeight / 2;
+        double unclampedOffset = GetContentCenterY(targetBlock, index) - visibleHeight / 2;
         double maxOffset = Math.Max(0, TimedLyricsScrollView.ContentSize.Height - TimedLyricsScrollView.Height);
         double targetOffset = Math.Clamp(unclampedOffset, 0, maxOffset);
         bool clamped = Math.Abs(unclampedOffset - targetOffset) > 0.5; // line cannot reach center (song start/end)
@@ -220,14 +240,14 @@ public partial class LyricsView : ContentView
         // Centering diagnostics - the "feedback" line that follows reports the
         // REAL measured position and any residual bias.
         System.Diagnostics.Debug.WriteLine(
-            $"[LyricsView] center: idx={index} lineCenterY={GetContentCenterY(targetLabel, index):F1} " +
+            $"[LyricsView] center: idx={index} lineCenterY={GetContentCenterY(targetBlock, index):F1} " +
             $"viewportH={TimedLyricsScrollView.Height:F1} contentH={TimedLyricsScrollView.ContentSize.Height:F1} " +
             $"hiddenBottom={hidden:F1} visibleH={visibleHeight:F1} target={targetOffset + _centerBiasDp:F1} " +
             $"(raw {unclampedOffset:F1}, max {maxOffset:F1}, bias {_centerBiasDp:F1})");
 
         // Scroll, then MEASURE the line's real on-screen position, snap it to
         // the true center and learn the residual bias for next time.
-        _ = CenterWithFeedbackAsync(targetLabel, targetOffset, animate, allowLearn: !clamped);
+        _ = CenterWithFeedbackAsync(targetBlock, targetOffset, animate, allowLearn: !clamped);
     }
 
     /// <summary>
@@ -239,7 +259,7 @@ public partial class LyricsView : ContentView
         var children = LyricsItemsHost.Children;
         for (int i = 0; i < children.Count; i++)
         {
-            if (children[i] is Label lbl && lbl.BindingContext is TimedLyric lyric && lyric.IsActive)
+            if (children[i] is VerticalStackLayout block && block.BindingContext is TimedLyric lyric && lyric.IsActive)
             {
                 ScrollToLyric(lyric, animate, allowResume);
                 return;
@@ -309,31 +329,31 @@ public partial class LyricsView : ContentView
         return hidden + LyricsPlatformInsets.GetBottomInsetDp(root.Height);
     }
 
-    /// <summary>Center of the target label in ScrollView content coordinates.</summary>
-    private double GetContentCenterY(Label label, int index)
+    /// <summary>Center of the target line block in ScrollView content coordinates.</summary>
+    private double GetContentCenterY(VerticalStackLayout block, int index)
     {
         double hostY = LyricsItemsHost.Y >= 0 ? LyricsItemsHost.Y : TopSpacer.HeightRequest;
 
-        if (label.Height > 0)
-            return hostY + label.Y + label.Height / 2;
+        if (block.Height > 0)
+            return hostY + block.Y + block.Height / 2;
 
         // Collapsed empty anchor line (IsVisible=False via the XAML DataTrigger):
         // its real laid-out height IS zero, so its center is its top edge.
-        if (!label.IsVisible)
+        if (!block.IsVisible)
             return hostY;
 
         // Layout has not run yet - fall back to a uniform-height estimate
         return TopSpacer.HeightRequest + index * EstimatedLineHeight + EstimatedLineHeight / 2;
     }
 
-    private bool IsInMiddleZone(Label label, int index)
+    private bool IsInMiddleZone(VerticalStackLayout block, int index)
     {
         double hidden = ComputeHiddenBottom();
         double visibleHeight = TimedLyricsScrollView.Height - hidden;
         if (visibleHeight <= 0)
             return false;
 
-        double centerYOnScreen = GetContentCenterY(label, index) - TimedLyricsScrollView.ScrollY;
+        double centerYOnScreen = GetContentCenterY(block, index) - TimedLyricsScrollView.ScrollY;
         return Math.Abs(centerYOnScreen - visibleHeight / 2) <= visibleHeight * MiddleZoneRatio;
     }
 
@@ -391,6 +411,12 @@ public partial class LyricsView : ContentView
 
         EnsureItemsHooked();
         UpdateSpacers();
+
+        // A size change can re-wrap every line - refresh the per-wrapped-row
+        // split (a cheap no-op when the width did not change) and refresh the
+        // measurement retry budget.
+        _splitRetriesLeft = 20;
+        EnsureRowSplit();
 
         // Scroll adjustments right after a layout change are NOT user scrolls
         _suppressUserScrollUntil = DateTime.UtcNow + TimeSpan.FromMilliseconds(250);
@@ -457,7 +483,7 @@ public partial class LyricsView : ContentView
     /// correction, subsequent lyric switches land dead-center with no jump.
     /// This absorbs ANY constant geometry error instead of modeling it.
     /// </summary>
-    private async System.Threading.Tasks.Task CenterWithFeedbackAsync(Label targetLabel, double targetOffset, bool animate, bool allowLearn)
+    private async System.Threading.Tasks.Task CenterWithFeedbackAsync(VerticalStackLayout targetBlock, double targetOffset, bool animate, bool allowLearn)
     {
         await ProgrammaticScrollAsync(targetOffset + _centerBiasDp, animate);
 
@@ -471,16 +497,16 @@ public partial class LyricsView : ContentView
         // location 0,0 for GONE views - so measuring it would poison the
         // learned bias (a likely source of the intermittent "still offset"
         // look right after a track change). Estimate-only centering for it.
-        if (!targetLabel.IsVisible)
+        if (!targetBlock.IsVisible)
             return;
 
-        double? measured = GetOnScreenCenterYDp(targetLabel);
+        double? measured = GetOnScreenCenterYDp(targetBlock);
         double? ideal = GetIdealOnScreenCenterYDp();
         if (measured == null || ideal == null)
             return; // cannot measure (no handler yet / non-Android) - estimate-only centering
 
         // Ignore the sample if the active line changed while we were measuring.
-        bool stillActive = targetLabel.BindingContext is TimedLyric tl && tl.IsActive;
+        bool stillActive = targetBlock.BindingContext is TimedLyric tl && tl.IsActive;
         double delta = measured.Value - ideal.Value;
 
         System.Diagnostics.Debug.WriteLine(
@@ -503,12 +529,12 @@ public partial class LyricsView : ContentView
     }
 
 #if ANDROID
-    /// <summary>Real on-screen Y (dp) of the label's center, measured from its native view.</summary>
-    private double? GetOnScreenCenterYDp(Label label)
+    /// <summary>Real on-screen Y (dp) of an element's center, measured from its native view.</summary>
+    private double? GetOnScreenCenterYDp(VisualElement element)
     {
         try
         {
-            if (label.Handler?.PlatformView is not global::Android.Views.View view)
+            if (element.Handler?.PlatformView is not global::Android.Views.View view)
                 return null;
 
             double density = view.Resources?.DisplayMetrics?.Density ?? 0;
@@ -563,7 +589,7 @@ public partial class LyricsView : ContentView
         }
     }
 #else
-    private double? GetOnScreenCenterYDp(Label label) => null;
+    private double? GetOnScreenCenterYDp(VisualElement element) => null;
     private double? GetIdealOnScreenCenterYDp() => null;
 #endif
 
@@ -573,22 +599,23 @@ public partial class LyricsView : ContentView
     /// Applies the depth + highlight look in one pass. The effect is anchored
     /// on the ACTIVE line - each row's DISTANCE to it decides the styling -
     /// never on the viewport middle, so the look is identical wherever the
-    /// list is scrolled. ONE fade for both modes: an illumination falloff
-    /// (quadratic, inverse-square-like) - the highlighted line lights up the
-    /// surrounding rows, the glow decays with the square of the normalized
-    /// distance and reaches the minimum contrast at the SIXTH row (~5.5
-    /// visible rows per side, so the 6th is the view edge). The highlighted
-    /// line keeps FULL white/opacity in both modes (the min-contrast rule).
-    /// The ONLY mode difference is the blur: while AUTO-FOLLOWING the rows
-    /// around the active one are progressively blurred (barely / readable /
-    /// more / nearly unreadable / smeared from the view edge outward); while
-    /// BROWSING there is no blur.
-    /// Styling is applied PER ROW inside a window around the active line, not
-    /// to every element of the list - beyond the window every row sits at the
-    /// same floor look anyway. This bounds the native work (a RenderEffect per
-    /// far label caused multi-second lag spikes when opening lyrics). Styling
-    /// only changes when the active line or the follow state changes, NOT on
-    /// scroll - redundant native updates are skipped via _lastAppliedStyles.
+    /// list is scrolled. ONE fade shape for both modes: an illumination
+    /// falloff (quadratic, inverse-square-like) - the highlighted line lights
+    /// up the surrounding rows and the glow reaches its minimum at the SIXTH
+    /// line. The ONLY mode difference is how deep the fade may go: while
+    /// BROWSING the minimum contrast floor ALWAYS stays readable (the far
+    /// text must remain legible), while FOLLOWING the fade can go to the
+    /// full depth and the rows around the highlight are progressively
+    /// blurred.
+    /// Distance is PHYSICAL (in line pitches, to the nearest row of the
+    /// highlighted block), so a long line that wraps into several visual
+    /// rows - split into one Label per row by EnsureRowSplit - is styled row
+    /// by row: every wrapped row behaves as its own element.
+    /// Styling only touches a window around the active line; beyond it every
+    /// row sits at the same floor look anyway. Redundant native updates are
+    /// skipped via _lastAppliedStyles and restyles are coalesced - together
+    /// these keep the native work bounded (per-label RenderEffect churn used
+    /// to cause multi-second lag spikes when opening lyrics).
     /// </summary>
     private void ApplyDistanceStyles(int activeIndex = -2)
     {
@@ -599,98 +626,408 @@ public partial class LyricsView : ContentView
         Color mutedColor = GetThemeColor("MutedColor", Color.FromArgb("#989C9F"));
         Color bgColor = GetThemeColor("SurfaceCanvas", Color.FromArgb("#111214"));
 
-        // ONE fade for both modes (user spec): an illumination falloff - the
-        // highlighted line "lights up" the surrounding rows and the glow
-        // decays with the SQUARE of the normalized distance (inverse-square
-        // flavored), reaching the minimum contrast at the SIXTH line. There
-        // are ~5.5 visible rows on each side, so the 6th is the view edge.
-        // The old 3-line ramp collapsed far too early.
-        const double FadeConvergeLines = 6.0;
-        const double BlendCap = 0.75;     // how far the color melts into the bg
-        const double OpacityFloor = 0.10; // minimum contrast of far rows
+        // ONE fade shape for both modes: quadratic (inverse-square-like)
+        // illumination falloff, minimum contrast reached exactly at the 6th
+        // line away from the highlight.
+        const double FadeReachLines = 6.0;
 
-        // Styling is applied PER ROW inside a window around the active line,
-        // not to every element of the list: beyond the window every row sits
-        // at the same floor look anyway. This bounds the native work - a
-        // RenderEffect per far label caused multi-second lag spikes on open.
+        // The mode difference (user rule): while BROWSING the minimum contrast
+        // ALWAYS stays readable - the far lyrics must still be legible. While
+        // FOLLOWING the fade goes to full depth.
+        double blendCap = _isFollowing ? 0.75 : 0.40;
+        double opacityFloor = _isFollowing ? 0.10 : 0.55;
+        Color floorColor = BlendColors(mutedColor, bgColor, blendCap);
+
+        // Window (in line slots) inside which rows get per-distance styling;
+        // beyond it every row sits at the same floor look anyway. Bounds the
+        // work per pass.
         const int StyleWindowLines = 12;
 
-        Color floorColor = BlendColors(mutedColor, bgColor, BlendCap);
+        double pitch = GetLinePitch();
+
+        var children = LyricsItemsHost.Children;
+
+        // Absolute Y (content coordinates) of every row center of the
+        // highlighted block. With these, distance is PHYSICAL - measured in
+        // line pitches to the nearest highlighted row - so the rows of a
+        // wrapped line fade/blur row by row (each wrapped row behaves as its
+        // own element). Null until the layout has real geometry; styling then
+        // falls back to whole-line distances.
+        List<double>? activeRowCenters = null;
+        if (activeIndex >= 0 && activeIndex < children.Count &&
+            children[activeIndex] is VerticalStackLayout activeBlock &&
+            activeBlock.IsVisible && activeBlock.Height > 0 && pitch > 0)
+        {
+            activeRowCenters = new List<double>(activeBlock.Children.Count);
+            foreach (var child in activeBlock.Children)
+                if (child is Label activeRow && activeRow.Height > 0)
+                    activeRowCenters.Add(activeBlock.Y + activeRow.Y + activeRow.Height / 2.0);
+            if (activeRowCenters.Count == 0)
+                activeRowCenters = null;
+        }
+
+        for (int i = 0; i < children.Count; i++)
+        {
+            if (children[i] is not VerticalStackLayout block)
+                continue;
+            if (!block.IsVisible)
+                continue; // collapsed 0s anchor line
+
+            bool isActive = i == activeIndex;
+
+            foreach (var child in block.Children)
+            {
+                if (child is not Label row)
+                    continue;
+
+                Color targetColor;
+                double targetOpacity;
+                double blur = 0;
+
+                if (activeIndex < 0)
+                {
+                    // Nothing active - plain neutral look everywhere
+                    targetColor = mutedColor;
+                    targetOpacity = 1;
+                }
+                else if (isActive)
+                {
+                    // The highlighted block (ALL of its rows): FULL contrast
+                    // in both modes (the min-contrast rule - it must pop
+                    // against the faded rest)
+                    targetColor = activeColor;
+                    targetOpacity = 1;
+                }
+                else
+                {
+                    int indexGap = Math.Abs(i - activeIndex);
+                    if (indexGap > StyleWindowLines)
+                    {
+                        // Outside the window: uniform floor look, no blur
+                        // (cheap cached path - keeps native work bounded).
+                        targetColor = floorColor;
+                        targetOpacity = opacityFloor;
+                    }
+                    else
+                    {
+                        double dLines;
+                        if (activeRowCenters != null && row.Height > 0)
+                        {
+                            double rowCenter = block.Y + row.Y + row.Height / 2.0;
+                            double nearest = double.MaxValue;
+                            foreach (double c in activeRowCenters)
+                            {
+                                double dy = Math.Abs(rowCenter - c);
+                                if (dy < nearest)
+                                    nearest = dy;
+                            }
+                            dLines = nearest / pitch;
+                        }
+                        else
+                        {
+                            dLines = indexGap; // no real geometry yet - line distance
+                        }
+
+                        if (dLines < 1)
+                            dLines = 1; // closer than one pitch: base inactive look
+
+                        // distance 1 -> t = 0: the row right next to the
+                        // highlight keeps the normal inactive color. t reaches
+                        // 1 at FadeReachLines (the 6th line - view edge) and
+                        // grows quadratically: the falloff is gentle near the
+                        // highlight (illumination) and steeper far away.
+                        double x = (dLines - 1) / (FadeReachLines - 1);
+                        double t = Math.Clamp(x, 0, 1);
+                        t *= t;
+                        targetColor = BlendColors(mutedColor, bgColor, blendCap * t);
+                        targetOpacity = 1.0 - (1.0 - opacityFloor) * t;
+
+                        if (_isFollowing)
+                            blur = LerpBlur(dLines);
+                    }
+                }
+
+                // Skip redundant native updates.
+                if (_lastAppliedStyles.TryGetValue(row, out var last) &&
+                    last.Color == targetColor && Math.Abs(last.Opacity - targetOpacity) < 0.005)
+                {
+                    SetBlur(row, blur); // LyricsBlurPlatform no-ops unchanged values
+                    continue;
+                }
+
+                row.TextColor = targetColor;
+                row.Opacity = targetOpacity;
+                SetBlur(row, blur);
+                _lastAppliedStyles[row] = (targetColor, targetOpacity);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Pitch of ONE lyric line (block height + its vertical margins),
+    /// averaged over the first few laid-out SINGLE-ROW lines. Wrapped blocks
+    /// are skipped so long lines cannot inflate the average. This pitch is
+    /// the unit the illumination falloff is measured in ("the 6th line").
+    /// </summary>
+    private double GetLinePitch()
+    {
+        double sum = 0;
+        int n = 0;
+        var children = LyricsItemsHost.Children;
+        for (int i = 0; i < children.Count && n < 8; i++)
+        {
+            if (children[i] is VerticalStackLayout block && block.IsVisible &&
+                block.Height > 0 && block.Children.Count == 1 && block.Children[0] is Label)
+            {
+                sum += block.Height + block.Margin.VerticalThickness;
+                n++;
+            }
+        }
+
+        double pitch = n > 0 ? sum / n : EstimatedLineHeight;
+        return pitch > 0 ? pitch : EstimatedLineHeight;
+    }
+
+    /// <summary>
+    /// Blur radius (dp) for a row at the given line distance. User-tuned
+    /// ladder, one tier softer than the previous build: the row right next to
+    /// the highlight is BARELY blurred, the second readable, the third more,
+    /// the fourth nearly unreadable - from the fifth onward the rows melt
+    /// into the background with the fade. Fractional distances (wrapped rows)
+    /// interpolate between the tiers.
+    /// </summary>
+    private static double LerpBlur(double dLines)
+    {
+        if (dLines <= 1)
+            return 0.3;
+        if (dLines >= 5)
+            return 14.0;
+
+        double[] tierAt = { 1, 2, 3, 4, 5 };
+        double[] blurAt = { 0.3, 2.0, 5.0, 11.0, 14.0 };
+        for (int i = 1; i < tierAt.Length; i++)
+        {
+            if (dLines <= tierAt[i])
+            {
+                double f = (dLines - tierAt[i - 1]) / (tierAt[i] - tierAt[i - 1]);
+                return blurAt[i - 1] + (blurAt[i] - blurAt[i - 1]) * f;
+            }
+        }
+        return 14.0;
+    }
+
+    // ======================== Per-wrapped-row splitting ======================
+
+    /// <summary>
+    /// Splits lyric lines that WRAP into one Label per visual row, so the
+    /// depth effects treat every wrapped row as its own element (blur/fade
+    /// escalate down the rows of a long line - see ApplyDistanceStyles).
+    /// Safe to call at any time and cheap when nothing changed: blocks whose
+    /// row structure was already computed at the current width are skipped in
+    /// O(1). Re-runs automatically when the width changes (re-wrap) and when
+    /// the native views were not ready yet (bounded retries).
+    /// Non-Android platforms keep whole lines (no split support there - the
+    /// effects then style per line, as before).
+    /// </summary>
+    private void EnsureRowSplit()
+    {
+        bool anySplit = false;
+        bool anyPending = false;
+        int measurements = 0;
 
         var children = LyricsItemsHost.Children;
         for (int i = 0; i < children.Count; i++)
         {
-            if (children[i] is not Label label)
+            if (children[i] is not VerticalStackLayout block || !block.IsVisible)
+                continue;
+            if (block.BindingContext is not TimedLyric lyric || string.IsNullOrEmpty(lyric.Text))
                 continue;
 
-            Color targetColor;
-            double targetOpacity;
-            double blur = 0;
+            Label? measureLabel = null;
+            foreach (var child in block.Children)
+                if (child is Label l) { measureLabel = l; break; }
+            if (measureLabel == null)
+                continue;
 
-            if (activeIndex < 0)
+            double labelWidth = measureLabel.Width; // dp - the label itself has no margin
+            if (labelWidth <= 0)
             {
-                // Nothing active - plain neutral look everywhere
-                targetColor = mutedColor;
-                targetOpacity = 1;
+                anyPending = true; // not laid out yet
+                continue;
             }
-            else if (i == activeIndex)
+
+            double doneAt = (double)block.GetValue(SplitWidthProperty);
+            if (Math.Abs(doneAt - labelWidth) <= 0.5)
+                continue; // row structure already correct for this width
+
+            if (++measurements > 80)
             {
-                // The highlighted line: FULL contrast in BOTH modes (the
-                // min-contrast rule - it must pop against the faded rest)
-                targetColor = activeColor;
-                targetOpacity = 1;
+                // Bound the work per pass; the remainder continues on the
+                // next retry.
+                anyPending = true;
+                break;
+            }
+
+            List<string>? segments = TryMeasureWrappedRows(measureLabel, lyric.Text, labelWidth);
+            if (segments == null)
+            {
+                anyPending = true; // native view not ready yet - retry shortly
+                continue;
+            }
+
+            block.SetValue(SplitWidthProperty, labelWidth);
+
+            if (segments.Count <= 1)
+                continue; // fits on a single row - keep the template label
+
+            // Replace the single template label with one label per visual row.
+            ReplaceBlockRows(block, segments, measureLabel, lyric);
+            anySplit = true;
+        }
+
+        if (anySplit)
+        {
+            // The rows are brand-new elements - drop stale cache entries and
+            // restyle them, then refine once they have real geometry.
+            _lastAppliedStyles.Clear();
+            ScheduleDistanceStyles(clearCache: false);
+            // NOTE: ApplyDistanceStyles has an optional parameter, and C#
+            // method-group conversions don't honor optional parameters - so it
+            // must be wrapped in a lambda to bind to System.Action.
+            Dispatcher.DispatchDelayed(TimeSpan.FromMilliseconds(120), () => ApplyDistanceStyles());
+        }
+
+        if (anyPending && !_splitRetryQueued && _splitRetriesLeft > 0)
+        {
+            _splitRetryQueued = true;
+            _splitRetriesLeft--;
+            Dispatcher.DispatchDelayed(TimeSpan.FromMilliseconds(80), () =>
+            {
+                _splitRetryQueued = false;
+                EnsureRowSplit();
+            });
+        }
+    }
+
+    /// <summary>
+    /// Measures where the platform text layout breaks <paramref name="text"/>
+    /// into visual rows at the given width, using the label's own native text
+    /// paint so the measured breaks match the real rendering exactly.
+    /// Returns null when measurement is not possible yet (no native view).
+    /// A list with one entry means the text fits on a single row.
+    /// </summary>
+    private List<string>? TryMeasureWrappedRows(Label label, string text, double widthDp)
+    {
+#if ANDROID
+        try
+        {
+            if (label.Handler?.PlatformView is not global::Android.Widget.TextView tv)
+                return null;
+
+            double density = tv.Resources?.DisplayMetrics?.Density ?? 0;
+            if (density <= 0)
+                return null;
+
+            // Available text width in px: prefer the native view's real
+            // content width; fall back to the MAUI width via the density.
+            int availablePx;
+            if (tv.Width > 0)
+                availablePx = tv.Width - tv.TotalPaddingLeft - tv.TotalPaddingRight;
+            else
+                availablePx = (int)(widthDp * density);
+            if (availablePx <= 0)
+                return null;
+
+            // TextView exposes its text paint as Paint (typed TextPaint in the
+            // Android binding) - copy it so StaticLayout measurement uses the
+            // exact same typeface, size and styling as the real rendering.
+            var paint = new global::Android.Text.TextPaint(tv.Paint);
+
+            global::Android.Text.StaticLayout layout;
+            if (OperatingSystem.IsAndroidVersionAtLeast(23))
+            {
+                // Same paint, width and break strategy as the real TextView -
+                // the measured line breaks match what the user sees.
+                layout = global::Android.Text.StaticLayout.Builder.Obtain(text, 0, text.Length, paint, availablePx)
+                    .SetBreakStrategy(tv.BreakStrategy)
+                    .SetHyphenationFrequency(tv.HyphenationFrequency)
+                    .SetIncludePad(false)
+                    .Build();
             }
             else
             {
-                int distance = Math.Abs(i - activeIndex);
-                if (distance > StyleWindowLines)
-                {
-                    // Outside the window: uniform floor look, no blur (cheap
-                    // cached path - keeps native RenderEffects bounded).
-                    targetColor = floorColor;
-                    targetOpacity = OpacityFloor;
-                }
-                else
-                {
-                    // distance 1 -> x = 0: the row right next to the active
-                    // one keeps the normal inactive color. t reaches 1 at
-                    // distance FadeConvergeLines (the 6th row - view edge).
-                    double x = (distance - 1) / (FadeConvergeLines - 1);
-                    double t = Math.Clamp(x * x, 0, 1);
-                    targetColor = BlendColors(mutedColor, bgColor, BlendCap * t);
-                    targetOpacity = 1.0 - (1.0 - OpacityFloor) * t;
-                    if (_isFollowing)
-                    {
-                        // Per-row blur curve (user-tuned, one step softer than
-                        // before): next to the highlight BARELY blurred, then
-                        // a bit more but still READABLE, then more, then
-                        // nearly unreadable - from the view edge outward the
-                        // rows melt into the background with the fade.
-                        blur = distance switch
-                        {
-                            1 => 1.0,
-                            2 => 2.0,
-                            3 => 5.0,
-                            4 => 11.0,
-                            _ => 14.0
-                        };
-                    }
-                }
+#pragma warning disable CS0618 // legacy constructor for very old API levels
+                layout = new global::Android.Text.StaticLayout(text, paint, availablePx,
+                    global::Android.Text.Layout.Alignment.AlignCenter, 1f, 0f, false);
+#pragma warning restore CS0618
             }
 
-            // Skip redundant native updates.
-            if (_lastAppliedStyles.TryGetValue(label, out var last) &&
-                last.Color == targetColor && Math.Abs(last.Opacity - targetOpacity) < 0.005)
+            int lines = layout.LineCount;
+            var segments = new List<string>(lines);
+            for (int l = 0; l < lines; l++)
             {
-                SetBlur(label, blur); // LyricsBlurPlatform no-ops unchanged values
-                continue;
+                int start = layout.GetLineStart(l);
+                int end = layout.GetLineEnd(l);
+                string segment = text.Substring(start, end - start).TrimEnd();
+                if (segment.Length > 0)
+                    segments.Add(segment);
             }
 
-            label.TextColor = targetColor;
-            label.Opacity = targetOpacity;
-            SetBlur(label, blur);
-            _lastAppliedStyles[label] = (targetColor, targetOpacity);
+            return segments.Count > 0 ? segments : new List<string> { text };
         }
+        catch
+        {
+            return null;
+        }
+#else
+        // Per-wrapped-row splitting is implemented for Android; other
+        // platforms keep the whole line as one element (the effects then
+        // style per line, as before).
+        return new List<string>();
+#endif
+    }
+
+    /// <summary>
+    /// Replaces the block's single template label with one label per wrapped
+    /// row. Goes through the Core ILayout : IList&lt;IView&gt; surface, whose
+    /// shape is stable across MAUI versions (Layout&lt;T&gt;.Children mutability
+    /// differs between them).
+    /// </summary>
+    private void ReplaceBlockRows(VerticalStackLayout block, List<string> segments, Label template, TimedLyric lyric)
+    {
+        var viewList = (System.Collections.Generic.IList<global::Microsoft.Maui.IView>)block;
+        viewList.Clear();
+        foreach (string segment in segments)
+            viewList.Add(CreateRowLabel(segment, template, lyric));
+    }
+
+    /// <summary>
+    /// A per-wrapped-row label: identical typography to the template label
+    /// (so row heights and centering stay uniform), no margins (the line
+    /// block carries them), and the same tap-to-seek gesture.
+    /// </summary>
+    private Label CreateRowLabel(string segment, Label template, TimedLyric lyric)
+    {
+        var row = new Label
+        {
+            Text = segment,
+            BindingContext = lyric,
+            FontAttributes = template.FontAttributes,
+            FontFamily = template.FontFamily,
+            FontSize = template.FontSize,
+            LineHeight = template.LineHeight,
+            HorizontalOptions = LayoutOptions.Fill,
+            HorizontalTextAlignment = template.HorizontalTextAlignment,
+            // Safety net: if a measured segment is off by a hair it wraps
+            // instead of clipping.
+            LineBreakMode = LineBreakMode.WordWrap,
+            TextColor = template.TextColor,
+            Margin = new Thickness(0),
+        };
+        var tap = new TapGestureRecognizer { NumberOfTapsRequired = 1 };
+        tap.Tapped += OnLyricLineTapped;
+        row.GestureRecognizers.Add(tap);
+        return row;
     }
 
     /// <summary>
@@ -712,7 +1049,7 @@ public partial class LyricsView : ContentView
         var children = LyricsItemsHost.Children;
         for (int i = 0; i < children.Count; i++)
         {
-            if (children[i] is Label lbl && lbl.BindingContext is TimedLyric lyric && lyric.IsActive)
+            if (children[i] is VerticalStackLayout block && block.BindingContext is TimedLyric lyric && lyric.IsActive)
                 return i;
         }
         return -1;
@@ -721,7 +1058,7 @@ public partial class LyricsView : ContentView
     private TimedLyric? FindActiveLyric()
     {
         foreach (var child in LyricsItemsHost.Children)
-            if (child is Label lbl && lbl.BindingContext is TimedLyric lyric && lyric.IsActive)
+            if (child is VerticalStackLayout block && block.BindingContext is TimedLyric lyric && lyric.IsActive)
                 return lyric;
         return null;
     }
@@ -814,8 +1151,11 @@ public partial class LyricsView : ContentView
     {
         _isFollowing = true;
         _lastUserScrollAt = DateTime.MinValue;
+        _splitRetriesLeft = 20; // fresh content - fresh measurement budget
         System.Diagnostics.Debug.WriteLine("[LyricsView] auto-follow ON (track changed)");
-        ApplyDistanceStyles();
+        // Deferred + coalesced: no synchronous full styling pass on the UI
+        // thread while the track switch is still settling.
+        ScheduleDistanceStyles(clearCache: true);
         StartPendingStartScroll();
     }
 
