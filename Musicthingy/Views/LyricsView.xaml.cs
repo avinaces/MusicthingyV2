@@ -956,10 +956,8 @@ public partial class LyricsView : ContentView
             }
             else
             {
-#pragma warning disable CS0618 // legacy constructor for very old API levels
                 layout = new global::Android.Text.StaticLayout(text, paint, availablePx,
                     global::Android.Text.Layout.Alignment.AlignCenter, 1f, 0f, false);
-#pragma warning restore CS0618
             }
 
             int lines = layout.LineCount;

@@ -178,9 +178,6 @@ public partial class MainViewModel
         Debug.WriteLine($"[Playback] ===== START LOAD =====");
         Debug.WriteLine($"[Playback] Track: {newValue.Title} (Start: {newValue.StartTime}, End: {newValue.EndTime})");
 
-        if (IsAutoFollowEnabled)
-            TriggerAutoFollow();
-
         // ==========================================
         // LOCAL FILE PERMISSION CHECK
         // ==========================================

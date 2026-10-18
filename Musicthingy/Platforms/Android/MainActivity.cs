@@ -31,10 +31,11 @@ public class MainActivity : MauiAppCompatActivity
 
     private void HandleIntent(Intent? intent)
     {
-        // When clicked from the notification, send a message to the ViewModel
+        // When clicked from the notification, ask the ViewModel to center the
+        // track list on the currently playing track (manual scroll-to-track).
         if (intent?.Action == "MUSIC_ACTION_OPEN_APP")
         {
-            WeakReferenceMessenger.Default.Send(new MediaControlMessage { Action = "AutoFollow" });
+            WeakReferenceMessenger.Default.Send(new MediaControlMessage { Action = "ScrollToCurrentTrack" });
         }
     }
 }

@@ -371,8 +371,8 @@ public partial class MainViewModel : ObservableObject, IDisposable
                 PlayPreviousCommand.Execute(null);
             else if (m.Action == "PlayPause" && TogglePlayCommand.CanExecute(null))
                 TogglePlayCommand.Execute(null);
-            else if (m.Action == "AutoFollow")         
-                TriggerAutoFollow();                   
+            else if (m.Action == "ScrollToCurrentTrack")
+                ScrollToCurrentTrack();
         });
     }
 

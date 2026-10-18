@@ -7,9 +7,7 @@ namespace Musicthingy.Views;
 
 public partial class MobileMainPage : ContentPage
 {
-    private bool _isProgrammaticScroll = false;
     private double _lastScrollY = 0;
-    private CancellationTokenSource? _scrollCts;
 
     // Custom Sidebar interaction variables
     private double _panStartX = 0;
@@ -33,8 +31,8 @@ public partial class MobileMainPage : ContentPage
 
         WeakReferenceMessenger.Default.Register<ScrollToTrackMessage>(this, (r, m) =>
         {
-            _isProgrammaticScroll = true;
-
+            // Small delay so a playlist switch (fired together with this
+            // message) can finish rebinding the list first.
             Task.Run(async () =>
             {
                 await Task.Delay(150);
@@ -46,28 +44,8 @@ public partial class MobileMainPage : ContentPage
                         TracksListView?.ScrollToItem(m.Track, ScrollToPosition.Center, false);
                     }
                     catch { }
-
-                    ResetScrollDetection();
                 });
             });
-        });
-    }
-
-    private void ResetScrollDetection()
-    {
-        _scrollCts?.Cancel();
-        _scrollCts = new CancellationTokenSource();
-
-        CancellationToken token = _scrollCts.Token;
-
-        Task.Run(async () =>
-        {
-            try
-            {
-                await Task.Delay(300, token);
-                MainThread.BeginInvokeOnMainThread(() => _isProgrammaticScroll = false);
-            }
-            catch (TaskCanceledException) { }
         });
     }
 
@@ -204,7 +182,6 @@ public partial class MobileMainPage : ContentPage
                     vm.TogglePlaylistSelection(playlist);
                     return;
                 }
-                vm.IsAutoFollowEnabled = false;
                 vm.SelectedPlaylist = playlist;
             }
             await CloseSidebarInternalAsync();
@@ -231,7 +208,6 @@ public partial class MobileMainPage : ContentPage
                     vm.ToggleItemSelection(track);
                     return;
                 }
-                vm.IsAutoFollowEnabled = false;
                 vm.CurrentTrack = track;
             }
         }
@@ -298,22 +274,6 @@ public partial class MobileMainPage : ContentPage
     {
         // Ignore scroll events from the sidebar's playlist list
         if (sender != TracksListView) return;
-
-        if (_isProgrammaticScroll)
-        {
-            _lastScrollY = e.ScrollY;
-            ResetScrollDetection();
-            UpdateStickyToolbar();
-            return;
-        }
-
-        if (Math.Abs(e.ScrollY - _lastScrollY) > 5)
-        {
-            if (BindingContext is ViewModels.MainViewModel vm)
-            {
-                vm.IsAutoFollowEnabled = false;
-            }
-        }
 
         _lastScrollY = e.ScrollY;
         UpdateStickyToolbar();

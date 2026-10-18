@@ -36,22 +36,10 @@ public partial class MainViewModel
     [NotifyPropertyChangedFor(nameof(ShuffleIconSource))]
     public partial bool IsShuffleEnabled { get; set; }
 
-    [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(AutoFollowIconColor))]
-    [NotifyPropertyChangedFor(nameof(AutoFollowIconSource))]
-    public partial bool IsAutoFollowEnabled { get; set; }
-
     public string ShuffleIconSource =>
     IsShuffleEnabled
         ? "shuffle_icon.png"
         : "shuffle_off_icon.png";
-
-    public string AutoFollowIconSource =>
-        IsAutoFollowEnabled
-            ? "locate_fixed_icon.png"
-            : "locate_icon.png";
-
-    public Color AutoFollowIconColor => IsAutoFollowEnabled ? ThemeResources.Color("IconSelectedColor") : ThemeResources.Color("MutedColor");
 
     public string PlayPauseIcon => IsPlaying ? "pause_icon.png" : "play_icon.png";
 
@@ -446,17 +434,14 @@ public partial class MainViewModel
         _ = ReloadMediaAsync(newValue);
     }
 
-    [RelayCommand]
-    private void ToggleAutoFollow()
-    {
-        IsAutoFollowEnabled = !IsAutoFollowEnabled;
-        if (IsAutoFollowEnabled)
-        {
-            TriggerAutoFollow();
-        }
-    }
-
-    public void TriggerAutoFollow()
+    /// <summary>
+    /// Manually centers the track list on the currently playing track (and
+    /// switches to its playlist first if a different one is shown). This is
+    /// the ONLY scroll-to-track trigger now - invoked by clicking the track
+    /// name in the player header, or when the app is opened from the media
+    /// notification.
+    /// </summary>
+    public void ScrollToCurrentTrack()
     {
         if (CurrentTrack != null && CurrentTrack.Playlist != null)
         {

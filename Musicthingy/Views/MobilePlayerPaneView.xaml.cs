@@ -2,6 +2,8 @@ using CommunityToolkit.Mvvm.Messaging;
 using Microsoft.Maui.Controls;
 using Musicthingy.Models;
 using System;
+using System.Collections.Specialized;
+using System.ComponentModel;
 using System.Linq;
 using Musicthingy.Helpers;
 
@@ -10,7 +12,7 @@ namespace Musicthingy.Views;
 public partial class MobilePlayerPaneView : ContentView
 {
     private enum PlayerState { Mini, Medium, FullScreen }
-    private enum GestureIntent { None, Resizing, ClosingRight, ClosingDown }
+    private enum GestureIntent { None, Resizing, TrackSwipe, ClosingDown }
 
     private PlayerState _targetState = PlayerState.Mini;
     private GestureIntent _currentGesture = GestureIntent.None;
@@ -42,6 +44,18 @@ public partial class MobilePlayerPaneView : ContentView
         // Tapping a timed lyric line seeks the player to that timestamp
         LyricsZone.LyricTapped += OnLyricTapped;
 
+        // Bottom progress bar: keep the fill width in sync with playback.
+        // Re-measure when the bar gets its real width, and re-hook whenever a
+        // new BindingContext (ViewModel) arrives.
+        BottomProgressBar.SizeChanged += (_, __) => UpdateBottomProgress();
+        this.BindingContextChanged += (_, __) => HookBottomProgressVm();
+        HookBottomProgressVm(); // no-op if BindingContext is not assigned yet
+
+        // Track swipe carousel: keep the next/previous preview pages in sync
+        // with the queue whenever the binding context (or its queue) changes.
+        this.BindingContextChanged += (_, __) => HookSwipeVm();
+        HookSwipeVm(); // no-op if BindingContext is not assigned yet
+
         WeakReferenceMessenger.Default.Register<ActiveLyricChangedMessage>(this, (r, m) =>
         {
             if (_isAnimating || _currentGesture != GestureIntent.None)
@@ -51,8 +65,9 @@ public partial class MobilePlayerPaneView : ContentView
             {
                 if (_targetState != PlayerState.Mini && m.Lyric != null)
                 {
-                    // allowResume: this call IS a lyric switch, so paused auto-follow
-                    // may resume (LyricsView still checks its own idle/middle-zone rules)
+                    // allowResume: this call IS a lyric switch, so paused
+                    // lyric-following may resume (LyricsView still checks its
+                    // own idle/middle-zone rules)
                     LyricsZone.ScrollToLyric(m.Lyric, animate: true, allowResume: true);
                 }
             });
@@ -76,12 +91,14 @@ public partial class MobilePlayerPaneView : ContentView
         var pan = new PanGestureRecognizer();
         pan.PanUpdated += OnPanUpdated;
 
+        // Single tap recognizer for the whole header. Android only reports a
+        // TAP here when the finger goes down and up without exceeding touch
+        // slop - a real swipe is routed to the pan recognizer above instead,
+        // so clicks and swipes never fight each other (native behavior).
+        // Nothing inside the header owns a TapGestureRecognizer; child ones
+        // would consume the touch stream and starve these pan gestures.
         var tap = new TapGestureRecognizer();
-        tap.Tapped += (s, e) =>
-        {
-            if (_targetState == PlayerState.Mini)
-                AnimateToState(PlayerState.Medium);
-        };
+        tap.Tapped += OnHeaderTapped;
 
         HeaderDragZone.GestureRecognizers.Clear();
         HeaderDragZone.GestureRecognizers.Add(pan);
@@ -109,11 +126,14 @@ public partial class MobilePlayerPaneView : ContentView
                     {
                         if (_startPanHeight <= MiniHeight + 1)
                         {
-                            if (e.TotalY < -10 && Math.Abs(e.TotalY) > Math.Abs(e.TotalX) * 0.5)
+                            // MINI STATE: clear horizontal = track swipe carousel
+                            // (checked FIRST so mostly-horizontal diagonals swipe);
+                            // vertical = expand / close (unchanged behaviors)
+                            if (Math.Abs(e.TotalX) > 12 && Math.Abs(e.TotalX) > Math.Abs(e.TotalY) * 1.2 && !_swipeSettling)
+                                _currentGesture = GestureIntent.TrackSwipe;
+                            else if (e.TotalY < -10 && Math.Abs(e.TotalY) > Math.Abs(e.TotalX) * 0.5)
                                 _currentGesture = GestureIntent.Resizing;
-                            else if (e.TotalX > 20 && Math.Abs(e.TotalX) > Math.Abs(e.TotalY))
-                                _currentGesture = GestureIntent.ClosingRight;
-                            else if (e.TotalY > 20 && Math.Abs(e.TotalY) > Math.Abs(e.TotalX))
+                            else if (e.TotalY > 20 && Math.Abs(e.TotalY) > Math.Abs(e.TotalX) * 0.5)
                                 _currentGesture = GestureIntent.ClosingDown;
                         }
                         else
@@ -123,9 +143,10 @@ public partial class MobilePlayerPaneView : ContentView
                     }
                 }
 
-                if (_currentGesture == GestureIntent.ClosingRight)
+                if (_currentGesture == GestureIntent.TrackSwipe)
                 {
-                    if (e.TotalX > 0) PlayerRoot.TranslationX = e.TotalX;
+                    _swipeTotalX = e.TotalX;
+                    UpdateTrackSwipe(e.TotalX);
                 }
                 else if (_currentGesture == GestureIntent.ClosingDown)
                 {
@@ -143,22 +164,14 @@ public partial class MobilePlayerPaneView : ContentView
 
             case GestureStatus.Completed:
             case GestureStatus.Canceled:
-                if (_currentGesture == GestureIntent.ClosingRight)
+                if (_currentGesture == GestureIntent.TrackSwipe)
                 {
-                    // Require at least 40px of panning to count as a flick close
-                    if (PlayerRoot.TranslationX > 120 || (_velocityTracker.VelocityX > 1.0 && PlayerRoot.TranslationX > 40)) ClosePlayer(true, _velocityTracker.VelocityX);
-                    else
-                    {
-                        uint duration = 250;
-                        if (_velocityTracker.VelocityX < -0.1) duration = (uint)Math.Clamp(Math.Abs(PlayerRoot.TranslationX / _velocityTracker.VelocityX), 100, 350);
-                        PlayerRoot.TranslateToAsync(0, 0, duration, Easing.CubicOut);
-                        SnapToBestState(_velocityTracker.VelocityY, 0);
-                    }
+                    FinishTrackSwipe();
                 }
                 else if (_currentGesture == GestureIntent.ClosingDown)
                 {
                     // Require at least 40px of panning to count as a flick close
-                    if (PlayerRoot.TranslationY > 50 || (_velocityTracker.VelocityY > 1.0 && PlayerRoot.TranslationY > 40)) ClosePlayer(false, _velocityTracker.VelocityY);
+                    if (PlayerRoot.TranslationY > 50 || (_velocityTracker.VelocityY > 1.0 && PlayerRoot.TranslationY > 40)) ClosePlayer(_velocityTracker.VelocityY);
                     else
                     {
                         uint duration = 250;
@@ -243,21 +256,13 @@ public partial class MobilePlayerPaneView : ContentView
         });
     }
 
-    private async void ClosePlayer(bool isHorizontal, double velocity = 0)
+    private async void ClosePlayer(double velocity = 0)
     {
         _isAnimating = true;
         uint length = 200;
 
-        if (isHorizontal)
-        {
-            if (velocity > 0.1) length = (uint)Math.Clamp((1000 - PlayerRoot.TranslationX) / velocity, 100, 350);
-            await PlayerRoot.TranslateToAsync(1000, 0, length, Easing.CubicOut); // Fixed Easing
-        }
-        else
-        {
-            if (velocity > 0.1) length = (uint)Math.Clamp((MiniHeight + 100 - PlayerRoot.TranslationY) / velocity, 100, 350);
-            await PlayerRoot.TranslateToAsync(0, MiniHeight + 100, length, Easing.CubicOut); // Fixed Easing
-        }
+        if (velocity > 0.1) length = (uint)Math.Clamp((MiniHeight + 100 - PlayerRoot.TranslationY) / velocity, 100, 350);
+        await PlayerRoot.TranslateToAsync(0, MiniHeight + 100, length, Easing.CubicOut);
 
         if (this.BindingContext is Musicthingy.ViewModels.MainViewModel vm)
         {
@@ -266,7 +271,6 @@ public partial class MobilePlayerPaneView : ContentView
             vm.PlaybackQueue?.Clear();
         }
 
-        PlayerRoot.TranslationX = 0;
         PlayerRoot.TranslationY = 0;
         PlayerRoot.HeightRequest = MiniHeight;
         _targetState = PlayerState.Mini;
@@ -277,6 +281,10 @@ public partial class MobilePlayerPaneView : ContentView
 
     private void PrepareVisibilityForAnimation()
     {
+        // Kill any in-flight swipe carousel settle so the header always
+        // expands/collapses from its resting position.
+        ResetSwipeGeometry();
+
         _isAnimating = true;
         MiniControls.IsVisible = true;
         ExpandedHeaderControls.IsVisible = true;
@@ -288,7 +296,7 @@ public partial class MobilePlayerPaneView : ContentView
         // and an interrupted MAUI animation can leave its finished callback
         // (and its await) permanently pending. While _isAnimating is stuck,
         // every ActiveLyricChangedMessage is dropped in the handler below and
-        // the highlighted line + auto-follow drift out of sync with playback.
+        // the highlighted line + lyric following drift out of sync with playback.
         // If the flag is still set well after the longest possible animation
         // (~350ms) - and no drag is in progress - force-finalize so lyric
         // following always recovers.
@@ -355,10 +363,9 @@ public partial class MobilePlayerPaneView : ContentView
         TrackImageBorder.WidthRequest = imgSize;
         TrackImageBorder.HeightRequest = imgSize;
 
-        // Smoothly shrink the right container from 84px (Mini) -> 40px (Medium & Full).
-        // This compensates for the image growing, giving the title text extra room so it never shortens.
-        double rightWidth = 84 - (44 * progressToMedium);
-        HeaderRightControls.WidthRequest = Math.Max(0, rightWidth);
+        // The skip button is gone from the mini header (replaced by the swipe
+        // carousel) - only the play/pause button (40px) remains on the right.
+        HeaderRightControls.WidthRequest = 40;
 
         MiniControls.Opacity = Math.Clamp(1.0 - (progressToMedium / 0.3), 0, 1);
 
@@ -366,25 +373,23 @@ public partial class MobilePlayerPaneView : ContentView
         double expandedOpacity = Math.Clamp((progressToMedium - 0.3) / 0.7, 0, 1);
         ExpandedHeaderControls.Opacity = expandedOpacity;
 
-        // Crossfade between AutoLocate and Track Options during Medium->Full
-        double fullScreenFadeOut = Math.Clamp(1.0 - (progressToFull / 0.3), 0, 1);
-        AutoFollowBtn.Opacity = fullScreenFadeOut;
-
-        // Fade in Options button only when progressing to Full Screen
-        double optionsFadeIn = Math.Clamp(progressToFull / 0.3, 0, 1);
-        TrackOptionsBtn.Opacity = optionsFadeIn;
-
-        // Prevent clicking invisible buttons
-        AutoFollowBtn.InputTransparent = progressToFull > 0.5;
-        TrackOptionsBtn.InputTransparent = progressToFull <= 0.5;
-
         DragHandle.Opacity = expandedOpacity;
         ExpandedContentZone.Opacity = expandedOpacity;
+
+        // Bottom progress bar is a MINI-state-only element: the expanded
+        // states have the real position slider instead.
+        BottomProgressBar.IsVisible = progressToMedium <= 0;
 
         // Keep horizontal margins constant so the text block bounds don't jitter
         double marginTop = 14 + (12 * progressToMedium);
         double marginBot = 14 - (6 * progressToMedium);
         HeaderContentGrid.Margin = new Thickness(16, marginTop, 16, marginBot);
+
+        // Keep the swipe preview pages pixel-aligned with the header page so
+        // the carousel reset after a committed swipe is invisible.
+        var headerMargin = HeaderContentGrid.Margin;
+        PrevTrackPage.Margin = headerMargin;
+        NextTrackPage.Margin = headerMargin;
 
         double headerHeight = 72 + (30 * progressToMedium);
         ExpandedContentZone.TranslationY = headerHeight;
@@ -445,5 +450,320 @@ public partial class MobilePlayerPaneView : ContentView
         {
             MenuHelper.ShowCurrentTrackOptions(vm.CurrentTrack, vm);
         }
+    }
+
+    // ===================== Header tap routing (click vs swipe) =====================
+    // The header owns exactly ONE TapGestureRecognizer (HeaderDragZone, see
+    // SetupGestures). It fires only for genuine clicks, so this handler receives
+    // no events at all while the user swipes - even when the gesture starts on
+    // the title. The click is then hit-tested against TrackTitleBlock: only
+    // clicks that actually landed on the title/artist text act as the manual
+    // "scroll to track" trigger. e.GetPosition returns the point in the block's
+    // own coordinate space (or null if the position is unavailable), and it is
+    // derived from the native view's on-screen location, so translations used
+    // by the pane's layout/shifting logic cannot skew the test.
+
+    private void OnHeaderTapped(object? sender, TappedEventArgs e)
+    {
+        if (_targetState == PlayerState.Mini)
+        {
+            // Mini keeps its tap-anywhere-on-the-header-to-expand behavior.
+            AnimateToState(PlayerState.Medium);
+            return;
+        }
+
+        var hit = e.GetPosition(TrackTitleBlock);
+        if (hit.HasValue &&
+            hit.Value.X >= 0 && hit.Value.X <= TrackTitleBlock.Width &&
+            hit.Value.Y >= 0 && hit.Value.Y <= TrackTitleBlock.Height)
+        {
+            HandleTrackNameTap();
+        }
+    }
+
+    /// <summary>
+    /// Clicking the track name in the expanded header centers the track list
+    /// on the currently playing track - the manual "scroll to track" trigger.
+    /// From the full player it first
+    /// smoothly collapses to the medium height so the list becomes visible
+    /// behind the pane.
+    /// </summary>
+    private void HandleTrackNameTap()
+    {
+        if (this.BindingContext is Musicthingy.ViewModels.MainViewModel vm)
+        {
+            // MobileMainPage listens for this and centers TracksListView.
+            vm.ScrollToCurrentTrack();
+        }
+
+        if (_targetState == PlayerState.FullScreen)
+        {
+            // Smoothly collapse to medium; FinalizeVisibilityForState re-syncs
+            // the lyrics to the active line once the animation lands.
+            AnimateToState(PlayerState.Medium);
+        }
+    }
+
+    // ===================== Bottom playback progress bar =====================
+    // Purely visual, NON-interactive position indicator along the pane's very
+    // bottom edge: InputTransparent in XAML (taps pass through to the pane),
+    // no gestures, no time text. The fill width mirrors the expanded player's
+    // slider bindings: progress = CurrentPositionSeconds / DurationSeconds.
+
+    private INotifyPropertyChanged? _positionSourceVm;
+
+    private void HookBottomProgressVm()
+    {
+        var vm = this.BindingContext as INotifyPropertyChanged;
+        if (ReferenceEquals(vm, _positionSourceVm))
+        {
+            UpdateBottomProgress();
+            return;
+        }
+
+        if (_positionSourceVm != null)
+            _positionSourceVm.PropertyChanged -= OnPositionSourcePropertyChanged;
+
+        _positionSourceVm = vm;
+        if (_positionSourceVm != null)
+            _positionSourceVm.PropertyChanged += OnPositionSourcePropertyChanged;
+
+        UpdateBottomProgress();
+    }
+
+    private void OnPositionSourcePropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName != nameof(Musicthingy.ViewModels.MainViewModel.CurrentPositionSeconds) &&
+            e.PropertyName != nameof(Musicthingy.ViewModels.MainViewModel.DurationSeconds))
+            return;
+
+        if (MainThread.IsMainThread)
+            UpdateBottomProgress();
+        else
+            MainThread.BeginInvokeOnMainThread(UpdateBottomProgress);
+    }
+
+    private void UpdateBottomProgress()
+    {
+        double width = BottomProgressBar.Width;
+        if (width <= 0)
+            return; // not laid out yet - SizeChanged calls back once measured
+
+        double progress = 0;
+        if (this.BindingContext is Musicthingy.ViewModels.MainViewModel vm && vm.DurationSeconds > 0)
+            progress = Math.Clamp(vm.CurrentPositionSeconds / vm.DurationSeconds, 0, 1);
+
+        double targetWidth = width * progress;
+        if (Math.Abs(BottomProgressFill.WidthRequest - targetWidth) > 0.5)
+            BottomProgressFill.WidthRequest = targetWidth;
+    }
+
+    // ==================== Mini-player track swipe (carousel) ====================
+    // Swiping LEFT on the mini header skips FORWARD (the next track's page
+    // slides in from the RIGHT edge); swiping RIGHT skips BACKWARD (the
+    // previous track's page slides in from the LEFT edge). The neighbor pages
+    // are full visual clones of the header page, kept up to date with the
+    // queue, so during the swipe the current and the neighbor track are both
+    // visible - like the pages were always there. The old swipe-right-to-close
+    // behavior and the skip button are gone.
+
+    private PlaylistItem? _swipeNext;
+    private PlaylistItem? _swipePrev;
+    private double _swipeTotalX;
+    private bool _swipeSettling;
+    private int _swipeToken;
+    private INotifyPropertyChanged? _swipeSourceVm;
+    private INotifyCollectionChanged? _swipeHookedQueue;
+
+    private void HookSwipeVm()
+    {
+        var vm = this.BindingContext as INotifyPropertyChanged;
+        if (!ReferenceEquals(vm, _swipeSourceVm))
+        {
+            if (_swipeSourceVm != null)
+                _swipeSourceVm.PropertyChanged -= OnSwipeVmPropertyChanged;
+
+            _swipeSourceVm = vm;
+            if (_swipeSourceVm != null)
+                _swipeSourceVm.PropertyChanged += OnSwipeVmPropertyChanged;
+
+            _swipeHookedQueue = null; // re-resolve the queue for the new context
+        }
+
+        if (this.BindingContext is Musicthingy.ViewModels.MainViewModel mvm &&
+            !ReferenceEquals(_swipeHookedQueue, mvm.PlaybackQueue))
+        {
+            if (_swipeHookedQueue != null)
+                _swipeHookedQueue.CollectionChanged -= OnSwipeQueueChanged;
+
+            _swipeHookedQueue = mvm.PlaybackQueue;
+            if (_swipeHookedQueue != null)
+                _swipeHookedQueue.CollectionChanged += OnSwipeQueueChanged;
+        }
+
+        RefreshSwipePages();
+    }
+
+    private void OnSwipeVmPropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(Musicthingy.ViewModels.MainViewModel.CurrentTrack))
+            RefreshSwipePages();
+    }
+
+    private void OnSwipeQueueChanged(object? sender, NotifyCollectionChangedEventArgs e)
+        => RefreshSwipePages();
+
+    /// <summary>
+    /// Resolves which tracks the carousel should preview, mirroring the actual
+    /// PlayNext/PlayPrevious behavior (wrap only with repeat on; shuffle
+    /// reshuffles at the queue end so that side has no predictable preview).
+    /// </summary>
+    private void RefreshSwipePages()
+    {
+        _swipeNext = null;
+        _swipePrev = null;
+
+        if (this.BindingContext is Musicthingy.ViewModels.MainViewModel vm &&
+            vm.CurrentTrack != null && vm.PlaybackQueue != null)
+        {
+            int idx = vm.PlaybackQueue.IndexOf(vm.CurrentTrack);
+            if (idx >= 0)
+            {
+                bool wraps = vm.RepeatState == Musicthingy.ViewModels.RepeatMode.All ||
+                             vm.RepeatState == Musicthingy.ViewModels.RepeatMode.One;
+
+                int next = idx + 1;
+                if (next < vm.PlaybackQueue.Count)
+                    _swipeNext = vm.PlaybackQueue[next];
+                else if (wraps && !vm.IsShuffleEnabled && vm.PlaybackQueue.Count > 0)
+                    _swipeNext = vm.PlaybackQueue[0]; // PlayNext wraps to the queue start
+
+                int prev = idx - 1;
+                if (prev >= 0)
+                    _swipePrev = vm.PlaybackQueue[prev];
+                else if (wraps && vm.PlaybackQueue.Count > 0)
+                    _swipePrev = vm.PlaybackQueue[vm.PlaybackQueue.Count - 1]; // PlayPrevious wraps to the end
+            }
+        }
+
+        PopulateSwipePage(NextTrackImage, NextTrackTitle, NextTrackArtist, _swipeNext);
+        PopulateSwipePage(PrevTrackImage, PrevTrackTitle, PrevTrackArtist, _swipePrev);
+    }
+
+    private static void PopulateSwipePage(Image image, AutoMarqueeLabel title, AutoMarqueeLabel artist, PlaylistItem? item)
+    {
+        image.Source = item?.ItemIconSource;
+        title.Text = item?.Title ?? string.Empty;
+        artist.Text = item?.Artist ?? "Unknown Artist";
+    }
+
+    private double GetSwipePageWidth()
+    {
+        if (HeaderDragZone.Width > 1)
+            return HeaderDragZone.Width;
+        if (PlayerRoot.Width > 1)
+            return PlayerRoot.Width;
+        return 300;
+    }
+
+    /// <summary>Resting carousel state: header centered, pages off-screen + hidden.</summary>
+    private void ResetSwipeGeometry()
+    {
+        _swipeToken++;          // invalidate any in-flight settle animation
+        _swipeSettling = false;
+        _swipeTotalX = 0;
+
+        HeaderContentGrid.TranslationX = 0;
+        double w = GetSwipePageWidth();
+        NextTrackPage.TranslationX = w;
+        PrevTrackPage.TranslationX = -w;
+        NextTrackPage.IsVisible = false;
+        PrevTrackPage.IsVisible = false;
+    }
+
+    private void UpdateTrackSwipe(double totalX)
+    {
+        if (_swipeSettling)
+            return;
+
+        double pageWidth = GetSwipePageWidth();
+        if (pageWidth <= 1)
+            return;
+
+        // Finger-following carousel: all three pages translate together.
+        // A side with no neighbor track rubber-bands at quarter strength.
+        double effective = totalX;
+        if (totalX < 0 && _swipeNext == null) effective = totalX * 0.25;   // swipe left, no next
+        if (totalX > 0 && _swipePrev == null) effective = totalX * 0.25;   // swipe right, no previous
+        effective = Math.Clamp(effective, -pageWidth, pageWidth);
+
+        HeaderContentGrid.TranslationX = effective;
+        NextTrackPage.TranslationX = pageWidth + effective;   // enters from the right
+        PrevTrackPage.TranslationX = -pageWidth + effective;  // enters from the left
+
+        NextTrackPage.IsVisible = _swipeNext != null;
+        PrevTrackPage.IsVisible = _swipePrev != null;
+    }
+
+    private void FinishTrackSwipe()
+    {
+        double pageWidth = GetSwipePageWidth();
+        double moved = _swipeTotalX;
+        double vx = _velocityTracker.VelocityX;
+        bool forward = moved < 0; // swipe left -> next track
+        bool hasTarget = forward ? _swipeNext != null : _swipePrev != null;
+
+        // Commit on distance, or on a decisive flick in the swipe direction
+        bool flick = Math.Abs(vx) > 1.0 && Math.Abs(moved) > 40 &&
+                     Math.Sign(vx) == Math.Sign(moved);
+        bool commit = hasTarget && pageWidth > 1 &&
+                      (Math.Abs(moved) > pageWidth * 0.35 || flick);
+
+        int token = ++_swipeToken;
+        _swipeSettling = true;
+
+        double currentTargetX = commit ? (forward ? -pageWidth : pageWidth) : 0;
+        double neighborTargetX = commit ? 0 : (forward ? pageWidth : -pageWidth);
+        var neighbor = forward ? (VisualElement)NextTrackPage : (VisualElement)PrevTrackPage;
+
+        double remaining = Math.Abs((commit ? pageWidth : 0) - moved);
+        uint duration = (uint)Math.Clamp(remaining / Math.Max(0.2, Math.Abs(vx)), 100, 250);
+
+        var currentAnim = HeaderContentGrid.TranslateToAsync(currentTargetX, 0, duration, Easing.CubicOut);
+        var neighborAnim = neighbor.TranslateToAsync(neighborTargetX, 0, duration, Easing.CubicOut);
+
+        _ = Task.WhenAll(currentAnim, neighborAnim).ContinueWith(_ =>
+        {
+            if (token != _swipeToken)
+                return; // superseded (new gesture / state change reset the geometry)
+
+            MainThread.BeginInvokeOnMainThread(() =>
+            {
+                if (token != _swipeToken)
+                    return;
+
+                if (commit && this.BindingContext is Musicthingy.ViewModels.MainViewModel vm)
+                {
+                    // Switch the actual playback while the neighbor page still
+                    // covers the header - the header rebinds to the new track
+                    // underneath, so the swap is never visible.
+                    if (forward) vm.PlayNext();
+                    else vm.PlayPrevious();
+                }
+
+                // Hard reset to the resting carousel state. When committed,
+                // the neighbor page at center is pixel-identical to the freshly
+                // rebound header underneath, so this is invisible.
+                HeaderContentGrid.TranslationX = 0;
+                double w = GetSwipePageWidth();
+                NextTrackPage.TranslationX = w;
+                PrevTrackPage.TranslationX = -w;
+                NextTrackPage.IsVisible = false;
+                PrevTrackPage.IsVisible = false;
+                _swipeSettling = false;
+
+                RefreshSwipePages();
+            });
+        });
     }
 }
