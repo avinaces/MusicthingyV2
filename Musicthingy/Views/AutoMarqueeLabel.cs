@@ -206,4 +206,46 @@ public class AutoMarqueeLabel : ContentView
                 return true;
             });
     }
+
+    // Forgiving right-edge slack for the fitted-text case: the measured text
+    // advance and the actual glyph rendering can differ by a pixel or two.
+    private const double TextHitTolerance = 8.0;
+
+    /// <summary>
+    /// True when <paramref name="point"/> - given in this control's own
+    /// coordinate space - lands on the rendered TEXT rather than the empty
+    /// rest of the control. Used by the player pane so clicking the title
+    /// text acts as "scroll to track" while clicks on the empty strip (or
+    /// the artist line below) do nothing. Marquee-aware: while the text is
+    /// scrolling, the test follows the two sweeping text copies at their
+    /// current canvas offset, so only points actually over text count.
+    /// </summary>
+    public bool HitTestText(Point point)
+    {
+        if (double.IsNaN(Width) || Width <= 0 || Height <= 0)
+            return false;
+
+        if (point.X < 0 || point.X > Width || point.Y < 0 || point.Y > Height)
+            return false;
+
+        var text = Text;
+        if (string.IsNullOrWhiteSpace(text))
+            return false;
+
+        // Text fits inside the control: only the glyph run counts.
+        // Restart() parks the label frame at X=0 in that case.
+        if (_textWidth <= Width)
+            return point.X <= _textWidth + TextHitTolerance;
+
+        // Marquee active: copy 1 occupies [TranslationX, TranslationX+width]
+        // and copy 2 sits one cycle further right; both sweep the strip.
+        double t = _canvas.TranslationX;
+        double start1 = t;
+        double end1 = t + _textWidth;
+        double start2 = t + _cycleWidth;
+        double end2 = start2 + _textWidth;
+
+        return (point.X >= start1 && point.X <= end1) ||
+               (point.X >= start2 && point.X <= end2);
+    }
 }

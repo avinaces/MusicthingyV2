@@ -4,6 +4,7 @@ using AndroidX.Media3.Common;
 using AndroidX.Media3.DataSource;
 using Musicthingy.Services;
 using System.Timers;
+using System.Threading;
 
 namespace Musicthingy.Platforms.Android;
 
@@ -16,6 +17,7 @@ public class ExoPlayerMediaPlaybackService : Java.Lang.Object, IMediaPlaybackSer
 
     private AndroidX.Media3.ExoPlayer.IExoPlayer? _player;
     private System.Timers.Timer? _progressTimer;
+    private long _lastBackgroundTickMs = 0;
 
     public string? CurrentMediaUrl { get; private set; }
     public bool IsPlaying => _player?.PlayWhenReady ?? false;
@@ -44,10 +46,32 @@ public class ExoPlayerMediaPlaybackService : Java.Lang.Object, IMediaPlaybackSer
         _player = new AndroidX.Media3.ExoPlayer.ExoPlayerBuilder(context).Build();
         _player!.AddListener(this);
 
+        // Let ExoPlayer manage the CPU wake lock natively: it holds a
+        // partial wake lock ONLY while PlayWhenReady and buffering/loading,
+        // and releases it once audio is actually rendering (the audio HAL
+        // takes over). This replaces the app's blanket wake lock that used
+        // to block system suspend for entire background listening sessions.
+        _player.SetWakeMode(C.WakeModeNetwork);
+
         // Run timer faster than ViewModel's 500ms debounce to avoid skipping ticks
         _progressTimer = new System.Timers.Timer(250);
         _progressTimer.Elapsed += (s, e) =>
         {
+            // While the app is not visible (background / screen off) the
+            // in-app position UI (slider, lyrics) cannot be seen, so fire
+            // TimeChanged at most once per second instead of 4x. Everything
+            // critical keeps working: end-of-track detection (plus ExoPlayer's
+            // own StateEnded), the 5s position save, and the OS media session
+            // position - which the system advances on its own from
+            // playbackState + speed without any push updates.
+            if (MainActivity.IsInBackground)
+            {
+                long now = Environment.TickCount64;
+                long last = Interlocked.Read(ref _lastBackgroundTickMs);
+                if (now - last < 1000) return;
+                Interlocked.Exchange(ref _lastBackgroundTickMs, now);
+            }
+
             // CRITICAL FIX: ExoPlayer properties MUST be read on the Main Thread.
             // Accessing them directly from the timer's background thread caused a silent exception.
             MainThread.BeginInvokeOnMainThread(() =>

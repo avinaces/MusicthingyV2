@@ -15,6 +15,10 @@ public class AndroidMediaService : Service
     public static bool IsRunning { get; private set; }
     public static global::Android.App.Notification? CurrentNotification { get; set; }
 
+    // True while audio is ACTUALLY playing (synced by MainViewModel's
+    // UpdateAndroidNotification on every state change; cleared on teardown).
+    public static volatile bool IsMediaPlaying;
+
     public override IBinder? OnBind(Intent? intent) => null;
 
     public override void OnCreate()
@@ -76,7 +80,32 @@ public class AndroidMediaService : Service
             System.Diagnostics.Debug.WriteLine($"[AndroidMediaService] Failed to StartForeground: {ex}");
         }
 
-        return StartCommandResult.Sticky;
+        // NotSticky: if the system kills the process, a sticky restart would
+        // resurrect an EMPTY foreground service (statics are gone) showing a
+        // bare 'Musicthingy' notification and burning battery for nothing.
+        // Normal operation is unaffected - the service stays alive as long
+        // as the process does; the ViewModel stops it on teardown.
+        return StartCommandResult.NotSticky;
+    }
+
+    // Called when the user swipes the app out of recents. While media is
+    // actually playing the service must survive so audio keeps going in
+    // the background. When nothing is playing there is no reason to keep
+    // a foreground process: stop it so the app does not linger as an
+    // active background app after the swipe.
+    public override void OnTaskRemoved(Intent? rootIntent)
+    {
+        if (!IsMediaPlaying)
+        {
+            try
+            {
+                ((NotificationManager?)GetSystemService(Context.NotificationService))?.Cancel(1);
+                StopForeground(StopForegroundFlags.Remove);
+            }
+            catch { }
+            StopSelf();
+        }
+        base.OnTaskRemoved(rootIntent);
     }
 
     public override void OnDestroy()
@@ -87,7 +116,7 @@ public class AndroidMediaService : Service
 }
 
 [BroadcastReceiver(Exported = true)]
-[IntentFilter(new[] { "MUSIC_ACTION_PLAY_PAUSE", "MUSIC_ACTION_NEXT", "MUSIC_ACTION_PREV" })]
+[IntentFilter(new[] { "MUSIC_ACTION_PLAY_PAUSE", "MUSIC_ACTION_NEXT", "MUSIC_ACTION_PREV", "MUSIC_ACTION_NOTIFICATION_DELETED" })]
 public class MediaActionReceiver : BroadcastReceiver
 {
     public override void OnReceive(Context? context, Intent? intent)
@@ -100,6 +129,28 @@ public class MediaActionReceiver : BroadcastReceiver
                 WeakReferenceMessenger.Default.Send(new MediaControlMessage { Action = "Next" });
             else if (intent?.Action == "MUSIC_ACTION_PREV")
                 WeakReferenceMessenger.Default.Send(new MediaControlMessage { Action = "Previous" });
+            else if (intent?.Action == "MUSIC_ACTION_NOTIFICATION_DELETED")
+            {
+                // While playing the notification is 'ongoing' and cannot be
+                // swiped away, so this only fires when nothing is audible.
+                // Stop the foreground service so no background process
+                // outlives a dismissed media widget.
+                if (!AndroidMediaService.IsMediaPlaying && context != null)
+                {
+                    try { context.StopService(new Intent(context, typeof(AndroidMediaService))); } catch { }
+                }
+            }
+            else if (intent?.Action == "MUSIC_ACTION_NOTIFICATION_DELETED")
+            {
+                // While playing the notification is 'ongoing' and cannot be
+                // swiped away, so this only fires when nothing is audible.
+                // Stop the foreground service so no background process
+                // outlives a dismissed media widget.
+                if (!AndroidMediaService.IsMediaPlaying && context != null)
+                {
+                    try { context.StopService(new Intent(context, typeof(AndroidMediaService))); } catch { }
+                }
+            }
         });
     }
 }

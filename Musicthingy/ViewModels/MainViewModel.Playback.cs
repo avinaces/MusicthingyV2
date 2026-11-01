@@ -286,7 +286,12 @@ public partial class MainViewModel
 
         if (IsPlaying) return;
 
-        AcquireTransientWakeLock();
+        // No wake lock here on purpose. Resuming already-buffered audio starts
+        // immediately (the audio path holds its own wake lock), and any
+        // re-buffering is covered by ExoPlayer's own wake mode. Acquiring here
+        // used to leak a permanent partial wake lock whenever Play() was hit in
+        // a state where nothing could actually start (idle/ended player), i.e.
+        // the CPU was kept awake with nothing playing.
         _playbackService.Play();
     }
 
@@ -407,7 +412,18 @@ public partial class MainViewModel
             ActiveTimedLyrics.Clear();
             HasNoLyrics = true;
 
+            // Queue finished (repeat off) - the app must stop itself now.
+            // Before this, IsLoadingMedia stayed true (spinner forever) and the
+            // partial wake lock + WiFi lock acquired for the finished track were
+            // NEVER released (OnStopped skips releasing while loading), so the
+            // phone was kept out of suspend for hours with nothing playing.
+            // Reset the loading state, drop the locks, and tear the whole OS
+            // media surface (session, notification, foreground service) down.
+            IsPlaying = false;
+            IsLoadingMedia = false;
             _playbackService.Stop();
+            ReleaseTransientWakeLock();
+            TeardownOSMedia();
 
             return;
         }

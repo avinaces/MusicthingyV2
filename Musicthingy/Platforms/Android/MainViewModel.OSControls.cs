@@ -24,6 +24,11 @@ public partial class MainViewModel
     private PowerManager.WakeLock? _wakeLock;
     private Android.Net.Wifi.WifiManager.WifiLock? _wifiLock;
 
+    // True once TeardownOSMediaPlatform released the whole OS media surface
+    // (queue finished, repeat off). Late Stopped/Paused events must not
+    // resurrect the session/notification until a NEW track starts.
+    private bool _osMediaTornDown;
+
     partial void CleanupOSMediaPlatform()
     {
         try
@@ -42,6 +47,14 @@ public partial class MainViewModel
 
     private partial void SyncOSPlaybackStatePlatform()
     {
+        // After the queue finished everything OS-side is torn down; late
+        // events (e.g. the async Stopped handler) must not rebuild the
+        // session/notification while nothing is playing. Starting a new
+        // track (CurrentTrack != null) resets the flag and rebuilds.
+        if (_osMediaTornDown && CurrentTrack == null && !IsPlaying) return;
+
+        _osMediaTornDown = false;
+
         if (_mediaSession == null) SetupAndroidWidgets();
 
         if (_mediaSession != null)
@@ -136,6 +149,11 @@ public partial class MainViewModel
             .SetOngoing(IsPlaying)
             .SetVisibility(NotificationVisibility.Public);
 
+        // The notification is only 'ongoing' while playing; when paused
+        // the user can swipe it away. Deleting the widget must not leave
+        // an invisible foreground service running - the receiver stops it.
+        builder.SetDeleteIntent(CreateActionIntent("MUSIC_ACTION_NOTIFICATION_DELETED", 4));
+
         if (pendingOpenAppIntent != null)
         {
             builder.SetContentIntent(pendingOpenAppIntent);
@@ -157,6 +175,11 @@ public partial class MainViewModel
         Android.App.Notification notification = builder.Build();
 
         AndroidMediaService.CurrentNotification = notification;
+
+        // Track whether audio is actually playing (read by the service's
+        // OnTaskRemoved / delete handling to decide if a background
+        // process is still justified).
+        AndroidMediaService.IsMediaPlaying = IsPlaying;
 
         if (!AndroidMediaService.IsRunning)
         {
@@ -282,6 +305,70 @@ public partial class MainViewModel
             if (_wifiLock?.IsHeld == true) _wifiLock.Release();
         }
         catch { }
+    }
+
+    partial void ReleaseTransientCpuLockPlatform()
+    {
+        try
+        {
+            // Drop the CPU wake lock as soon as audio is actually
+            // rendering: the audio HAL holds its own wake lock while sound
+            // is playing and ExoPlayer's wake mode covers buffering windows.
+            // A blanket partial lock for the whole session would only block
+            // system suspend (= battery drain). The WiFi lock stays until
+            // pause/stop so the stream does not stall.
+            if (_wakeLock?.IsHeld == true) _wakeLock.Release();
+        }
+        catch { }
+    }
+
+    partial void TeardownOSMediaPlatform()
+    {
+        try
+        {
+            Context? context = Android.App.Application.Context;
+            if (context != null)
+            {
+                // 1. Kill the (ongoing) media notification so nothing
+                //    outlives the teardown.
+                NotificationManager? nm = (NotificationManager?)context.GetSystemService(Context.NotificationService);
+                nm?.Cancel(1);
+
+                // 2. Deactivate + release the media session so the system
+                //    clears it from media controls / resumption surfaces.
+                _mediaSession?.Active = false;
+                try { _mediaSession?.Release(); } catch { }
+                _mediaSession = null;
+                try { _currentAndroidArt?.Recycle(); } catch { }
+                _currentAndroidArt = null;
+
+                // 3. Stop listening for volume changes; SetupAndroidWidgets
+                //    re-registers a fresh receiver on the next track.
+                try { context.UnregisterReceiver(_volumeReceiver); } catch { }
+                _volumeReceiver = null;
+
+                // 4. Stop the foreground service (removes it from the
+                //    foreground list; nothing is playing anymore).
+                try
+                {
+                    Intent intent = new Intent(context, typeof(AndroidMediaService));
+                    intent.SetAction("STOP");
+                    context.StartService(intent);
+                }
+                catch
+                {
+                    // Background-start restrictions can throw if the FGS
+                    // already died; then it is stopped anyway.
+                    try { context.StopService(new Intent(context, typeof(AndroidMediaService))); } catch { }
+                }
+            }
+        }
+        catch { }
+        finally
+        {
+            AndroidMediaService.IsMediaPlaying = false;
+            _osMediaTornDown = true;
+        }
     }
 
     private class CustomMediaSessionCallback : MediaSession.Callback

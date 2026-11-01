@@ -456,12 +456,12 @@ public partial class MobilePlayerPaneView : ContentView
     // The header owns exactly ONE TapGestureRecognizer (HeaderDragZone, see
     // SetupGestures). It fires only for genuine clicks, so this handler receives
     // no events at all while the user swipes - even when the gesture starts on
-    // the title. The click is then hit-tested against TrackTitleBlock: only
-    // clicks that actually landed on the title/artist text act as the manual
-    // "scroll to track" trigger. e.GetPosition returns the point in the block's
-    // own coordinate space (or null if the position is unavailable), and it is
-    // derived from the native view's on-screen location, so translations used
-    // by the pane's layout/shifting logic cannot skew the test.
+    // the title. The click is then hit-tested against TrackTitleLabel: the
+    // TITLE line only - the artist line below and the empty strip right of the
+    // text do nothing. AutoMarqueeLabel.HitTestText accepts only points over
+    // the rendered text extent (marquee-aware), and e.GetPosition returns the
+    // point in the label's own coordinate space derived from the native view's
+    // on-screen location, so the pane's translation shifts cannot skew it.
 
     private void OnHeaderTapped(object? sender, TappedEventArgs e)
     {
@@ -472,10 +472,8 @@ public partial class MobilePlayerPaneView : ContentView
             return;
         }
 
-        var hit = e.GetPosition(TrackTitleBlock);
-        if (hit.HasValue &&
-            hit.Value.X >= 0 && hit.Value.X <= TrackTitleBlock.Width &&
-            hit.Value.Y >= 0 && hit.Value.Y <= TrackTitleBlock.Height)
+        var hit = e.GetPosition(TrackTitleLabel);
+        if (hit.HasValue && TrackTitleLabel.HitTestText(hit.Value))
         {
             HandleTrackNameTap();
         }

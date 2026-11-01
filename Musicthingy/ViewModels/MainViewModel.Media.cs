@@ -84,6 +84,14 @@ public partial class MainViewModel
             IsPlaying = true;
             IsLoadingMedia = false;
             SyncOSPlaybackState();
+
+            // Audio is actually rendering now: the audio HAL holds its own wake
+            // lock while sound plays and ExoPlayer's wake mode covers buffering
+            // windows, so our blanket partial wake lock is no longer needed.
+            // Keeping it for the whole session used to block system suspend for
+            // hours of background playback. The WiFi lock stays until
+            // pause/stop to keep the stream alive.
+            ReleaseCpuWakeLock();
         });
     }
 
@@ -120,7 +128,10 @@ public partial class MainViewModel
 
     private void OnEndReached(object? sender, EventArgs? e)
     {
-        AcquireTransientWakeLock();
+        // No wake lock here on purpose: ReloadMediaAsync acquires one for the
+        // actual load. Acquiring here used to leak the lock whenever the
+        // advance bailed out early (empty queue, repeat off at the end - the
+        // queue-end path in OnCurrentTrackChanged tears everything down).
         MainThread.BeginInvokeOnMainThread(() =>
         {
             IsLoadingMedia = true;

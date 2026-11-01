@@ -11,6 +11,23 @@ namespace Musicthingy;
 [Activity(Theme = "@style/Maui.SplashTheme", MainLauncher = true, LaunchMode = LaunchMode.SingleTop, ConfigurationChanges = ConfigChanges.ScreenSize | ConfigChanges.Orientation | ConfigChanges.UiMode | ConfigChanges.ScreenLayout | ConfigChanges.SmallestScreenSize | ConfigChanges.Density)]
 public class MainActivity : MauiAppCompatActivity
 {
+    // True while the activity is not visible (app in background or screen off).
+    // Used by the playback progress timer to skip work that only matters when
+    // the user can actually see it (slider, lyrics highlight).
+    public static volatile bool IsInBackground;
+
+    protected override void OnPause()
+    {
+        IsInBackground = true;
+        base.OnPause();
+    }
+
+    protected override void OnResume()
+    {
+        base.OnResume();
+        IsInBackground = false;
+    }
+
     // Catches Bluetooth headset clicks and keyboard media keys globally
     public override bool DispatchKeyEvent(KeyEvent? e)
     {

@@ -184,18 +184,20 @@
                                                 <Image Source="{Binding CurrentTrack.ItemIconSource}" Aspect="AspectFill" />
                                         </Border>
 
-                                        <!-- NO gesture recognizers on this block ON PURPOSE. A
-                                             TapGestureRecognizer here would make the native child
+                                        <!-- NO gesture recognizers on the header content ON PURPOSE.
+                                             A TapGestureRecognizer here would make the native child
                                              view consume the whole touch stream, so swipes that
                                              start on the title would never reach HeaderDragZone's
                                              pan recognizer (expand / collapse / close / track
                                              carousel would all be dead over the text). Instead the
                                              header's single TapGestureRecognizer fires only for
                                              genuine clicks (Android touch-slop semantics) and the
-                                             code-behind hit-tests the click against this block,
-                                             which is why it needs a name. -->
-                                        <VerticalStackLayout x:Name="TrackTitleBlock" Grid.Column="1" VerticalOptions="Center" Spacing="2">
-                                                <views:AutoMarqueeLabel Text="{Binding CurrentTrack.Title}" TextColor="{DynamicResource TitleColor}" FontSize="16" FontAttributes="Bold" />
+                                             code-behind hit-tests the click against TrackTitleLabel:
+                                             the TITLE line only, and only its rendered text extent.
+                                             The artist line below it and the empty strip right of
+                                             the text deliberately do nothing. -->
+                                        <VerticalStackLayout Grid.Column="1" VerticalOptions="Center" Spacing="2">
+                                                <views:AutoMarqueeLabel x:Name="TrackTitleLabel" Text="{Binding CurrentTrack.Title}" TextColor="{DynamicResource TitleColor}" FontSize="16" FontAttributes="Bold" />
                                                 <views:AutoMarqueeLabel Text="{Binding CurrentTrack.Artist, FallbackValue='Unknown Artist'}" TextColor="{DynamicResource MutedColor}" FontSize="13" />
                                         </VerticalStackLayout>
 
