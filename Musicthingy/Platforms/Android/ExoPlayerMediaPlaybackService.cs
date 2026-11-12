@@ -19,10 +19,54 @@ public class ExoPlayerMediaPlaybackService : Java.Lang.Object, IMediaPlaybackSer
     private System.Timers.Timer? _progressTimer;
     private long _lastBackgroundTickMs = 0;
 
+    // Main-thread-only player state, mirrored for thread-safe getters.
+    // Media3 players must only be accessed on the Main/Application Looper
+    // thread - reading IPlayer properties from a background thread throws
+    // "Player is accessed on the wrong thread".
+    private bool _cachedPlayWhenReady = false;
+    private int _cachedPlaybackState = StateIdle;
+    private long _cachedPositionMs = 0;
+    private long _cachedDurationMs = 0;
+
     public string? CurrentMediaUrl { get; private set; }
-    public bool IsPlaying => _player?.PlayWhenReady ?? false;
-    public double CurrentTimeMs => _player?.CurrentPosition ?? 0;
-    public double LengthMs => _player?.Duration > 0 ? _player.Duration : 0;
+
+    // Cached snapshots (kept in sync from listener callbacks, which ExoPlayer
+    // fires on the Main Thread, and from the main-thread timer) make these
+    // getters safe to read from ANY thread. IsPlaying reflects ACTUAL
+    // playback (PlayWhenReady is also true while buffering).
+    public bool IsPlaying => _player != null && _cachedPlayWhenReady && _cachedPlaybackState == StateReady;
+
+    public double CurrentTimeMs
+    {
+        get
+        {
+            if (MainThread.IsMainThread && _player != null)
+            {
+                long pos = _player.CurrentPosition;
+                Interlocked.Exchange(ref _cachedPositionMs, pos);
+                return pos;
+            }
+            return Interlocked.Read(ref _cachedPositionMs);
+        }
+    }
+
+    public double LengthMs
+    {
+        get
+        {
+            if (MainThread.IsMainThread && _player != null)
+            {
+                long dur = _player.Duration;
+                if (dur > 0)
+                {
+                    Interlocked.Exchange(ref _cachedDurationMs, dur);
+                    return dur;
+                }
+                return 0;
+            }
+            return Interlocked.Read(ref _cachedDurationMs);
+        }
+    }
 
     public event EventHandler<bool>? BufferingChanged;
     public event EventHandler? Playing;
@@ -76,9 +120,13 @@ public class ExoPlayerMediaPlaybackService : Java.Lang.Object, IMediaPlaybackSer
             // Accessing them directly from the timer's background thread caused a silent exception.
             MainThread.BeginInvokeOnMainThread(() =>
             {
-                if (_player != null && _player.PlayWhenReady)
+                // PlayWhenReady alone is also true while buffering; gate the
+                // tick on READY state so ticks reflect actual playback.
+                if (_player != null && _player.PlayWhenReady && _player.PlaybackState == StateReady)
                 {
-                    TimeChanged?.Invoke(this, _player.CurrentPosition);
+                    long pos = _player.CurrentPosition;
+                    Interlocked.Exchange(ref _cachedPositionMs, pos);
+                    TimeChanged?.Invoke(this, pos);
                 }
             });
         };
@@ -129,33 +177,62 @@ public class ExoPlayerMediaPlaybackService : Java.Lang.Object, IMediaPlaybackSer
                     _player.SeekTo((long)startTimeMs);
 
                 _player.PlayWhenReady = true;
+                _cachedPlayWhenReady = true;
             }
         });
     }
 
     public void Play()
     {
-        MainThread.BeginInvokeOnMainThread(() => { if (_player != null) _player.PlayWhenReady = true; });
+        MainThread.BeginInvokeOnMainThread(() =>
+        {
+            if (_player != null)
+            {
+                _player.PlayWhenReady = true;
+                _cachedPlayWhenReady = true;
+            }
+        });
     }
 
     public void Pause()
     {
-        MainThread.BeginInvokeOnMainThread(() => { if (_player != null) _player.PlayWhenReady = false; });
+        MainThread.BeginInvokeOnMainThread(() =>
+        {
+            if (_player != null)
+            {
+                _player.PlayWhenReady = false;
+                _cachedPlayWhenReady = false;
+            }
+        });
     }
 
     public void Stop()
     {
-        MainThread.BeginInvokeOnMainThread(() => { if (_player != null) _player.Stop(); });
+        MainThread.BeginInvokeOnMainThread(() =>
+        {
+            if (_player != null)
+            {
+                _player.Stop();
+                _cachedPlaybackState = StateIdle;
+            }
+        });
     }
 
     public void Seek(double timeMs)
     {
-        MainThread.BeginInvokeOnMainThread(() => { if (_player != null) _player.SeekTo((long)timeMs); });
+        MainThread.BeginInvokeOnMainThread(() =>
+        {
+            if (_player != null)
+            {
+                _player.SeekTo((long)timeMs);
+                Interlocked.Exchange(ref _cachedPositionMs, (long)timeMs);
+            }
+        });
     }
 
     public bool CanReuseMedia(string newUrl)
     {
-        return CurrentMediaUrl == newUrl && _player != null && _player.PlaybackState != StateIdle;
+        return CurrentMediaUrl == newUrl && _player != null && _cachedPlaybackState != StateIdle;
     }
 
     // --- Native ExoPlayer Listener Callbacks ---
@@ -168,8 +245,15 @@ public class ExoPlayerMediaPlaybackService : Java.Lang.Object, IMediaPlaybackSer
             Playing?.Invoke(this, EventArgs.Empty);
 
             // Safely fetch length (sometimes it's not ready immediately during StateReady)
-            if (_player != null && _player.Duration > 0)
-                LengthChanged?.Invoke(this, _player.Duration);
+            if (_player != null)
+            {
+                long dur = _player.Duration;
+                if (dur > 0)
+                {
+                    Interlocked.Exchange(ref _cachedDurationMs, dur);
+                    LengthChanged?.Invoke(this, dur);
+                }
+            }
         }
         else
         {
@@ -178,8 +262,15 @@ public class ExoPlayerMediaPlaybackService : Java.Lang.Object, IMediaPlaybackSer
         }
     }
 
+    public void OnPlayWhenReadyChanged(bool playWhenReady, int reason)
+    {
+        _cachedPlayWhenReady = playWhenReady;
+    }
+
     public void OnPlaybackStateChanged(int playbackState)
     {
+        _cachedPlaybackState = playbackState;
+
         switch (playbackState)
         {
             case StateBuffering:
@@ -187,8 +278,15 @@ public class ExoPlayerMediaPlaybackService : Java.Lang.Object, IMediaPlaybackSer
                 break;
             case StateReady:
                 BufferingChanged?.Invoke(this, false);
-                if (_player != null && _player.Duration > 0)
-                    LengthChanged?.Invoke(this, _player.Duration);
+                if (_player != null)
+                {
+                    long dur = _player.Duration;
+                    if (dur > 0)
+                    {
+                        Interlocked.Exchange(ref _cachedDurationMs, dur);
+                        LengthChanged?.Invoke(this, dur);
+                    }
+                }
                 break;
             case StateEnded:
                 EndReached?.Invoke(this, EventArgs.Empty);

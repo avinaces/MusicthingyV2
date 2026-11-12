@@ -1,4 +1,4 @@
-﻿using Musicthingy.Helpers;
+using Musicthingy.Helpers;
 using Musicthingy.Models;
 using Musicthingy.Services;
 using System.Diagnostics;
@@ -84,14 +84,6 @@ public partial class MainViewModel
             IsPlaying = true;
             IsLoadingMedia = false;
             SyncOSPlaybackState();
-
-            // Audio is actually rendering now: the audio HAL holds its own wake
-            // lock while sound plays and ExoPlayer's wake mode covers buffering
-            // windows, so our blanket partial wake lock is no longer needed.
-            // Keeping it for the whole session used to block system suspend for
-            // hours of background playback. The WiFi lock stays until
-            // pause/stop to keep the stream alive.
-            ReleaseCpuWakeLock();
         });
     }
 
@@ -128,10 +120,7 @@ public partial class MainViewModel
 
     private void OnEndReached(object? sender, EventArgs? e)
     {
-        // No wake lock here on purpose: ReloadMediaAsync acquires one for the
-        // actual load. Acquiring here used to leak the lock whenever the
-        // advance bailed out early (empty queue, repeat off at the end - the
-        // queue-end path in OnCurrentTrackChanged tears everything down).
+        AcquireTransientWakeLock();
         MainThread.BeginInvokeOnMainThread(() =>
         {
             IsLoadingMedia = true;
@@ -184,6 +173,13 @@ public partial class MainViewModel
         _mediaLoadCts = new CancellationTokenSource();
         CancellationToken token = _mediaLoadCts.Token;
 
+        // (v4) Only the previous track's LOAD is cancelled here. Its background
+        // CACHE download is deliberately NOT cancelled — FastTrackDownloader now
+        // runs a persistent queue, so skimmed tracks still end up cached and the
+        // next track's download no longer dies waiting on the single-flight gate.
+        // (Playback race safety: the older load checks token.IsCancellationRequested
+        // after its resolve await and bails out before it could call Play.)
+
         Stopwatch totalSw = Stopwatch.StartNew();
 
         Debug.WriteLine($"[Playback] ===== START LOAD =====");
@@ -232,6 +228,16 @@ public partial class MainViewModel
             // Kick-off duration resolution as early as possible so it caches fast 
             _ = Task.Run(() => ResolveSingleTrackDurationAsync(newValue, token));
         }
+
+        // ==========================================
+        // NOTE: Spotify routing intentionally absent — the Spotify integration
+        // files (MainViewModel.Spotify.cs, Services/Spotify/*, the
+        // _spotifyConnector field) are excluded from this package. If you ever
+        // merge them, re-add the Spotify branch here (before CanReuseMedia):
+        //   if (!string.IsNullOrEmpty(newValue.Url) &&
+        //       MediaUrlHelper.IsSpotifyUrl(newValue.Url))
+        //   { await HandleSpotifyTrackAsync(newValue, token); return; }
+        // ==========================================
 
         if (_playbackService.CanReuseMedia(newValue.Url))
         {
@@ -292,7 +298,10 @@ public partial class MainViewModel
 
             if (!string.IsNullOrEmpty(newValue.Url))
             {
-                string? cachedPath = _trackCacheService.GetCachedTrackPath(newValue.Url);
+                // TrackCacheService keeps serving legacy cached entries;
+                // FastTrackDownloader is the new high-speed cache engine.
+                string? cachedPath = _trackCacheService.GetCachedTrackPath(newValue.Url)
+                                     ?? FastTrackDownloader.GetCachedTrackPath(newValue.Url);
                 if (cachedPath != null)
                 {
                     Debug.WriteLine($"[Playback] Using Local Cache for: {newValue.Url}");
@@ -302,7 +311,7 @@ public partial class MainViewModel
                 else
                 {
                     Stopwatch resolveSw = Stopwatch.StartNew();
-                    resolvedMedia = await _youtubeResolver.ResolveMediaSourceAsync(newValue.Url);
+                    resolvedMedia = await _youtubeResolver.ResolveMediaSourceAsync(newValue.Url, token);
                     resolveSw.Stop();
                     Debug.WriteLine($"[Playback] Resolved via Internet in {resolveSw.ElapsedMilliseconds}ms");
                 }
@@ -317,13 +326,13 @@ public partial class MainViewModel
                     Debug.WriteLine("[Playback] Resolve returned null — showing error to user");
                     await MainThread.InvokeOnMainThreadAsync(async () =>
                     {
-                        string cookieHint = Services.YouTubeResolverService.HasCookies
-                            ? "even with your YouTube cookies.\n\nThis video may require:\n• A fresh YouTube login (re-export cookies)\n• SABR streaming support (not yet available)\n• The official YouTube app (ReVanced)"
-                            : ".\n\nThis video may require YouTube account cookies.\nGo to Settings → Import YouTube Account.";
+                        string authHint = Services.YouTubeResolverService.HasAuthentication
+                            ? "even while signed in.\n\nThis video may require:\n• A fresh sign-in (Settings → YouTube Accounts)\n• SABR streaming support (not yet available)\n• The official YouTube app (ReVanced)"
+                            : ".\n\nThis video may require signing in.\nGo to Settings → YouTube Accounts.";
 
                         await ShowConfirmAsync(
                             "Playback Error",
-                            "This video could not be loaded" + cookieHint,
+                            "This video could not be loaded" + authHint,
                             "OK",
                             ModalBackgroundTapBehavior.Confirm,
                             isDanger: true);
@@ -343,54 +352,41 @@ public partial class MainViewModel
             _playbackService.Play(resolvedMedia.Url, resolvedMedia.UserAgent, targetStartMs);
 
             // ==========================================
-            // BACKGROUND CACHE: Use YoutubeExplode to get a fresh stream URL.
-            // YoutubeExplode 6.6.2 now uses VISIONOS (same as our resolver) but
-            // may select a different itag or URL variant that downloads faster.
-            // It also handles cipher deciphering for videos where VISIONOS returns
-            // ciphered URLs instead of direct ones.
+            // BACKGROUND CACHE (v4 — persistent queue):
+            // enqueue the current track AND the next track in the playback
+            // queue. FastTrackDownloader drains the queue sequentially in the
+            // background; downloads survive track switches (that is why
+            // skimmed tracks never got cached before). YoutubeExplode URLs are
+            // n-deciphered and download at full speed; the InnerTube playback
+            // URL is n-throttled and only used as a fallback.
             // ==========================================
-            if (!isCached && !resolvedMedia.Url.StartsWith("/") && !resolvedMedia.Url.StartsWith("file://"))
+            if (!isCached && !string.IsNullOrEmpty(newValue.Url) && MediaUrlHelper.IsYouTubeUrl(newValue.Url))
             {
                 string cacheOriginalUrl = newValue.Url;
-                string fallbackCacheUrl = resolvedMedia.Url; // use resolved URL as fallback
+                string? fallbackCacheUrl = !resolvedMedia.Url.StartsWith("/") &&
+                                           !resolvedMedia.Url.StartsWith("file://") &&
+                                           !resolvedMedia.Url.StartsWith("content://")
+                    ? resolvedMedia.Url : null;
 
-                _ = Task.Run(async () =>
+                YoutubeExplode.YoutubeClient? yteClient = Services.YouTubeResolverService.HasCookies
+                    ? Services.YouTubeResolverService.GetYoutubeClientWithCookies()
+                    : _youtubeResolver.GetYoutubeExplodeClient();
+
+                FastTrackDownloader.Enqueue(yteClient, cacheOriginalUrl, fallbackCacheUrl);
+
+                // Pre-cache the next track in the queue (InnerTune-style): the
+                // downloader resolves the stream itself, so this needs no extra
+                // resolver call. Best-effort; deduplicated and cached-skip safe.
+                if (PlaybackQueue != null && PlaybackQueue.Count > 0)
                 {
-                    string cacheUrl = fallbackCacheUrl;
-
-                    try
+                    int curIndex = PlaybackQueue.IndexOf(newValue);
+                    if (curIndex >= 0)
                     {
-                        // Try YoutubeExplode first — it may get a different/faster URL
-                        YoutubeExplode.YoutubeClient? yteClient = Services.YouTubeResolverService.HasCookies
-                            ? Services.YouTubeResolverService.GetYoutubeClientWithCookies()
-                            : _youtubeResolver.GetYoutubeExplodeClient();
-
-                        if (yteClient != null)
-                        {
-                            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
-                            var manifest = await yteClient.Videos.Streams.GetManifestAsync(
-                                YoutubeExplode.Videos.VideoId.Parse(cacheOriginalUrl), cts.Token);
-
-                            var bestStream = manifest.GetAudioOnlyStreams()
-                                .OrderByDescending(s => s.AudioCodec.Contains("opus") ? 3 :
-                                                         s.AudioCodec.Contains("mp4a") ? 2 : 1)
-                                .ThenByDescending(s => s.Bitrate)
-                                .FirstOrDefault();
-
-                            if (bestStream != null && !string.IsNullOrEmpty(bestStream.Url))
-                            {
-                                cacheUrl = bestStream.Url;
-                                Debug.WriteLine($"[Cache] Using YoutubeExplode URL for caching (itag may differ from playback)");
-                            }
-                        }
+                        var nextTrack = PlaybackQueue[(curIndex + 1) % PlaybackQueue.Count];
+                        if (!string.IsNullOrEmpty(nextTrack?.Url) && MediaUrlHelper.IsYouTubeUrl(nextTrack.Url))
+                            FastTrackDownloader.Enqueue(yteClient, nextTrack.Url, null);
                     }
-                    catch (Exception ex)
-                    {
-                        Debug.WriteLine($"[Cache] YoutubeExplode URL fetch failed, using VISIONOS URL: {ex.Message}");
-                    }
-
-                    await _trackCacheService.CacheTrackAsync(cacheOriginalUrl, cacheUrl);
-                });
+                }
             }
 
             totalSw.Stop();

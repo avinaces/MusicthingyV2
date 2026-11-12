@@ -26,10 +26,13 @@ namespace Musicthingy.Services;
 //   3. ANDROID (anonymous) — last resort, muxed itag 18 only
 //   4. YoutubeExplode (with cookies if available) — cipher deciphering fallback
 //
-// SABR: YouTube's new streaming protocol. When a video only returns SABR formats
+// SABR: YouTube's new server-side streaming protocol (proprietary binary,
+// replaces DASH/progressive URLs). When a video only returns SABR formats
 // (no direct URLs, no signatureCipher), we can't play it with ExoPlayer. This
 // is detected and logged. Future SABR support would require a custom ExoPlayer
-// DataSource
+// DataSource. Client status (per yt-dlp's PO-Token-Guide, mid-2026): WEB is
+// SABR-only for most formats; ANDROID/IOS need PO tokens (GVS); PO-token-free
+// clients are ANDROID_VR / VISIONOS (same XR family) and web_embedded.
 // ────────────────────────────────────────────────────────────────────────────
 
 public partial class YouTubeResolverService
@@ -110,6 +113,25 @@ public partial class YouTubeResolverService
     }
 
     public static bool HasCookies => !string.IsNullOrWhiteSpace(AuthState.Cookie);
+
+    /// <summary>
+    /// OAuth token provider for the active YouTube account (device-flow
+    /// login). Returns a fresh Bearer token, or null when the active account
+    /// uses cookies / is anonymous. Set by the AccountManager.
+    /// </summary>
+    public static Func<Task<string?>>? OAuthTokenProvider { get; set; }
+
+    /// <summary>True when either cookies or an OAuth token provider is active.</summary>
+    public static bool HasAuthentication => HasCookies || OAuthTokenProvider != null;
+
+    /// <summary>
+    /// Fired when YouTube rotates a session cookie (Set-Cookie on an innertube
+    /// response). The AccountManager persists the fresh value into the active
+    /// cookie account, so sessions captured via web login survive YouTube's
+    /// short-lived __Secure-*PSIDTS rotation window.
+    /// </summary>
+    public static event Action<string, string>? SessionCookieRefreshed;
+
 
     public static string? VisitorData
     {
@@ -407,10 +429,10 @@ public partial class YouTubeResolverService
         VideoId? videoId = VideoId.TryParse(trackUrl);
         if (videoId == null) return null;
 
-        // Try InnerTube player endpoint — try VISIONOS first, then WEB+cookies if available.
+        // Try InnerTube player endpoint — try VISIONOS first, then WEB+auth if available.
         // This is important: duration lookup for restricted videos needs the same client
         // chain as stream resolution, otherwise duration fails silently.
-        InnerTubeClientInfo[] durationClients = HasCookies
+        InnerTubeClientInfo[] durationClients = HasAuthentication
             ? new[] { InnerTubeClients.VisionOS, InnerTubeClients.Web }
             : new[] { InnerTubeClients.VisionOS };
 
@@ -418,7 +440,7 @@ public partial class YouTubeResolverService
         {
             try
             {
-                HttpRequestMessage request = BuildPlayerRequest(videoId.Value.Value, client);
+                HttpRequestMessage request = await BuildPlayerRequestAsync(videoId.Value.Value, client);
                 request.Content = BuildPlayerPayload(videoId.Value.Value, client);
 
                 HttpResponseMessage response = await _innerTubeClient.SendAsync(
@@ -469,16 +491,17 @@ public partial class YouTubeResolverService
 
     private async Task<ResolvedMedia?> GetFastStreamUrlAsync(string videoId, CancellationToken cancellationToken)
     {
-        // Build the client chain. WEB is only included if cookies are available.
+        // Build the client chain. WEB is only included when authenticated
+        // (cookies OR OAuth Bearer).
         List<InnerTubeClientInfo> clientsToTry = new()
         {
             InnerTubeClients.VisionOS
         };
 
-        if (HasCookies)
+        if (HasAuthentication)
         {
             clientsToTry.Add(InnerTubeClients.Web);
-            Debug.WriteLine("[Resolve] Cookies detected — WEB client added to fallback chain");
+            Debug.WriteLine($"[Resolve] Authentication detected ({(HasCookies ? "cookies" : "oauth")}) — WEB client added to fallback chain");
         }
 
         clientsToTry.Add(InnerTubeClients.Android);
@@ -497,7 +520,7 @@ public partial class YouTubeResolverService
             {
                 try
                 {
-                    HttpRequestMessage request = BuildPlayerRequest(videoId, client);
+                    HttpRequestMessage request = await BuildPlayerRequestAsync(videoId, client);
                     request.Content = BuildPlayerPayload(videoId, client);
 
                     HttpResponseMessage response = await _innerTubeClient.SendAsync(
@@ -509,6 +532,11 @@ public partial class YouTubeResolverService
                             MarkStreamClientFailed(videoId, client.Name, 403);
 
                         string json = await response.Content.ReadAsStringAsync(cancellationToken);
+
+                        // Keep rotating session cookies (__Secure-*PSIDTS) fresh so
+                        // cookie sessions captured via web login do not expire.
+                        HarvestSessionCookies(response);
+
                         using JsonDocument doc = JsonDocument.Parse(json);
                         JsonElement root = doc.RootElement;
 
@@ -613,7 +641,7 @@ public partial class YouTubeResolverService
     //  Private: request building
     // ─────────────────────────────────────────────────────────────────────────
 
-    private static HttpRequestMessage BuildPlayerRequest(string videoId, InnerTubeClientInfo client)
+    private static async Task<HttpRequestMessage> BuildPlayerRequestAsync(string videoId, InnerTubeClientInfo client)
     {
         string baseUrl = client.Name.Contains("MUSIC") || client.Name == "WEB_REMIX"
             ? "https://music.youtube.com"
@@ -641,14 +669,28 @@ public partial class YouTubeResolverService
         // anonymous clients — sending cookies to them confuses YouTube and causes
         // "no streamingData" responses.
         string? cookie = Cookies;
-        bool needsCookies = client.Name.StartsWith("WEB");
-        bool hasCookiesForThisClient = !string.IsNullOrEmpty(cookie) && needsCookies;
+        bool isWebClient = client.Name.StartsWith("WEB");
+        bool hasCookiesForThisClient = !string.IsNullOrEmpty(cookie) && isWebClient;
 
         // Don't send visitorData with cookie-authenticated requests — stale
         // visitorData causes "The page needs to be reloaded" errors.
+        // OAuth requests DO carry visitorData (mirrors ytmusicapi).
         string? vd = VisitorData;
         if (!string.IsNullOrEmpty(vd) && !hasCookiesForThisClient)
             request.Headers.Add("X-Goog-Visitor-Id", vd);
+
+        // OAuth Bearer (device-flow login) takes priority over cookies when
+        // both exist; cookies + SAPISIDHASH remain the fallback.
+        if (isWebClient && !hasCookiesForThisClient && OAuthTokenProvider != null)
+        {
+            string? bearer = await OAuthTokenProvider();
+            if (!string.IsNullOrEmpty(bearer))
+            {
+                request.Headers.Add("Authorization", $"Bearer {bearer}");
+                Debug.WriteLine($"[Resolve] Attached OAuth Bearer for {client.Name} client");
+                return request;
+            }
+        }
 
         if (hasCookiesForThisClient)
         {
@@ -669,7 +711,7 @@ public partial class YouTubeResolverService
     /// Generates the SAPISIDHASH authorization header.
     /// SHA1(timestamp + " " + sapisid + " " + origin) → "SAPISIDHASH {timestamp}_{hash}"
     /// </summary>
-    private static string? GenerateSapisidHash(string cookieString, string origin)
+    public static string? GenerateSapisidHash(string cookieString, string origin)
     {
         string? sapisid = null;
         foreach (string part in cookieString.Split(';', '&'))
@@ -860,6 +902,46 @@ public partial class YouTubeResolverService
     // ─────────────────────────────────────────────────────────────────────────
     //  Immutable auth state
     // ─────────────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Reads Set-Cookie headers from an innertube response and reports the
+    /// rotating session cookies (only __Secure-*PSIDTS — the short-lived ones
+    /// YouTube rotates on nearly every response; the long-lived SID/PSID
+    /// cookies stay valid on their own).
+    /// </summary>
+    private static void HarvestSessionCookies(HttpResponseMessage response)
+    {
+        try
+        {
+            if (!response.Headers.TryGetValues("Set-Cookie", out IEnumerable<string>? values))
+                return;
+
+            foreach (string header in values)
+            {
+                int eq = header.IndexOf('=');
+                if (eq <= 0) continue;
+
+                string name = header[..eq].Trim();
+                if (!name.StartsWith("__Secure-", StringComparison.OrdinalIgnoreCase) ||
+                    !name.EndsWith("PSIDTS", StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                string value = header[(eq + 1)..];
+                int sc = value.IndexOf(';');
+                if (sc > 0) value = value[..sc];
+
+                if (!string.IsNullOrEmpty(value))
+                {
+                    Debug.WriteLine($"[Resolve] session cookie rotated: {name}");
+                    SessionCookieRefreshed?.Invoke(name, value);
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"[Resolve] cookie harvest failed: {ex.Message}");
+        }
+    }
 
     private sealed record PlaybackAuthState(
         string? Cookie,
