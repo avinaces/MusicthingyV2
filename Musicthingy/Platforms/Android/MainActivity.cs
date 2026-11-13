@@ -38,6 +38,14 @@ public class MainActivity : MauiAppCompatActivity
     {
         base.OnCreate(savedInstanceState);
         HandleIntent(Intent);
+
+        // v8.0: the built-in ON-DEVICE GVS PO token generator (a hidden
+        // WebView running the youtube.com web player's BotGuard attestation
+        // flow — see Platforms/Android/WebViewPoTokenProvider.cs). Registers
+        // the mint hook and warms the generator ~3s after boot, so SABR-only
+        // tracks stream full-length (and seek) past YouTube's ~60s
+        // attestation cutoff without any external server or manual import.
+        Platforms.Android.WebViewPoTokenProvider.Initialize();
     }
 
     protected override void OnNewIntent(Intent? intent)

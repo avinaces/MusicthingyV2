@@ -58,7 +58,7 @@ public class SabrDataSource : BaseDataSource
         SabrStreamSession? session = SabrStreamRegistry.Find(dataSpec.Uri?.ToString());
         if (session is null)
             throw new Java.IO.IOException(
-                $"Unknown SABR session for {dataSpec.Uri} (it was evicted — replay the track)");
+                $"Unknown SABR session for {dataSpec.Uri} (unknown, evicted or failed — replay the track)");
 
         TransferInitializing(dataSpec);
 

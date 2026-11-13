@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Net.Sockets;
+using Musicthingy.Services.PoToken;
 
 namespace Musicthingy.Services.Sabr;
 
@@ -24,6 +25,15 @@ namespace Musicthingy.Services.Sabr;
 //   3. Advance player time to the end of the consumed range, report the
 //      buffered ranges on the next request, and stop when the audio format
 //      reached its last segment.
+//   4. v7.4 continuation: when GVS stops serving segments (the ~60-second
+//      quota for unattested streams — STREAM_PROTECTION_STATUS "attestation
+//      pending" with no new segments, observed at player time ~60001ms), the
+//      session re-negotiates itself through the config's Refresher: a fresh
+//      player response → a fresh signed serverAbrStreamingUrl, keeping the
+//      SAME buffer, format state and player time (the protocol's own seek
+//      flow). Segments the fresh session re-sends arrive marked
+//      already-consumed and are dropped, so the byte stream ExoPlayer reads
+//      never breaks — playback just re-buffers briefly per quota window.
 //
 // Deliberately NOT ported (out of scope for a music player's v1): video
 // playback, captions, ad-cuepoint acks, live deep-rewind, resume-from-disk.
@@ -34,6 +44,12 @@ public sealed class SabrStreamSession : IDisposable
 {
     private const int MaxEmptyRequests = 3;
     private const int MaxHttpRetries = 3;
+    // v7.4 continuation guards: a long mix needs one continuation per ~60s
+    // quota window, so the total cap is generous; three continuations in a
+    // row without a single new byte mean the quota is really closed.
+    private const int MaxContinuations = 500;
+    private const int MaxContinuationsWithoutProgress = 3;
+    private static readonly TimeSpan RefreshTimeout = TimeSpan.FromSeconds(20);
     private const int MaxPreferredFormats = 3;
     private const long JsMaxSafeInteger = 9007199254740991L;
     private const long BroadcastTargetSegmentDurationMs = 5000;
@@ -48,6 +64,9 @@ public sealed class SabrStreamSession : IDisposable
     };
 
     private readonly SabrSessionConfig _config;
+    // v7.4: the config currently in force — swapped by ApplyContinuation
+    // (the readonly _config keeps the immutable VideoId).
+    private SabrSessionConfig _activeConfig = null!;
     private readonly CancellationTokenSource _cts = new();
     private readonly object _runSync = new();
     private Task? _runTask;
@@ -75,6 +94,21 @@ public sealed class SabrStreamSession : IDisposable
     // stall error so the playback-error popup shows WHY the stream ended.
     private int _lastProtectionStatus;
 
+    // ── v7.4 continuation state (owned by the run-loop thread) ────────
+    // Player time this run continues from (> 0 while continuing).
+    private long _continuationFromMs;
+    // Bytes buffered when the last continuation applied (-1 = none yet) — a
+    // continuation that adds none is "without progress"; 3 in a row give up.
+    private long _bytesAtContinuation = -1;
+    private int _continuationsAttempted;
+    private int _continuationsWithoutProgress;
+    // The FIRST kept media segment after a continuation is accepted however
+    // the server rounds the resume point; ordering is strict again after it.
+    private bool _continuationFirstSegmentSeen = true;
+    // Set when the server REJECTS the attached GVS PO token — subsequent
+    // requests omit it and the continuation carries the stream instead.
+    private bool _poTokenDisabled;
+
     // ── Logging ─────────────────────────────────────────────────────────────
     private readonly object _logSync = new();
     private readonly List<string> _logLines = new();
@@ -82,6 +116,7 @@ public sealed class SabrStreamSession : IDisposable
     public SabrStreamSession(SabrSessionConfig config)
     {
         _config = config;
+        _activeConfig = config;
         // web_creator sometimes serves the URL on c.youtube.com — GVS only.
         _url = config.ServerAbrStreamingUrl.Replace(
             ".c.youtube.com/videoplayback", ".googlevideo.com/videoplayback");
@@ -129,24 +164,33 @@ public sealed class SabrStreamSession : IDisposable
     public async Task<long> WaitForFirstBytesAsync(int minBytes, CancellationToken ct)
     {
         EnsureRunning();
-        while (true)
+
+        // v7.4: the loop below BLOCKS (Monitor.Wait slices inside the
+        // buffer). It used to run synchronously on the caller — the resolver
+        // awaited it straight from the main-thread load path, freezing the
+        // UI for the whole init wait ("Skipped N frames" right at track
+        // start). Hop to the threadpool so an await truly yields.
+        return await Task.Run(async () =>
         {
-            ct.ThrowIfCancellationRequested();
-
-            if (Buffer.TotalLength >= minBytes)
-                return Buffer.TotalLength;
-
-            bool hasData = Buffer.WaitForData(0, minBytes, TimeSpan.FromMilliseconds(500), ct);
-            if (hasData && Buffer.TotalLength >= minBytes)
-                return Buffer.TotalLength;
-
-            if (Buffer.IsEof)
+            while (true)
             {
-                return Buffer.TotalLength > 0
-                    ? Buffer.TotalLength
-                    : throw new SabrStreamException("SABR session ended without any media data");
+                ct.ThrowIfCancellationRequested();
+
+                if (Buffer.TotalLength >= minBytes)
+                    return Buffer.TotalLength;
+
+                bool hasData = Buffer.WaitForData(0, minBytes, TimeSpan.FromMilliseconds(500), ct);
+                if (hasData && Buffer.TotalLength >= minBytes)
+                    return Buffer.TotalLength;
+
+                if (Buffer.IsEof)
+                {
+                    return Buffer.TotalLength > 0
+                        ? Buffer.TotalLength
+                        : throw new SabrStreamException("SABR session ended without any media data");
+                }
             }
-        }
+        }, ct).ConfigureAwait(false);
     }
 
     public IReadOnlyList<string> GetLogSnapshot()
@@ -168,9 +212,11 @@ public sealed class SabrStreamSession : IDisposable
     {
         try
         {
-            Log($"[SABR] session starting: video {_config.VideoId}, client {_config.ClientInfo.ClientName} " +
-                $"({_config.ClientInfo.ClientVersion}), {_config.PreferredAudio.Count} preferred audio format(s)" +
-                (string.IsNullOrEmpty(_config.PoToken) ? ", no PO token" : ", PO token attached"));
+            Log($"[SABR] session starting: video {_config.VideoId}, client {_activeConfig.ClientInfo.ClientName} " +
+                $"({_activeConfig.ClientInfo.ClientVersion}), {_activeConfig.PreferredAudio.Count} preferred audio format(s)" +
+                (string.IsNullOrEmpty(_activeConfig.PoToken) ? ", no PO token" : ", PO token attached") +
+                (string.IsNullOrEmpty(_activeConfig.SessionPoToken) ? "" : ", session PO token attached") +
+                (GetQueryParam(_url, "n") != null ? ", n=present" : ""));
 
             int consecutiveFailures = 0;
             while (!ct.IsCancellationRequested)
@@ -203,12 +249,29 @@ public sealed class SabrStreamSession : IDisposable
                 bool gotNewSegments = false;
                 try
                 {
-                    using HttpRequestMessage request = new(HttpMethod.Post,
-                        AppendQueryParam(_url, "rn", _requestNumber.ToString(CultureInfo.InvariantCulture)));
-                    request.Headers.TryAddWithoutValidation("Content-Type", "application/x-protobuf");
+                    string postUrl = AppendQueryParam(_url, "rn", _requestNumber.ToString(CultureInfo.InvariantCulture));
+                    if (!_poTokenDisabled &&
+                        !string.IsNullOrEmpty(_activeConfig.PoToken) &&
+                        _activeConfig.ClientInfo.ClientName is 1 or 56 &&
+                        GetQueryParam(postUrl, "pot") is null)
+                    {
+                        postUrl = AppendQueryParam(postUrl, "pot", _activeConfig.PoToken);
+                    }
+
+                    using HttpRequestMessage request = new(HttpMethod.Post, postUrl);
                     request.Headers.TryAddWithoutValidation("Accept", "application/vnd.yt-ump");
                     request.Headers.TryAddWithoutValidation("Accept-Encoding", "identity");
+                    if (!string.IsNullOrEmpty(_activeConfig.ClientInfo.UserAgent))
+                        request.Headers.TryAddWithoutValidation("User-Agent", _activeConfig.ClientInfo.UserAgent);
+                    if (_activeConfig.ClientInfo.ClientName is 1 or 56)
+                    {
+                        request.Headers.TryAddWithoutValidation("Origin", "https://www.youtube.com");
+                        request.Headers.TryAddWithoutValidation("Referer", "https://www.youtube.com/");
+                    }
+
                     request.Content = new ByteArrayContent(payload);
+                    request.Content.Headers.ContentType =
+                        new System.Net.Http.Headers.MediaTypeHeaderValue("application/x-protobuf");
 
                     using HttpResponseMessage response = await SharedHttp.SendAsync(
                         request, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
@@ -246,10 +309,15 @@ public sealed class SabrStreamSession : IDisposable
                 }
 
                 _emptyRequests = gotNewSegments ? 0 : _emptyRequests + 1;
-                if (_emptyRequests >= MaxEmptyRequests)
-                    throw new SabrStreamException(
-                        $"SABR stream stalled: no new segments in {MaxEmptyRequests} consecutive requests " +
-                        $"(player time {_playerTimeMs}ms; {ProtectionStatusDescription()})");
+                if (_emptyRequests >= StallRequestThreshold())
+                {
+                    // v7.4: a stalled stream is re-negotiated (a fresh player
+                    // response → a fresh signed URL → another quota window)
+                    // instead of failing playback. ContinueOrThrowAsync only
+                    // throws when no continuation is possible or none helps.
+                    await ContinueOrThrowAsync(ct).ConfigureAwait(false);
+                    continue; // continuation applied — the next iteration uses the fresh URL
+                }
             }
 
             Buffer.SetEof();
@@ -274,6 +342,149 @@ public sealed class SabrStreamSession : IDisposable
         {
             throw new SabrStreamException("GVS session URL expired (re-resolve the track)");
         }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    //  v7.4: continuation — surviving the unattested-stream quota
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Empty responses that trip a re-negotiation. Without an accepted GVS
+    /// PO token, GVS serves about 60 seconds of media per session and then
+    /// answers every request with no segments and STREAM_PROTECTION_STATUS
+    /// "attestation pending" (observed: "player time 60001ms") — one such
+    /// response is that quota's signature, so re-negotiate immediately
+    /// instead of burning more round trips. With a token attached (or on a
+    /// live broadcast) an empty response can still be transient, so the
+    /// classic 3-strike threshold applies.
+    /// </summary>
+    private int StallRequestThreshold() =>
+        !_isBroadcast && ActiveItag != 0 && Buffer.TotalLength > 0 &&
+        (string.IsNullOrEmpty(_activeConfig.PoToken) || _poTokenDisabled || _lastProtectionStatus == 2)
+            ? 1
+            : MaxEmptyRequests;
+
+    /// <summary>
+    /// Re-negotiates the stalled stream: asks the resolver (the config's
+    /// Refresher) for a fresh player response — a fresh signed
+    /// serverAbrStreamingUrl, i.e. a fresh quota window — and swaps the
+    /// run's session-scoped state onto it. The buffer, the initialized
+    /// formats (their consumed ranges), the player time and the reader all
+    /// SURVIVE: this is the protocol's own seek flow, so re-sent segments
+    /// arrive marked already-consumed and are dropped without breaking the
+    /// byte stream ExoPlayer reads. Throws SabrStreamException when no
+    /// continuation is possible or none makes progress.
+    /// </summary>
+    private async Task ContinueOrThrowAsync(CancellationToken ct)
+    {
+        string stall = $"SABR stream stalled at player time {_playerTimeMs}ms ({ProtectionStatusDescription()})";
+
+        if (_continuationsAttempted >= MaxContinuations)
+            throw new SabrStreamException($"{stall}; giving up after {MaxContinuations} continuations");
+
+        if (_bytesAtContinuation >= 0 && Buffer.TotalLength <= _bytesAtContinuation)
+        {
+            _continuationsWithoutProgress++;
+            if (_continuationsWithoutProgress >= MaxContinuationsWithoutProgress)
+                throw new SabrStreamException(
+                    $"{stall}; {MaxContinuationsWithoutProgress} continuations in a row delivered no new segments");
+        }
+        else
+        {
+            _continuationsWithoutProgress = 0;
+        }
+
+        SabrSessionRefresher? refresher = _activeConfig.Refresher;
+        if (refresher is null)
+            throw new SabrStreamException(
+                $"{stall}; no continuation available — a GVS PO token is needed to stream past the attestation cutoff (turn ON Settings → PO Token Generator (built-in), or set a PO token provider)");
+
+        SabrSessionConfig? fresh;
+        try
+        {
+            using CancellationTokenSource refreshCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            refreshCts.CancelAfter(RefreshTimeout);
+            fresh = await refresher(_continuationFromMs > 0 ? _continuationFromMs : _playerTimeMs, refreshCts.Token)
+                .ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+        {
+            // The refresh timed out (the client chain can be slow under
+            // retries). Stay on the run loop: the dead URL yields another
+            // empty response → another continuation attempt; the
+            // no-progress counter above caps this at
+            // MaxContinuationsWithoutProgress.
+            return;
+        }
+
+        if (fresh is null)
+            throw new SabrStreamException(
+                $"{stall}; continuation unavailable (no SABR session in the refreshed player response — see the [Resolve] lines)");
+
+        _continuationsAttempted++;
+        ApplyContinuation(fresh);
+    }
+
+    /// <summary>
+    /// Swaps the run onto the fresh session URL: the signed URL, the opaque
+    /// SABR contexts, the playback cookie and the empty-request counters
+    /// reset, while the format state (consumed ranges), the buffer and the
+    /// player time carry over — the next request reports the old buffered
+    /// ranges and player time, and the fresh session resumes right there.
+    /// </summary>
+    private void ApplyContinuation(SabrSessionConfig fresh)
+    {
+        _continuationFromMs = _playerTimeMs;
+        _bytesAtContinuation = Buffer.TotalLength;
+        _continuationFirstSegmentSeen = false;
+
+        // Pin the running itag first so the fresh session initializes the
+        // SAME audio format — the buffer already holds that format's init +
+        // segments and cannot be spliced across itags (a different itag
+        // trips the mid-stream format-change guard in
+        // HandleFormatInitialization).
+        if (ActiveItag != 0 && fresh.PreferredAudio.Any(f => f.Itag != ActiveItag))
+        {
+            List<SabrAudioFormat> pinned = new(fresh.PreferredAudio.Count);
+            pinned.AddRange(fresh.PreferredAudio.Where(f => f.Itag == ActiveItag));
+            pinned.AddRange(fresh.PreferredAudio.Where(f => f.Itag != ActiveItag));
+            fresh = fresh with { PreferredAudio = pinned };
+        }
+
+        // v8.0: the fresh config from the refresher is the RAW chain capture —
+        // it carries no Refresher of its own. Without carrying this run's
+        // one over, the NEXT stall would fail instantly with "no
+        // continuation available" (observed in logcat: continuation #1
+        // applied, the very next empty response killed the stream — the
+        // misleading "it was evicted" ExoPlayer error followed). The
+        // attached PO token also survives UNLESS the server rejected it
+        // (_poTokenDisabled) — a rejected token must not be re-attached.
+        if (fresh.Refresher is null)
+            fresh = fresh with { Refresher = _activeConfig.Refresher };
+        if (string.IsNullOrEmpty(fresh.PoToken) && !_poTokenDisabled &&
+            !string.IsNullOrEmpty(_activeConfig.PoToken))
+            fresh = fresh with { PoToken = _activeConfig.PoToken };
+        if (string.IsNullOrEmpty(fresh.SessionPoToken) && !_poTokenDisabled &&
+            !string.IsNullOrEmpty(_activeConfig.SessionPoToken))
+            fresh = fresh with { SessionPoToken = _activeConfig.SessionPoToken };
+
+        _activeConfig = fresh;
+        _url = fresh.ServerAbrStreamingUrl.Replace(
+            ".c.youtube.com/videoplayback", ".googlevideo.com/videoplayback");
+
+        // Session-scoped state resets (the new URL is a new GVS session
+        // server-side); everything format/buffer related survives above.
+        _partialSegments.Clear();
+        _sabrContextUpdates.Clear();
+        _sabrContextsToSend.Clear();
+        _playbackCookie = null;
+        _nextWaitMs = 0;
+        _emptyRequests = 0;
+        _lastResponseHadSegments = true; // expect segments immediately
+        _poTokenDisabled = false;
+
+        Log($"[SABR] continuing the stream at {_continuationFromMs}ms with a fresh session URL " +
+            $"(continuation #{_continuationsAttempted}; {Buffer.TotalLength} bytes buffered)");
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -432,8 +643,22 @@ public sealed class SabrStreamSession : IDisposable
         if (isInitSegment && format.InitSegmentReceived)
             consumed = true;
 
-        // Strict ordering while not seeking — mirrors yt-dlp's mismatch detection.
-        if (!consumed && format.SeekMs == null && !isInitSegment && !format.Discard)
+        // v7.4 continuation: the fresh session re-sends everything the buffer
+        // already holds — the init segment (InitSegmentReceived above) and the
+        // segments inside the kept consumed ranges (FindConsumedRange above)
+        // both arrive marked consumed and are dropped, so nothing is appended
+        // twice. No extra bookkeeping needed — the format state survives the
+        // continuation on purpose (ApplyContinuation).
+
+        // Strict ordering while not seeking — mirrors yt-dlp's mismatch
+        // detection. v7.4: the FIRST kept segment of a continuation run is
+        // accepted however the server rounds the resume point (a segment
+        // early, a segment late); ordering is strict again from it on.
+        bool tolerateFirstContinuationSegment =
+            _continuationFromMs > 0 && !_continuationFirstSegmentSeen;
+
+        if (!consumed && !tolerateFirstContinuationSegment &&
+            format.SeekMs == null && !isInitSegment && !format.Discard)
         {
             int? nextExpected = NextExpectedSequence(format);
             if (nextExpected.HasValue && (int)sequenceNumber != nextExpected.Value)
@@ -519,6 +744,8 @@ public sealed class SabrStreamSession : IDisposable
             if (segment.IsInitSegment)
                 Log($"[SABR] init segment received for itag {segment.FormatId.Itag} " +
                     $"({segment.ReceivedDataLength} bytes)");
+            else
+                _continuationFirstSegmentSeen = true; // v7.4: strict ordering resumes here
         }
 
         if (segment.IsInitSegment)
@@ -592,7 +819,7 @@ public sealed class SabrStreamSession : IDisposable
         if (_initializedFormats.ContainsKey(formatId.Key))
             return; // already known
 
-        bool isOurs = _config.PreferredAudio.Any(f => f.Itag == formatId.Itag) ||
+        bool isOurs = _activeConfig.PreferredAudio.Any(f => f.Itag == formatId.Itag) ||
                       (mimeType?.StartsWith("audio/", StringComparison.OrdinalIgnoreCase) ?? false);
 
         if (isOurs && _initializedFormats.Values.Any(f => !f.Discard))
@@ -623,8 +850,10 @@ public sealed class SabrStreamSession : IDisposable
         }
         else
         {
-            // VOD starting at 0 always begins at sequence 1.
-            if (!_isBroadcast && _config.StartTimeMs == 0)
+            // VOD starting at 0 always begins at sequence 1 (a continuation
+            // resumes wherever the fresh session lands — no fixed expectation,
+            // the first kept segment is tolerated then ordering goes strict).
+            if (!_isBroadcast && _continuationFromMs == 0 && _activeConfig.StartTimeMs == 0)
                 format.ExpectedStartSequenceNumber = 1;
             ActiveItag = formatId.Itag;
             Log($"[SABR] audio format itag {formatId.Itag} ({mimeType ?? "?"}) initialized" +
@@ -700,20 +929,41 @@ public sealed class SabrStreamSession : IDisposable
         switch (status)
         {
             case 1:
+                if (_lastProtectionStatus != 1)
+                    Log("[SABR] stream protection OK");
                 _lastProtectionStatus = 1;
-                Log("[SABR] stream protection OK");
                 break;
             case 2:
+                // v7.4: logged on TRANSITION only. "Attestation pending"
+                // repeats on EVERY response while the ~60s unattested quota
+                // drains — the old per-response log flooded logcat with
+                // dozens of identical lines per minute.
+                if (_lastProtectionStatus != 2)
+                    Log(string.IsNullOrEmpty(_activeConfig.PoToken) || _poTokenDisabled
+                        ? "[SABR] stream protection: attestation pending, no PO token attached — continuing"
+                        : "[SABR] stream protection: attestation pending for the attached PO token — continuing");
                 _lastProtectionStatus = 2;
-                Log(string.IsNullOrEmpty(_config.PoToken)
-                    ? "[SABR] stream protection: attestation pending, no PO token attached — continuing"
-                    : "[SABR] stream protection: attestation pending for the attached PO token — continuing");
                 break;
             case 3:
                 _lastProtectionStatus = 3;
-                throw new SabrStreamException(string.IsNullOrEmpty(_config.PoToken)
-                    ? "stream protection requires a GVS PO token (none attached)"
-                    : "stream protection rejected the attached GVS PO token (attestation required)");
+                if (!string.IsNullOrEmpty(_activeConfig.PoToken) && !_poTokenDisabled)
+                {
+                    // The attached token was rejected (expired / no longer
+                    // valid). v7.4: keep streaming without it — the
+                    // continuation carries the quota — instead of failing
+                    // playback outright.
+                    _poTokenDisabled = true;
+                    // v8.0: the built-in generator must not hand this rejected
+                    // token out again — the next session (or the next
+                    // continuation refresh) mints a fresh one instead.
+                    BuiltInPoTokenProvider.Invalidate(_config.VideoId);
+                    if (!string.IsNullOrEmpty(_activeConfig.ClientInfo.VisitorData))
+                        BuiltInPoTokenProvider.Invalidate(_activeConfig.ClientInfo.VisitorData);
+                    Log("[SABR] stream protection rejected the attached GVS PO token — continuing without it");
+                    return;
+                }
+                throw new SabrStreamException(
+                    "stream protection requires a GVS PO token (none attached)");
             default:
                 Log($"[SABR] unknown stream protection status {status}");
                 break;
@@ -727,7 +977,7 @@ public sealed class SabrStreamSession : IDisposable
     private string ProtectionStatusDescription() => _lastProtectionStatus switch
     {
         1 => "stream protection OK",
-        2 => string.IsNullOrEmpty(_config.PoToken)
+        2 => string.IsNullOrEmpty(_activeConfig.PoToken) || _poTokenDisabled
             ? "stream protection: attestation pending, no GVS PO token attached"
             : "stream protection: attestation pending, GVS PO token attached",
         3 => "stream protection: attestation required",
@@ -892,11 +1142,11 @@ public sealed class SabrStreamSession : IDisposable
             }
         }
 
-        byte[] ustreamerConfig = TryDecodeBase64Url(_config.UstreamerConfigB64)
+        byte[] ustreamerConfig = TryDecodeBase64Url(_activeConfig.UstreamerConfigB64)
             ?? throw new SabrStreamException("invalid videoPlaybackUstreamerConfig");
         w.BytesField(5, ustreamerConfig);
 
-        foreach (SabrAudioFormat preferred in _config.PreferredAudio.Take(MaxPreferredFormats))
+        foreach (SabrAudioFormat preferred in _activeConfig.PreferredAudio.Take(MaxPreferredFormats))
             w.SubMessage(16, f => preferred.ToFormatId().WriteTo(f));
 
         w.SubMessage(19, sc =>
@@ -908,7 +1158,7 @@ public sealed class SabrStreamSession : IDisposable
                 // ClientInfo: 1 hl, 2 gl, 12 device_make, 13 device_model, 14 visitor_data,
                 // 15 user_agent, 16 client_name, 17 client_version, 18 os_name, 19 os_version,
                 // 64 android_sdk_version
-                SabrClientInfo c = _config.ClientInfo;
+                SabrClientInfo c = _activeConfig.ClientInfo;
                 ci.StringField(1, c.Hl);
                 ci.StringField(2, c.Gl);
                 if (c.DeviceMake != null) ci.StringField(12, c.DeviceMake);
@@ -922,8 +1172,10 @@ public sealed class SabrStreamSession : IDisposable
                 if (c.AndroidSdkVersion is int sdk) ci.VarintField(64, sdk);
             });
 
-            if (!string.IsNullOrEmpty(_config.PoToken) &&
-                TryDecodeBase64Url(_config.PoToken) is byte[] poToken)
+            string? contextPoToken = _activeConfig.SessionPoToken ?? _activeConfig.PoToken;
+            if (!_poTokenDisabled &&
+                !string.IsNullOrEmpty(contextPoToken) &&
+                TryDecodeBase64Url(contextPoToken) is byte[] poToken)
             {
                 sc.BytesField(2, poToken);
             }
@@ -953,7 +1205,7 @@ public sealed class SabrStreamSession : IDisposable
 
     private bool IncludeMediaCapabilities =>
         // yt-dlp only sends MediaCapabilities for the ANDROID / IOS family.
-        _config.ClientInfo.ClientName is 3 or 5 or 28 or 101;
+        _activeConfig.ClientInfo.ClientName is 3 or 5 or 28 or 101;
 
     private static void WriteMediaCapabilities(SabrWriter cabr)
     {

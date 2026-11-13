@@ -277,7 +277,10 @@ public partial class MainViewModel
                 SyncOSPlaybackState();
             });
 
-            UpdateMediaWidgetForTrack(newValue);
+            // v7.4: the widget update is binder IPC to the launcher (can take
+            // hundreds of ms) — off the main thread (OnLengthChanged already
+            // calls it from an ExoPlayer callback thread; it is thread-safe).
+            _ = Task.Run(() => UpdateMediaWidgetForTrack(newValue));
             _ = Task.Run(() => PreloadNextTrackAsync(token));
             return;
         }

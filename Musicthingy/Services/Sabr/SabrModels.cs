@@ -71,7 +71,21 @@ public sealed record SabrSessionConfig(
     SabrClientInfo ClientInfo,
     IReadOnlyList<SabrAudioFormat> PreferredAudio,
     string? PoToken = null,
-    long StartTimeMs = 0);
+    long StartTimeMs = 0,
+    SabrSessionRefresher? Refresher = null,
+    string? SessionPoToken = null);
+
+/// <summary>
+/// Re-negotiates a stalled SABR session: returns a FRESH
+/// SabrSessionConfig (new signed serverAbrStreamingUrl from a new player
+/// response — a fresh quota window) for the same video, or null when no
+/// continuation is available. Provided by the resolver; called on the
+/// session's run-loop thread when GVS stops serving segments (the ~60s
+/// unattested-stream quota — STREAM_PROTECTION_STATUS "attestation
+/// pending").
+/// </summary>
+public delegate Task<SabrSessionConfig?> SabrSessionRefresher(
+    long fromTimeMs, CancellationToken cancellationToken);
 
 /// <summary>An error raised by the SABR protocol client (message is log-friendly).</summary>
 public sealed class SabrStreamException : Exception
