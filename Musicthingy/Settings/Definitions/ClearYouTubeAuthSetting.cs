@@ -19,6 +19,9 @@ public class ClearYouTubeAuthSetting : ActionSetting
     public override string Title => "Clear YouTube Account";
     public override SettingCategory Category => SettingCategory.General;
     // App icon convention: "<lucide-name>_icon.png" (lucide "log-out").
+    // log_out_icon.png ships with this package (Resources/Images/lucide/) —
+    // it was referenced before but the file never existed, which is why the
+    // row icon was blank (Glide ENOENT in logcat).
     public override string Icon => "log_out_icon.png";
 
     private SettingsManager? SettingsManager => _services.GetService<SettingsManager>();

@@ -136,12 +136,27 @@ public class ExoPlayerMediaPlaybackService : Java.Lang.Object, IMediaPlaybackSer
     {
         CurrentMediaUrl = streamUrl;
 
-        var httpDataSourceFactory = new DefaultHttpDataSource.Factory();
-        httpDataSourceFactory.SetUserAgent(userAgent);
-        httpDataSourceFactory.SetAllowCrossProtocolRedirects(true);
-
         var context = global::Android.App.Application.Context;
-        var dataSourceFactory = new DefaultDataSource.Factory(context, httpDataSourceFactory);
+
+        // v7 (SABR): "sabr://<guid>" URIs resolve to a SabrStreamSession -
+        // the UMP-speaking client for SABR-only YouTube videos (no direct
+        // stream URLs). SabrDataSource serves the session's in-memory stream
+        // (init + media segments - a normal progressive byte stream) to
+        // ExoPlayer; every other URI keeps the standard HTTP/file stack.
+        bool isSabr = streamUrl.StartsWith("sabr://", StringComparison.OrdinalIgnoreCase);
+
+        AndroidX.Media3.DataSource.IDataSourceFactory baseDataSourceFactory;
+        if (isSabr)
+        {
+            baseDataSourceFactory = new SabrDataSourceFactory();
+        }
+        else
+        {
+            var httpDataSourceFactory = new DefaultHttpDataSource.Factory();
+            httpDataSourceFactory.SetUserAgent(userAgent);
+            httpDataSourceFactory.SetAllowCrossProtocolRedirects(true);
+            baseDataSourceFactory = new DefaultDataSource.Factory(context, httpDataSourceFactory);
+        }
 
         global::Android.Net.Uri uri;
 
@@ -163,7 +178,7 @@ public class ExoPlayerMediaPlaybackService : Java.Lang.Object, IMediaPlaybackSer
         }
 
         var mediaItem = MediaItem.FromUri(uri);
-        var mediaSource = new AndroidX.Media3.ExoPlayer.Source.DefaultMediaSourceFactory(dataSourceFactory)
+        var mediaSource = new AndroidX.Media3.ExoPlayer.Source.DefaultMediaSourceFactory(baseDataSourceFactory)
             .CreateMediaSource(mediaItem);
 
         MainThread.BeginInvokeOnMainThread(() =>

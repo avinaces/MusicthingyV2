@@ -1,7 +1,9 @@
 using Musicthingy.Helpers;
 using Musicthingy.Models;
+using Musicthingy.Services.Sabr;
 using System.Collections.Concurrent;
 using System.Diagnostics;
+using System.Globalization;
 using System.Net;
 using System.Net.Sockets;
 using System.Security.Cryptography;
@@ -20,19 +22,36 @@ namespace Musicthingy.Services;
 // ────────────────────────────────────────────────────────────────────────────
 // YoutubeResolverService — YouTube stream resolution with multi-client fallback.
 //
-// Client chain (Aug 2026):
-//   1. VISIONOS 1.02 (anonymous, fast) — works for ~90% of videos
-//   2. WEB + cookies (authenticated) — for restricted videos
-//   3. ANDROID (anonymous) — last resort, muxed itag 18 only
-//   4. YoutubeExplode (with cookies if available) — cipher deciphering fallback
+// Client chain (v6, Nov 2026 — mirrors yt-dlp 2026.10.26 production defaults):
+//   anonymous: VISIONOS → TVHTML5 (Samsung TV) → ANDROID (+GVS PO token if set)
+//   authed:    VISIONOS → TVHTML5 → WEB_EMBEDDED_PLAYER → WEB → ANDROID
+//   yt-dlp's own production defaults, for reference (2026.10.26):
+//     anonymous: tv_samsung → visionos → web
+//     authed:    web_embedded → tv_samsung → web
+//     premium:   web_creator → tv_samsung → web
+//   Last: YoutubeExplode (with cookies if available) — cipher deciphering fallback.
+//
+// ANDROID_VR was deliberately NOT added: yt-dlp's client notes (Oct 2026) say
+// clientVersion 1.65.10 gets ALL formats 403'd since 2026.08.17, and versions
+// above 1.65 return SABR-only — the XR-family exemption ended. VISIONOS is
+// kept (it still works for ~90% of videos).
+//
+// Every resolve records a ResolveAttempt — the per-client outcomes and flags
+// (SABR-only, login required, PO token attached). The playback error dialog
+// reads it via GetLastResolveAttempt(), so the user sees the REAL per-client
+// reasons from the resolve log instead of a guessed message.
 //
 // SABR: YouTube's new server-side streaming protocol (proprietary binary,
 // replaces DASH/progressive URLs). When a video only returns SABR formats
-// (no direct URLs, no signatureCipher), we can't play it with ExoPlayer. This
-// is detected and logged. Future SABR support would require a custom ExoPlayer
-// DataSource. Client status (per yt-dlp's PO-Token-Guide, mid-2026): WEB is
-// SABR-only for most formats; ANDROID/IOS need PO tokens (GVS); PO-token-free
-// clients are ANDROID_VR / VISIONOS (same XR family) and web_embedded.
+// (no direct URLs, no signatureCipher), the resolver captures what a SABR
+// streaming session needs (serverAbrStreamingUrl + ustreamer config + the
+// audio formats) and — if every client in the chain came up empty — starts a
+// SABR session itself (Services/Sabr/, a clean-room port of yt-dlp's SABR
+// downloader flow) and returns an opaque "sabr://<guid>" URI. The Android
+// playback service serves that URI through SabrDataSource (a Media3
+// DataSource over the session's in-memory UMP stream). A GVS PO Token
+// (Settings → PO Token) is attached to both the player requests and the SABR
+// requests when set. See Docs/SABR_Research.md for the protocol details.
 // ────────────────────────────────────────────────────────────────────────────
 
 public partial class YouTubeResolverService
@@ -153,6 +172,85 @@ public partial class YouTubeResolverService
         set => AuthState = AuthState with { PoToken = string.IsNullOrWhiteSpace(value) ? null : value };
     }
 
+    // ── Resolve attempt tracking ──────────────────────────────────────────
+    // Every resolve pass records what each client ACTUALLY answered; the
+    // playback error dialog shows it (GetLastResolveAttempt) instead of
+    // guessing at causes. Also mirrored to logcat via Trace().
+
+    /// <summary>
+    /// One resolve pass for one video: the per-client outcomes plus the
+    /// SABR / sign-in / PO-token flags. Populated by GetFastStreamUrlAsync
+    /// and the YoutubeExplode fallback.
+    /// </summary>
+    public sealed class ResolveAttempt
+    {
+        public string VideoId { get; }
+        public DateTime At { get; } = DateTime.Now;
+        public bool Succeeded { get; internal set; }
+        public bool SabrOnly { get; internal set; }        // ≥1 client: audio formats but no direct URLs
+        public bool LoginRequired { get; internal set; }   // ≥1 client asked for sign-in
+        public bool PoTokenAttached { get; internal set; } // ≥1 request carried a GVS PO token
+        public string? YoutubeExplodeError { get; internal set; }
+
+        private readonly List<string> _outcomes = new();
+        public IReadOnlyList<string> Outcomes
+        {
+            get { lock (_outcomes) return _outcomes.ToArray(); }
+        }
+        internal void Outcome(string line)
+        {
+            lock (_outcomes) _outcomes.Add(line);
+        }
+
+        public ResolveAttempt(string videoId) => VideoId = videoId;
+    }
+
+    private static readonly ConcurrentDictionary<string, ResolveAttempt> _lastAttempts = new();
+    private const int MaxTrackedAttempts = 32;
+
+    /// <summary>
+    /// The most recent resolve attempt for a video (max age 10 minutes), or
+    /// null. Read by the playback error dialog to show what YouTube actually
+    /// said on every client.
+    /// </summary>
+    public static ResolveAttempt? GetLastResolveAttempt(string videoId)
+    {
+        if (string.IsNullOrEmpty(videoId)) return null;
+        if (_lastAttempts.TryGetValue(videoId, out ResolveAttempt? attempt) &&
+            (DateTime.Now - attempt.At).TotalMinutes < 10)
+            return attempt;
+        return null;
+    }
+
+    private static void RecordResolveAttempt(ResolveAttempt attempt)
+    {
+        if (_lastAttempts.Count >= MaxTrackedAttempts)
+        {
+            foreach (string key in _lastAttempts
+                .OrderBy(kv => kv.Value.At)
+                .Take(Math.Max(1, MaxTrackedAttempts / 4))
+                .Select(kv => kv.Key)
+                .ToList())
+            {
+                _lastAttempts.TryRemove(key, out _);
+            }
+        }
+        _lastAttempts[attempt.VideoId] = attempt;
+    }
+
+    /// <summary>
+    /// [Resolve] tracing that survives release builds: Debug.WriteLine PLUS
+    /// Android logcat (tag "Musicthingy"), like the other services in this
+    /// package.
+    /// </summary>
+    private static void Trace(string message)
+    {
+        Debug.WriteLine(message);
+#if ANDROID
+        Android.Util.Log.Info("Musicthingy", message);
+#endif
+    }
+
     // ── Per-client circuit breaker (10-min cooldown on HTTP 403) ─────────────
     private static readonly ConcurrentDictionary<string, DateTime> _failedUntil = new();
     private static readonly TimeSpan FailedClientBackoff = TimeSpan.FromMinutes(10);
@@ -161,7 +259,7 @@ public partial class YouTubeResolverService
     {
         if (httpStatus != 403) return;
         _failedUntil[$"{videoId}:{clientKey}"] = DateTime.UtcNow + FailedClientBackoff;
-        Debug.WriteLine($"[Resolve] Circuit breaker OPEN for {videoId}:{clientKey}");
+        Trace($"[Resolve] Circuit breaker OPEN for {videoId}:{clientKey}");
     }
 
     private static bool IsStreamClientBlocked(string videoId, string clientKey)
@@ -368,14 +466,26 @@ public partial class YouTubeResolverService
 
         if (videoId != null)
         {
-            Debug.WriteLine($"[Resolve] HasCookies={HasCookies}, trying InnerTube clients for {videoId.Value.Value}");
-            resolvedMedia = await GetFastStreamUrlAsync(videoId.Value.Value, cancellationToken);
+            var attempt = new ResolveAttempt(videoId.Value.Value);
+            Trace($"[Resolve] HasCookies={HasCookies}, HasPoToken={!string.IsNullOrEmpty(PoToken)}, trying InnerTube clients for {videoId.Value.Value}");
+            (resolvedMedia, SabrSessionConfig? sabrConfig) = await GetFastStreamUrlAsync(videoId.Value.Value, attempt, cancellationToken);
+
+            // v7 (SABR): when every client only offered the video through
+            // SABR (no direct URLs anywhere), stream it ourselves through the
+            // UMP protocol client instead of failing. Android only — the
+            // SabrDataSource is an ExoPlayer/Media3 construct; on Windows
+            // the resolve chain behaves exactly as before.
+            if (resolvedMedia == null && sabrConfig != null && OperatingSystem.IsAndroid())
+            {
+                Trace("[Resolve] All clients SABR-only — trying SABR streaming playback");
+                resolvedMedia = await TrySabrPlaybackAsync(sabrConfig, attempt, cancellationToken);
+            }
 
             // YoutubeExplode fallback — always try, even if InnerTube failed.
             // YoutubeExplode has its own cipher deciphering + watch-page scraping.
             if (resolvedMedia == null)
             {
-                Debug.WriteLine("[Resolve] InnerTube chain failed — trying YoutubeExplode fallback");
+                Trace("[Resolve] InnerTube chain failed — trying YoutubeExplode fallback");
                 try
                 {
                     YoutubeClient? yteClient = HasCookies
@@ -400,26 +510,40 @@ public partial class YouTubeResolverService
                         if (!string.IsNullOrEmpty(url))
                         {
                             resolvedMedia = new ResolvedMedia(url, DefaultUserAgent);
-                            Debug.WriteLine("[Resolve] YoutubeExplode SUCCESS");
+                            Trace("[Resolve] YoutubeExplode SUCCESS");
+                        }
+                        else
+                        {
+                            attempt.YoutubeExplodeError = "no playable audio stream in manifest";
                         }
                     }
                 }
                 catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
                 catch (Exception ex)
                 {
-                    Debug.WriteLine($"[Resolve] YoutubeExplode error: {ex.Message}");
+                    attempt.YoutubeExplodeError = ex.Message;
+                    Trace($"[Resolve] YoutubeExplode error: {ex.Message}");
                 }
             }
+
+            attempt.Succeeded = resolvedMedia != null;
+            RecordResolveAttempt(attempt);
         }
 
         if (resolvedMedia == null)
         {
-            Debug.WriteLine($"[Resolve] ALL CLIENTS FAILED for {trackUrl} — returning null");
+            Trace($"[Resolve] ALL CLIENTS FAILED for {trackUrl} — returning null");
             return null;
         }
 
-        if (resolvedMedia.Url != trackUrl)
+        if (resolvedMedia.Url != trackUrl &&
+            !resolvedMedia.Url.StartsWith("sabr://", StringComparison.Ordinal))
+        {
+            // sabr:// URIs are deliberately NOT cached: the session registry
+            // keeps and evicts sessions on its own, and a cached sabr:// URI
+            // could outlive its session.
             CacheStreamUrl(trackUrl, resolvedMedia);
+        }
 
         return resolvedMedia;
     }
@@ -433,8 +557,8 @@ public partial class YouTubeResolverService
         // This is important: duration lookup for restricted videos needs the same client
         // chain as stream resolution, otherwise duration fails silently.
         InnerTubeClientInfo[] durationClients = HasAuthentication
-            ? new[] { InnerTubeClients.VisionOS, InnerTubeClients.Web }
-            : new[] { InnerTubeClients.VisionOS };
+            ? new[] { InnerTubeClients.VisionOS, InnerTubeClients.TvSamsung, InnerTubeClients.Web }
+            : new[] { InnerTubeClients.VisionOS, InnerTubeClients.TvSamsung };
 
         foreach (var client in durationClients)
         {
@@ -489,39 +613,57 @@ public partial class YouTubeResolverService
     //  Private: client fallback chain
     // ─────────────────────────────────────────────────────────────────────────
 
-    private async Task<ResolvedMedia?> GetFastStreamUrlAsync(string videoId, CancellationToken cancellationToken)
+    private async Task<(ResolvedMedia? Media, SabrSessionConfig? SabrConfig)> GetFastStreamUrlAsync(
+        string videoId, ResolveAttempt attempt, CancellationToken cancellationToken)
     {
-        // Build the client chain. WEB is only included when authenticated
-        // (cookies OR OAuth Bearer).
+        // Build the client chain (v6 — mirrors yt-dlp 2026.10.26 production
+        // defaults). The authenticated clients are only included when
+        // cookies OR an OAuth Bearer are available.
         List<InnerTubeClientInfo> clientsToTry = new()
         {
-            InnerTubeClients.VisionOS
+            InnerTubeClients.VisionOS,
+
+            // tv_samsung (clientName TVHTML5, Samsung Tizen smart TV):
+            // yt-dlp's #1 default client for EVERYONE as of Oct 2026 — no
+            // PO token required, returns direct URLs, supports cookies.
+            InnerTubeClients.TvSamsung
         };
 
         if (HasAuthentication)
         {
+            // yt-dlp's authenticated defaults: web_embedded → tv_samsung → web
+            clientsToTry.Add(InnerTubeClients.WebEmbedded);
             clientsToTry.Add(InnerTubeClients.Web);
-            Debug.WriteLine($"[Resolve] Authentication detected ({(HasCookies ? "cookies" : "oauth")}) — WEB client added to fallback chain");
+            Trace($"[Resolve] Authentication detected ({(HasCookies ? "cookies" : "oauth")}) — WEB_EMBEDDED_PLAYER + WEB added to fallback chain");
         }
 
         clientsToTry.Add(InnerTubeClients.Android);
 
-        Debug.WriteLine($"[Resolve] Client chain: {string.Join(" → ", clientsToTry.Select(c => c.Name))}");
+        Trace($"[Resolve] Client chain: {string.Join(" → ", clientsToTry.Select(c => c.Name))}");
+
+        // v7 (SABR): filled when a client answers SABR-only; used as the
+        // last resort if the whole chain finds no direct URL.
+        SabrSessionConfig? sabrConfig = null;
 
         foreach (InnerTubeClientInfo client in clientsToTry)
         {
             if (IsStreamClientBlocked(videoId, client.Name))
             {
-                Debug.WriteLine($"[Resolve] Skipping {client.Name} — circuit breaker open for {videoId}");
+                Trace($"[Resolve] Skipping {client.Name} — circuit breaker open for {videoId}");
+                attempt.Outcome($"{client.Name}: skipped (recent HTTP 403)");
                 continue;
             }
 
-            for (int attempt = 1; attempt <= MaxClientAttempts; attempt++)
+            for (int tryIndex = 1; tryIndex <= MaxClientAttempts; tryIndex++)
             {
                 try
                 {
                     HttpRequestMessage request = await BuildPlayerRequestAsync(videoId, client);
                     request.Content = BuildPlayerPayload(videoId, client);
+
+                    if (!string.IsNullOrEmpty(PoToken) &&
+                        (client.Name == "ANDROID" || client.Name.StartsWith("WEB")))
+                        attempt.PoTokenAttached = true;
 
                     HttpResponseMessage response = await _innerTubeClient.SendAsync(
                         request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
@@ -530,6 +672,13 @@ public partial class YouTubeResolverService
                     {
                         if ((int)response.StatusCode == 403)
                             MarkStreamClientFailed(videoId, client.Name, 403);
+
+                        if (!response.IsSuccessStatusCode)
+                        {
+                            Trace($"[Resolve] {client.Name} returned HTTP {(int)response.StatusCode} for {videoId}");
+                            attempt.Outcome($"{client.Name}: HTTP {(int)response.StatusCode}");
+                            break;
+                        }
 
                         string json = await response.Content.ReadAsStringAsync(cancellationToken);
 
@@ -540,15 +689,21 @@ public partial class YouTubeResolverService
                         using JsonDocument doc = JsonDocument.Parse(json);
                         JsonElement root = doc.RootElement;
 
-                        // Update visitorData from response (for non-cookie-authenticated requests)
-                        if (root.TryGetProperty("responseContext", out JsonElement rc) &&
+                        // Update visitorData from response (for non-cookie-authenticated requests).
+                        // SKIPPED while a GVS PO token is set: the token is bound to the
+                        // visitorData it was minted for (yt-dlp PO-token guide), so an imported
+                        // ***VISITOR DATA*** + ***PO TOKEN*** pair must keep traveling together —
+                        // adopting the response's visitorData would unbind the token and the
+                        // stream protection attestation would never pass.
+                        if (string.IsNullOrEmpty(PoToken) &&
+                            root.TryGetProperty("responseContext", out JsonElement rc) &&
                             rc.TryGetProperty("visitorData", out JsonElement vd))
                         {
                             string? newVd = vd.GetString();
                             if (!string.IsNullOrEmpty(newVd) && newVd != VisitorData)
                             {
                                 VisitorData = newVd;
-                                Debug.WriteLine("[Resolve] Updated visitorData from player response");
+                                Trace("[Resolve] Updated visitorData from player response");
                             }
                         }
 
@@ -561,7 +716,10 @@ public partial class YouTubeResolverService
                             {
                                 string? reason = statusProp.TryGetProperty("reason", out JsonElement reasonEl)
                                     ? reasonEl.GetString() : null;
-                                Debug.WriteLine($"[Resolve] {client.Name} returned {statusStr} for {videoId}: {reason ?? "no reason"}");
+                                Trace($"[Resolve] {client.Name} returned {statusStr} for {videoId}: {reason ?? "no reason"}");
+                                attempt.Outcome($"{client.Name}: {statusStr} — {reason ?? "no reason given"}");
+                                if (statusStr == "LOGIN_REQUIRED")
+                                    attempt.LoginRequired = true;
                                 break; // try next client
                             }
                         }
@@ -585,13 +743,25 @@ public partial class YouTubeResolverService
                                 if (f.TryGetProperty("signatureCipher", out _)) withCipher++;
                             }
 
-                            Debug.WriteLine($"[Resolve] {client.Name}: {formats.Count} formats, {audioCount} audio, {withUrl} direct, {withCipher} ciphered");
+                            Trace($"[Resolve] {client.Name}: {formats.Count} formats, {audioCount} audio, {withUrl} direct, {withCipher} ciphered");
 
-                            // SABR detection: if there are formats but none have url or signatureCipher,
-                            // they're SABR streams (YouTube's new protocol) which ExoPlayer can't play.
+                            // SABR detection: formats exist but none carry a direct URL or
+                            // signatureCipher — YouTube only offers this video through its
+                            // SABR streaming protocol. The response is captured for the
+                            // SABR playback fallback (see TrySabrPlaybackAsync).
                             if (audioCount > 0 && withUrl == 0 && withCipher == 0)
                             {
-                                Debug.WriteLine($"[Resolve] {client.Name}: SABR-only response detected (no playable URLs) — ExoPlayer cannot play SABR streams");
+                                bool hasSabrUrl = streamingData.TryGetProperty("serverAbrStreamingUrl", out JsonElement sabrUrlEl);
+                                Trace($"[Resolve] {client.Name}: SABR-only response detected (no playable URLs{(hasSabrUrl ? ", serverAbrStreamingUrl present" : "")}) — captured for the SABR fallback");
+                                attempt.SabrOnly = true;
+                                attempt.Outcome($"{client.Name}: SABR-only — {audioCount} audio formats, none with a direct URL (YouTube's new streaming protocol)");
+
+                                if (hasSabrUrl && sabrUrlEl.GetString() is string sabrUrl && !string.IsNullOrEmpty(sabrUrl))
+                                {
+                                    SabrSessionConfig? captured = TryBuildSabrConfig(root, formats, client, videoId, sabrUrl);
+                                    if (captured != null)
+                                        sabrConfig = captured;
+                                }
                                 break; // try next client
                             }
 
@@ -601,19 +771,25 @@ public partial class YouTubeResolverService
                                 string? streamUrl = FindBestAudioWithUrl(formats);
                                 if (streamUrl != null)
                                 {
-                                    Debug.WriteLine($"[Resolve] SUCCESS — client: {client.Name} (direct URL)");
-                                    return new ResolvedMedia(streamUrl, client.UA);
+                                    Trace($"[Resolve] SUCCESS — client: {client.Name} (direct URL)");
+                                    attempt.Outcome($"{client.Name}: OK — direct audio URL");
+                                    return (new ResolvedMedia(streamUrl, client.UA), null);
                                 }
+
+                                Trace($"[Resolve] {client.Name}: direct URLs present but no usable audio format");
+                                attempt.Outcome($"{client.Name}: {withUrl} direct URL(s), none of them audio");
                             }
 
                             if (withCipher > 0)
                             {
-                                Debug.WriteLine($"[Resolve] {client.Name}: ciphered URLs only — will use YoutubeExplode fallback");
+                                Trace($"[Resolve] {client.Name}: ciphered URLs only — will use YoutubeExplode fallback");
+                                attempt.Outcome($"{client.Name}: {withCipher} ciphered URL(s) — YoutubeExplode can decipher");
                             }
                         }
                         else
                         {
-                            Debug.WriteLine($"[Resolve] {client.Name}: no streamingData in response");
+                            Trace($"[Resolve] {client.Name}: no streamingData in response");
+                            attempt.Outcome($"{client.Name}: no streamingData in response");
                         }
 
                         break; // no usable streaming data, try next client
@@ -622,19 +798,177 @@ public partial class YouTubeResolverService
                 catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
                 catch (IOException ex)
                 {
-                    Debug.WriteLine($"[Resolve] {client.Name} attempt {attempt} IOException: {ex.Message}");
-                    if (attempt < MaxClientAttempts)
-                        await Task.Delay(500 * attempt, cancellationToken).ConfigureAwait(false);
+                    Trace($"[Resolve] {client.Name} try {tryIndex} IOException: {ex.Message}");
+                    if (tryIndex < MaxClientAttempts)
+                        await Task.Delay(500 * tryIndex, cancellationToken).ConfigureAwait(false);
+                    else
+                        attempt.Outcome($"{client.Name}: network error — {ex.Message}");
                 }
                 catch (Exception ex)
                 {
-                    Debug.WriteLine($"[Resolve] {client.Name} attempt {attempt} error: {ex.Message}");
+                    Trace($"[Resolve] {client.Name} try {tryIndex} error: {ex.Message}");
+                    attempt.Outcome($"{client.Name}: {ex.GetType().Name} — {ex.Message}");
                     break;
                 }
             }
         }
 
-        return null;
+        return (null, sabrConfig);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    //  Private: SABR playback fallback (v7)
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Starts a SABR streaming session for a SABR-only video and pre-flights
+    /// it (waits for the first bytes — the init segment — to arrive). On
+    /// success the resolver returns an opaque "sabr://&lt;guid&gt;" URI which
+    /// the Android playback service serves through SabrDataSource. On any
+    /// failure the outcome is recorded in the attempt and null is returned,
+    /// so the resolve chain continues with the YoutubeExplode fallback.
+    /// </summary>
+    private static async Task<ResolvedMedia?> TrySabrPlaybackAsync(
+        SabrSessionConfig config, ResolveAttempt attempt, CancellationToken cancellationToken)
+    {
+        SabrStreamSession? session = null;
+        try
+        {
+            session = SabrStreamRegistry.GetOrCreate(config);
+            session.EnsureRunning();
+
+            using CancellationTokenSource preflightCts =
+                CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            preflightCts.CancelAfter(TimeSpan.FromSeconds(12));
+
+            long firstBytes = await session.WaitForFirstBytesAsync(1, preflightCts.Token);
+
+            Trace($"[Resolve] SABR session started — itag {session.ActiveItag}, {firstBytes} bytes received");
+            attempt.Outcome($"SABR: streaming session started (itag {session.ActiveItag}, {firstBytes} bytes received)");
+
+            return new ResolvedMedia(SabrStreamRegistry.MakeUri(session), DefaultUserAgent);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw; // the caller switched tracks — abort the whole resolve
+        }
+        catch (OperationCanceledException)
+        {
+            session?.Cancel();
+            SabrStreamRegistry.RemoveFailed(config.VideoId);
+            Trace("[Resolve] SABR pre-flight timed out (no data within 12s)");
+            attempt.Outcome("SABR: timed out waiting for the first segment");
+            return null;
+        }
+        catch (Exception ex)
+        {
+            session?.Cancel();
+            SabrStreamRegistry.RemoveFailed(config.VideoId);
+            Trace($"[Resolve] SABR playback failed: {ex.Message}");
+            attempt.Outcome($"SABR: {ex.Message}");
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Captures everything a SABR session needs from a SABR-only player
+    /// response: the signed serverAbrStreamingUrl, the base64url
+    /// videoPlaybackUstreamerConfig (playerConfig.mediaCommonConfig.
+    /// mediaUstreamerRequestConfig), and the audio formats (ordered by the
+    /// same codec ranking as direct-URL selection). Null when the response
+    /// does not carry a usable SABR session.
+    /// </summary>
+    private static SabrSessionConfig? TryBuildSabrConfig(
+        JsonElement root, List<JsonElement> formats, InnerTubeClientInfo client,
+        string videoId, string sabrUrl)
+    {
+        try
+        {
+            if (!root.TryGetProperty("playerConfig", out JsonElement playerConfig) ||
+                !playerConfig.TryGetProperty("mediaCommonConfig", out JsonElement mediaCommon) ||
+                !mediaCommon.TryGetProperty("mediaUstreamerRequestConfig", out JsonElement ustreamerRequest) ||
+                !ustreamerRequest.TryGetProperty("videoPlaybackUstreamerConfig", out JsonElement ustreamerEl) ||
+                ustreamerEl.GetString() is not string ustreamerConfig ||
+                string.IsNullOrEmpty(ustreamerConfig))
+            {
+                Trace($"[Resolve] {client.Name}: SABR-only but no videoPlaybackUstreamerConfig — cannot stream");
+                return null;
+            }
+
+            List<SabrAudioFormat> audio = new();
+            foreach (JsonElement f in formats)
+            {
+                if (!f.TryGetProperty("mimeType", out JsonElement mimeEl) ||
+                    mimeEl.GetString() is not string mime ||
+                    !mime.Contains("audio/"))
+                    continue;
+                if (!f.TryGetProperty("itag", out JsonElement itagEl))
+                    continue;
+
+                // The ultra-low "saver" qualities never initialize over SABR
+                // on the ANDROID-family clients (yt-dlp's broken-format note).
+                if (f.TryGetProperty("audioQuality", out JsonElement audioQuality) &&
+                    audioQuality.GetString() == "AUDIO_QUALITY_ULTRALOW")
+                    continue;
+
+                ulong lastModified = 0;
+                if (f.TryGetProperty("lastModified", out JsonElement lm) &&
+                    ulong.TryParse(lm.GetString(), out ulong lmt))
+                    lastModified = lmt;
+
+                string? xtags = f.TryGetProperty("xtags", out JsonElement xt) ? xt.GetString() : null;
+                int bitrate = f.TryGetProperty("bitrate", out JsonElement br) ? br.GetInt32() : 0;
+
+                audio.Add(new SabrAudioFormat(itagEl.GetInt32(), lastModified, xtags, mime, bitrate));
+            }
+
+            if (audio.Count == 0)
+            {
+                Trace($"[Resolve] {client.Name}: SABR-only response has no usable audio formats");
+                return null;
+            }
+
+            // Same preference as direct-URL selection: opus > m4a, then bitrate.
+            audio.Sort((a, b) =>
+            {
+                int rankA = MimeCodecRank(a.MimeType), rankB = MimeCodecRank(b.MimeType);
+                return rankA != rankB ? rankB.CompareTo(rankA) : b.Bitrate.CompareTo(a.Bitrate);
+            });
+
+            SabrClientInfo clientInfo = new(
+                ClientName: int.Parse(client.Id, CultureInfo.InvariantCulture),
+                ClientVersion: client.Version,
+                OsName: client.OsName,
+                OsVersion: client.OsVersion,
+                DeviceMake: client.Make,
+                DeviceModel: client.Model,
+                AndroidSdkVersion: client.Sdk != null && int.TryParse(client.Sdk, out int sdk) ? sdk : null,
+                Hl: "en",
+                Gl: "US",
+                VisitorData: VisitorData,
+                UserAgent: client.UA);
+
+            return new SabrSessionConfig(
+                VideoId: videoId,
+                ServerAbrStreamingUrl: sabrUrl,
+                UstreamerConfigB64: ustreamerConfig,
+                ClientInfo: clientInfo,
+                PreferredAudio: audio,
+                PoToken: PoToken,
+                StartTimeMs: 0);
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"[Resolve] SABR config capture failed: {ex.Message}");
+            return null;
+        }
+    }
+
+    private static int MimeCodecRank(string mime)
+    {
+        if (mime.Contains("opus")) return 3;
+        if (mime.Contains("mp4a")) return 2;
+        return 1;
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -650,14 +984,19 @@ public partial class YouTubeResolverService
         string apiUrl = $"{baseUrl}/youtubei/v1/player?key={InnerTubeApiKey}&prettyPrint=false";
 
         HttpRequestMessage request = new(HttpMethod.Post, apiUrl);
-        request.Headers.Add("User-Agent", client.UA);
+        // WebEmbedded's UA ends in "Safari/605.1.15,gzip(gfe)" — the exact UA
+        // yt-dlp ships for that client — and .NET's validated header parser
+        // rejects the ",gzip(gfe)" suffix (ProductInfoHeaderValue syntax).
+        // TryAddWithoutValidation sends the UA byte-for-byte as yt-dlp does.
+        request.Headers.TryAddWithoutValidation("User-Agent", client.UA);
         request.Headers.Add("Accept", "application/json");
         request.Headers.Add("X-Goog-Api-Format-Version", "1");
         request.Headers.Add("X-YouTube-Client-Name", client.Id);
         request.Headers.Add("X-YouTube-Client-Version", client.Version);
 
-        // X-Origin + Referer for WEB and VISIONOS clients
-        bool needsOrigin = client.Name.StartsWith("WEB") || client.Name == "VISIONOS";
+        // X-Origin + Referer for WEB-family and VISIONOS clients (yt-dlp sends
+        // Origin on every innertube API call, so the new TVHTML5 client gets it too)
+        bool needsOrigin = client.Name.StartsWith("WEB") || client.Name == "VISIONOS" || client.Name == "TVHTML5";
         if (needsOrigin)
         {
             request.Headers.Add("X-Origin", baseUrl);
@@ -665,12 +1004,15 @@ public partial class YouTubeResolverService
         }
 
         // ── Cookie authentication ────────────────────────────────────────────
-        // Cookies are ONLY attached to the WEB client. VISIONOS and ANDROID are
-        // anonymous clients — sending cookies to them confuses YouTube and causes
+        // Cookies are attached to the cookie-supporting clients: the WEB family
+        // (WEB, WEB_EMBEDDED_PLAYER) and the Samsung TV client (TVHTML5 —
+        // SUPPORTS_COOKIES in yt-dlp's client table). VISIONOS and ANDROID stay
+        // anonymous — sending cookies to them confuses YouTube and causes
         // "no streamingData" responses.
         string? cookie = Cookies;
         bool isWebClient = client.Name.StartsWith("WEB");
-        bool hasCookiesForThisClient = !string.IsNullOrEmpty(cookie) && isWebClient;
+        bool supportsCookies = isWebClient || client.Name == "TVHTML5";
+        bool hasCookiesForThisClient = !string.IsNullOrEmpty(cookie) && supportsCookies;
 
         // Don't send visitorData with cookie-authenticated requests — stale
         // visitorData causes "The page needs to be reloaded" errors.
@@ -760,21 +1102,57 @@ public partial class YouTubeResolverService
         if (client.Sdk != null) clientObj["androidSdkVersion"] = client.Sdk;
 
         // Don't include visitorData for cookie-authenticated requests.
-        // Cookies are only for WEB — VISIONOS and ANDROID are anonymous.
-        bool needsCookies = client.Name.StartsWith("WEB");
-        bool cookieAuth = !string.IsNullOrEmpty(Cookies) && needsCookies;
+        // Cookies go to the WEB family + TVHTML5 — VISIONOS and ANDROID are
+        // anonymous.
+        bool supportsCookies = client.Name.StartsWith("WEB") || client.Name == "TVHTML5";
+        bool cookieAuth = !string.IsNullOrEmpty(Cookies) && supportsCookies;
 
         string? vd = VisitorData;
         if (!string.IsNullOrEmpty(vd) && !cookieAuth)
             clientObj["visitorData"] = vd;
 
-        object defaultPayload = new
+        // v6 payload upgrades (all mirrored from yt-dlp's player request):
+        //   contentCheckOk / racyCheckOk — bypass the content-warning gate
+        //     that otherwise makes borderline videos UNPLAYABLE;
+        //   playbackContext.contentPlaybackContext.html5Preference — what
+        //     every real client sends.
+        Dictionary<string, object> payload = new()
         {
-            videoId,
-            context = new { client = clientObj, user = new { } }
+            ["videoId"] = videoId,
+            ["contentCheckOk"] = true,
+            ["racyCheckOk"] = true,
+            ["playbackContext"] = new Dictionary<string, object>
+            {
+                ["contentPlaybackContext"] = new Dictionary<string, object>
+                {
+                    ["html5Preference"] = "HTML5_PREF_WANTS"
+                }
+            },
+            ["context"] = new Dictionary<string, object>
+            {
+                ["client"] = clientObj,
+                ["user"] = new Dictionary<string, object>()
+            }
         };
-        string defaultJson = JsonSerializer.Serialize(defaultPayload, _jsonOptions);
-        return new StringContent(defaultJson, Encoding.UTF8, "application/json");
+
+        // GVS PO token (bot attestation): attached to the clients whose format
+        // URLs are gated behind one (ANDROID + the WEB family, per yt-dlp's
+        // PO-token guide). A valid GVS token restores direct URLs on clients
+        // that would otherwise return SABR-only or 403. The token is bound to
+        // the visitorData sent above, so both travel together.
+        string? poToken = PoToken;
+        if (!string.IsNullOrEmpty(poToken) &&
+            (client.Name == "ANDROID" || client.Name.StartsWith("WEB")))
+        {
+            payload["serviceIntegrityDimensions"] = new Dictionary<string, object>
+            {
+                ["poToken"] = poToken
+            };
+            Trace($"[Resolve] Attached GVS PO token to {client.Name} payload");
+        }
+
+        string json = JsonSerializer.Serialize(payload, _jsonOptions);
+        return new StringContent(json, Encoding.UTF8, "application/json");
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -868,9 +1246,46 @@ public partial class YouTubeResolverService
             UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
         };
 
+        // tv_samsung — yt-dlp's #1 default client for EVERYONE (Oct 2026):
+        // plain TVHTML5 clientName + Samsung Tizen device fields. No PO token
+        // required, no GVS policy entry, returns direct URLs, SUPPORTS_COOKIES.
+        public static readonly InnerTubeClientInfo TvSamsung = new()
+        {
+            Name = "TVHTML5",
+            Version = "5.20260707",
+            Id = "7",
+            OsName = "Tizen",
+            OsVersion = "2.4.0",
+            Make = "Samsung",
+            Model = "UKS9800",
+            Sdk = null,
+            UA = "Mozilla/5.0 (SMART-TV; Linux; Tizen 2.4.0) AppleWebKit/538.1 (KHTML, like Gecko) Version/2.4.0 TV Safari/538.1"
+        };
+
+        // web_embedded — yt-dlp's #1 AUTHENTICATED default (Oct 2026). Only
+        // plays embeddable videos, but often returns direct URLs where the
+        // plain WEB client is SABR-only. Cookies + SAPISIDHASH are attached
+        // (WEB family).
+        public static readonly InnerTubeClientInfo WebEmbedded = new()
+        {
+            Name = "WEB_EMBEDDED_PLAYER",
+            Version = "2.20260708.00.00",
+            Id = "56",
+            OsName = null,
+            OsVersion = null,
+            Make = null,
+            Model = null,
+            Sdk = null,
+            UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.5 Safari/605.1.15,gzip(gfe)"
+        };
+
         // NOTE: TVHTML5_SIMPLY_EMBEDDED_PLAYER was removed — it returns
         // "YouTube is no longer supported in this application or device."
         // as of Aug 2026. Do not re-add it.
+        //
+        // NOTE: ANDROID_VR was deliberately NOT added (yt-dlp client notes,
+        // Oct 2026): version 1.65.10 gets ALL formats 403'd since 2026.08.17,
+        // and clientVersion > 1.65 returns SABR-only.
 
         public static readonly InnerTubeClientInfo Android = new()
         {

@@ -32,6 +32,22 @@ namespace Musicthingy.Views;
 //   4. evaluate window.ytcfg for VISITOR_DATA / DATASYNC_ID
 //   5. account_menu call → account display name
 //
+// NOTE (v5 — white-screen fix, proven by logcat): v4 assigned
+// _webView.Source only in HandlerChanged. On Android the handler fires
+// MapSource at CONNECT time — before HandlerChanged runs — and with
+// Source still null it loads its own "about:blank" placeholder. v4's
+// Navigating handler treated that about:blank as a "non-http navigation"
+// and CANCELED it (logcat: "intercepted non-http navigation: about:blank"
+// at 21:24:27.106, followed 33 ms later by an already-aborted
+// "navigated: …/ServiceLogin…"). Canceling fires StopLoading() and kills
+// the REAL sign-in load that was already in flight → permanent white
+// screen. Two fixes: (a) assign Source in the constructor so the handler
+// loads the sign-in URL directly and the placeholder never happens (safe
+// since v4 — the UA is no longer overridden, so nothing needs to happen
+// before the first load); (b) never cancel about:/data:/blob:/javascript:
+// URIs — they are native WebView URIs, only genuinely non-renderable
+// schemes (intent:, market:, mailto:, …) are intercepted.
+//
 // NOTE (v4, researched against the production apps): Google blocks the
 // sign-in when a WebView PRETENDS to be a desktop browser. InnerTune's
 // LoginScreen (the most-copied implementation, still working in
@@ -43,10 +59,12 @@ namespace Musicthingy.Views;
 // “insecure browser” signal — Google let the email through and then
 // served “This browser or app may not be secure” at the password step
 // (confirmed in the user's logcat). v1-v3 shipped that spoof and got
-// blocked; v4 keeps the DEFAULT platform user agent like InnerTune.
-// If a specific account still gets blocked (Advanced Protection,
-// Workspace policy), the page says so and the OAuth device-code flow in
-// Settings remains the fallback and needs no browser at all.
+// blocked; v4 keeps the DEFAULT platform user agent like InnerTune
+// (the user's logcat now confirms the live UA is the genuine
+// “; wv)” WebView agent). If a specific account still gets blocked
+// (Advanced Protection, Workspace policy), the page says so and the
+// OAuth device-code flow in Settings remains the fallback and needs no
+// browser at all.
 // ────────────────────────────────────────────────────────────────────────────
 
 public class YouTubeWebLoginPage : ContentPage
@@ -114,9 +132,15 @@ public class YouTubeWebLoginPage : ContentPage
 
         _webView = new WebView
         {
-            // (v4) NO UserAgent override — the sign-in page must see the
-            // DEFAULT platform user agent (InnerTune parity). See the file
-            // header: spoofing a desktop UA is what got sign-ins blocked.
+            // (v5) Assign the URL HERE, in the constructor. The handler
+            // applies Source the moment it connects, so the sign-in page is
+            // the FIRST thing it loads — the handler never gets around to its
+            // about:blank placeholder (whose interception was the white
+            // screen; see the file header). No UserAgent override either —
+            // the sign-in page must see the DEFAULT platform user agent
+            // (InnerTune parity; a spoofed desktop UA is what got sign-ins
+            // blocked in v1-v3).
+            Source = new UrlWebViewSource { Url = LoginUrl }
         };
 
         _status = new Label
@@ -188,11 +212,9 @@ public class YouTubeWebLoginPage : ContentPage
 
     private void OnWebViewHandlerChanged(object? sender, EventArgs e)
     {
-        // Configure the NATIVE webview before the first navigation, then start
-        // loading. (The User-Agent cannot be changed safely mid-session.)
-        // v4: the user agent is deliberately NOT overridden — the default
-        // platform agent is what InnerTune ships and what Google accepts;
-        // a spoofed desktop UA is what the “not secure” block caught.
+        // Configure the NATIVE webview once, before the first navigation
+        // paints. The URL itself is already assigned (constructor) — do NOT
+        // assign Source here again, that would reload the page.
         if (_loaded) return;
         _loaded = true;
 
@@ -210,8 +232,6 @@ public class YouTubeWebLoginPage : ContentPage
             }
         }
 #endif
-
-        _webView.Source = new UrlWebViewSource { Url = LoginUrl };
     }
 
     /// <summary>
@@ -229,11 +249,24 @@ public class YouTubeWebLoginPage : ContentPage
     {
         string url = e.Url ?? "";
 
-        bool isHttp = url.StartsWith("https://", StringComparison.OrdinalIgnoreCase) ||
-                      url.StartsWith("http://", StringComparison.OrdinalIgnoreCase);
-        if (isHttp || string.IsNullOrEmpty(url)) return;
+        // Renderable schemes — let the WebView handle them.
+        // about:/data:/blob:/javascript: are NATIVE WebView URIs: canceling
+        // them calls StopLoading() and can abort an in-flight load — that is
+        // exactly how v4 turned the sign-in page into a white screen (the
+        // handler's own about:blank placeholder got canceled right after the
+        // real navigation had started; see the file header). Never touch them.
+        bool renderable =
+            url.StartsWith("https://", StringComparison.OrdinalIgnoreCase) ||
+            url.StartsWith("http://", StringComparison.OrdinalIgnoreCase) ||
+            url.StartsWith("about:", StringComparison.OrdinalIgnoreCase) ||
+            url.StartsWith("data:", StringComparison.OrdinalIgnoreCase) ||
+            url.StartsWith("blob:", StringComparison.OrdinalIgnoreCase) ||
+            url.StartsWith("javascript:", StringComparison.OrdinalIgnoreCase);
+        if (renderable || string.IsNullOrEmpty(url)) return;
 
-        e.Cancel = true; // the WebView must not try to render scheme-only URLs
+        // Non-renderable schemes (intent://, market://, mailto:, …) — the
+        // WebView would abort with ERR_UNKNOWN_URL_SCHEME.
+        e.Cancel = true;
         Log($"intercepted non-http navigation: {url}");
 
         // intent://…;S.browser_fallback_url=<url>;…;end → follow the explicit

@@ -1,3 +1,5 @@
+﻿using CommunityToolkit.Maui.Extensions;
+using CommunityToolkit.Maui.Views;
 using Musicthingy.Helpers;
 using Musicthingy.Models;
 using Musicthingy.Services;
@@ -173,8 +175,8 @@ public partial class MainViewModel
         _mediaLoadCts = new CancellationTokenSource();
         CancellationToken token = _mediaLoadCts.Token;
 
-        // (v4) Only the previous track's LOAD is cancelled here. Its background
-        // CACHE download is deliberately NOT cancelled — FastTrackDownloader now
+        // (v5) Only the previous track's LOAD is cancelled here. Its background
+        // CACHE download is deliberately NOT cancelled — TrackCacheService now
         // runs a persistent queue, so skimmed tracks still end up cached and the
         // next track's download no longer dies waiting on the single-flight gate.
         // (Playback race safety: the older load checks token.IsCancellationRequested
@@ -298,10 +300,12 @@ public partial class MainViewModel
 
             if (!string.IsNullOrEmpty(newValue.Url))
             {
-                // TrackCacheService keeps serving legacy cached entries;
-                // FastTrackDownloader is the new high-speed cache engine.
-                string? cachedPath = _trackCacheService.GetCachedTrackPath(newValue.Url)
-                                     ?? FastTrackDownloader.GetCachedTrackPath(newValue.Url);
+                // v5: ONE cache again — TrackCacheService now contains the fast
+                // engine too (same directory, same naming), so this single call
+                // sees every cached file and the stats page/playlist agree with
+                // playback. (The separate FastTrackDownloader cache is gone; its
+                // old files are migrated at startup.)
+                string? cachedPath = _trackCacheService.GetCachedTrackPath(newValue.Url);
                 if (cachedPath != null)
                 {
                     Debug.WriteLine($"[Playback] Using Local Cache for: {newValue.Url}");
@@ -319,23 +323,23 @@ public partial class MainViewModel
 
             if (token.IsCancellationRequested || resolvedMedia == null || string.IsNullOrEmpty(resolvedMedia.Url))
             {
-                // Show a user-facing error if the track couldn't be resolved
-                // (e.g. embedding-disabled video without cookies, or YouTube bot check).
+                // Show a user-facing error built from the resolver's ACTUAL
+                // per-client outcomes (the [Resolve] log) — not a guessed
+                // list of possible causes.
                 if (!token.IsCancellationRequested && resolvedMedia == null)
                 {
                     Debug.WriteLine("[Playback] Resolve returned null — showing error to user");
                     await MainThread.InvokeOnMainThreadAsync(async () =>
                     {
-                        string authHint = Services.YouTubeResolverService.HasAuthentication
-                            ? "even while signed in.\n\nThis video may require:\n• A fresh sign-in (Settings → YouTube Accounts)\n• SABR streaming support (not yet available)\n• The official YouTube app (ReVanced)"
-                            : ".\n\nThis video may require signing in.\nGo to Settings → YouTube Accounts.";
-
-                        await ShowConfirmAsync(
-                            "Playback Error",
-                            "This video could not be loaded" + authHint,
-                            "OK",
-                            ModalBackgroundTapBehavior.Confirm,
-                            isDanger: true);
+                        // The raw resolve log only — what every client actually
+                        // answered, the YoutubeExplode error and the [SABR]
+                        // session lines — with a Copy button. No interpreted
+                        // hints or conclusions.
+                        string log = BuildResolveFailureLog(newValue.Url);
+                        var popup = new Views.PlaybackErrorPopup(log);
+                        Page? page = Application.Current?.Windows?.FirstOrDefault()?.Page;
+                        if (page != null)
+                            await page.ShowPopupAsync(popup);
                     });
                 }
 
@@ -352,39 +356,58 @@ public partial class MainViewModel
             _playbackService.Play(resolvedMedia.Url, resolvedMedia.UserAgent, targetStartMs);
 
             // ==========================================
-            // BACKGROUND CACHE (v4 — persistent queue):
-            // enqueue the current track AND the next track in the playback
-            // queue. FastTrackDownloader drains the queue sequentially in the
-            // background; downloads survive track switches (that is why
-            // skimmed tracks never got cached before). YoutubeExplode URLs are
-            // n-deciphered and download at full speed; the InnerTube playback
-            // URL is n-throttled and only used as a fallback.
+            // BACKGROUND CACHE (v5 — one queue, one cache):
+            // enqueue the current track AND (for YouTube) the next track in
+            // the playback queue. TrackCacheService drains the queue
+            // sequentially in the background; downloads survive track
+            // switches (that is why skimmed tracks never got cached before).
+            // YouTube tracks resolve through YoutubeExplode (n-deciphered,
+            // full speed); NON-YouTube tracks cache from their resolved
+            // direct URL (not throttled, also fast). Local files
+            // (file://, content://, plain paths) are skipped — they are
+            // already on disk.
             // ==========================================
-            if (!isCached && !string.IsNullOrEmpty(newValue.Url) && MediaUrlHelper.IsYouTubeUrl(newValue.Url))
+            if (!isCached && !string.IsNullOrEmpty(newValue.Url) &&
+                !newValue.Url.StartsWith("/") &&
+                !newValue.Url.StartsWith("file://") &&
+                !newValue.Url.StartsWith("content://"))
             {
                 string cacheOriginalUrl = newValue.Url;
-                string? fallbackCacheUrl = !resolvedMedia.Url.StartsWith("/") &&
-                                           !resolvedMedia.Url.StartsWith("file://") &&
-                                           !resolvedMedia.Url.StartsWith("content://")
-                    ? resolvedMedia.Url : null;
+                bool isYouTubeTrack = MediaUrlHelper.IsYouTubeUrl(newValue.Url);
 
-                YoutubeExplode.YoutubeClient? yteClient = Services.YouTubeResolverService.HasCookies
-                    ? Services.YouTubeResolverService.GetYoutubeClientWithCookies()
-                    : _youtubeResolver.GetYoutubeExplodeClient();
+                string? fallbackCacheUrl =
+                    !string.IsNullOrEmpty(resolvedMedia.Url) &&
+                    !resolvedMedia.Url.StartsWith("/") &&
+                    !resolvedMedia.Url.StartsWith("file://") &&
+                    !resolvedMedia.Url.StartsWith("content://") &&
+                    !resolvedMedia.Url.StartsWith("sabr://") // SABR sessions are not download URLs
+                        ? resolvedMedia.Url : null;
 
-                FastTrackDownloader.Enqueue(yteClient, cacheOriginalUrl, fallbackCacheUrl);
+                // YoutubeExplode client only makes sense for YouTube tracks.
+                YoutubeExplode.YoutubeClient? yteClient = isYouTubeTrack
+                    ? (Services.YouTubeResolverService.HasCookies
+                        ? Services.YouTubeResolverService.GetYoutubeClientWithCookies()
+                        : _youtubeResolver.GetYoutubeExplodeClient())
+                    : null;
 
-                // Pre-cache the next track in the queue (InnerTune-style): the
-                // downloader resolves the stream itself, so this needs no extra
-                // resolver call. Best-effort; deduplicated and cached-skip safe.
-                if (PlaybackQueue != null && PlaybackQueue.Count > 0)
+                if (isYouTubeTrack || !string.IsNullOrEmpty(fallbackCacheUrl))
                 {
-                    int curIndex = PlaybackQueue.IndexOf(newValue);
-                    if (curIndex >= 0)
+                    _trackCacheService.EnqueueFast(yteClient, cacheOriginalUrl, fallbackCacheUrl);
+
+                    // Pre-cache the next YouTube track in the queue
+                    // (InnerTune-style): the downloader resolves the stream
+                    // itself, so this needs no extra resolver call.
+                    // Best-effort; deduplicated and cached-skip safe.
+                    if (PlaybackQueue != null && PlaybackQueue.Count > 0)
                     {
-                        var nextTrack = PlaybackQueue[(curIndex + 1) % PlaybackQueue.Count];
-                        if (!string.IsNullOrEmpty(nextTrack?.Url) && MediaUrlHelper.IsYouTubeUrl(nextTrack.Url))
-                            FastTrackDownloader.Enqueue(yteClient, nextTrack.Url, null);
+                        int curIndex = PlaybackQueue.IndexOf(newValue);
+                        if (curIndex >= 0)
+                        {
+                            var nextTrack = PlaybackQueue[(curIndex + 1) % PlaybackQueue.Count];
+                            if (!string.IsNullOrEmpty(nextTrack?.Url) &&
+                                MediaUrlHelper.IsYouTubeUrl(nextTrack.Url))
+                                _trackCacheService.EnqueueFast(yteClient, nextTrack.Url, null);
+                        }
                     }
                 }
             }
@@ -399,6 +422,37 @@ public partial class MainViewModel
             Debug.WriteLine($"[Playback] ReloadMediaAsync failed: {ex.Message}");
             ReleaseTransientWakeLock();
         }
+    }
+
+    /// <summary>
+    /// The raw resolve log for a failed YouTube playback: every per-client
+    /// outcome exactly as the resolver recorded it, the YoutubeExplode error
+    /// and the [SABR] session lines — nothing interpreted, nothing added.
+    /// Shown (and copyable) in the playback error popup.
+    /// </summary>
+    private static string BuildResolveFailureLog(string trackUrl)
+    {
+        string? videoId = Helpers.MediaUrlHelper.GetYouTubeVideoId(trackUrl);
+        var attempt = videoId != null
+            ? Services.YouTubeResolverService.GetLastResolveAttempt(videoId)
+            : null;
+
+        if (attempt == null)
+            return "No resolve log was recorded for this track.";
+
+        var sb = new System.Text.StringBuilder();
+        foreach (string outcome in attempt.Outcomes)
+            sb.Append(outcome).Append('\n');
+        if (!string.IsNullOrWhiteSpace(attempt.YoutubeExplodeError))
+            sb.Append("YoutubeExplode: ").Append(attempt.YoutubeExplodeError).Append('\n');
+        if (videoId != null)
+        {
+            foreach (string line in Services.Sabr.SabrStreamRegistry.GetRecentLog(videoId))
+                sb.Append(line).Append('\n');
+        }
+
+        string log = sb.ToString().TrimEnd();
+        return log.Length > 0 ? log : "No resolve log was recorded for this track.";
     }
 
     private void OnPlaybackTimeChanged(double timeMs)

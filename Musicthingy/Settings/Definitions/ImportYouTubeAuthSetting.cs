@@ -1,8 +1,10 @@
+using CommunityToolkit.Maui.Extensions;
 using CommunityToolkit.Maui.Views;
-using Musicthingy.Services;
-using Musicthingy.Services.Accounts;
 using System.Diagnostics;
+using System.Text;
 using System.Text.RegularExpressions;
+using Musicthingy.Services.Accounts;
+using Musicthingy.Views;
 
 namespace Musicthingy.Settings.Definitions;
 
@@ -11,11 +13,19 @@ namespace Musicthingy.Settings.Definitions;
 /// cookie paste with:
 ///   • "Sign in with Google (device code)" — OAuth device flow, no cookies
 ///     needed; the app gets auto-refreshing access tokens
-///   • "Import cookies / OpenTune block" — legacy path, still supported
+///   • "Import cookies / OpenTune block" — legacy path, still supported;
+///     the popup pre-fills the CURRENT cookies in a copyable format
 ///   • multiple simultaneous accounts, one active per platform
 ///
 /// The active account is pushed into YouTubeResolverService by the
 /// AccountManager (OAuth → Bearer token provider, cookies → SAPISIDHASH).
+///
+/// v6: the menus are REAL popups (YouTubeAccountsPopup /
+/// CookieImportPopup — same MCT Popup base class as the app's own
+/// TextEntryDialog). v5 used the app's ContextMenuSheet bottom sheet, but
+/// Services.SheetManager.Host only exists on the main page — from the
+/// Settings view the sheet never appeared at all. MCT popups attach to the
+/// window, so they show from any page.
 /// </summary>
 public class ImportYouTubeAuthSetting : ActionSetting
 {
@@ -27,6 +37,9 @@ public class ImportYouTubeAuthSetting : ActionSetting
     public override string Title => "YouTube Accounts";
     public override SettingCategory Category => SettingCategory.General;
     // App icon convention: "<lucide-name>_icon.png" (lucide "log-in").
+    // log_in_icon.png ships with this package (Resources/Images/lucide/) —
+    // it was referenced before but the file never existed, which is why the
+    // row icon was blank (Glide ENOENT in logcat).
     public override string Icon => "log_in_icon.png";
 
     // AccountManager.Resolve self-initializes a shared account store when
@@ -89,40 +102,7 @@ public class ImportYouTubeAuthSetting : ActionSetting
 
             Log("opening account menu");
 
-            // ── Build the menu: existing accounts + actions ─────────────────
-            var ytAccounts = accounts.GetAccounts(MusicPlatform.YouTube).ToList();
-            var activeId = accounts.GetActive(MusicPlatform.YouTube)?.Id;
-
-            var choices = ytAccounts
-                .Select(a => (a.Id == activeId ? "● " : "○ ") + a.DisplayName)
-                .ToList();
-
-            const string addWeb = "➕  Sign in with Google (in-app browser)";
-            const string addOAuth = "➕  Sign in with Google (device code)";
-            const string addCookies = "➕  Import cookies / OpenTune block";
-            const string removeAccount = "🗑  Remove an account";
-
-            var all = new List<string>(choices) { addWeb, addOAuth, addCookies, removeAccount };
-
-            string choice = await page.DisplayActionSheetAsync(
-                "YouTube Accounts", "Cancel", null, all.ToArray());
-
-            if (choice == null || choice == "Cancel") return;
-
-            if (choice == addWeb) { await RunWebLoginAsync(page); return; }
-            if (choice == addOAuth) { await RunGoogleDeviceFlowAsync(page, accounts); return; }
-            if (choice == addCookies) { await RunCookieImportAsync(page, accounts); return; }
-            if (choice == removeAccount) { await RemoveAccountFlowAsync(page, accounts); return; }
-
-            // An existing account was tapped → make it active.
-            int index = choices.IndexOf(choice);
-            if (index >= 0 && index < ytAccounts.Count)
-            {
-                await accounts.SetActiveAsync(MusicPlatform.YouTube, ytAccounts[index].Id);
-                RefreshDescription();
-                await page.DisplayAlertAsync("Account Switched",
-                    $"Now using: {ytAccounts[index].DisplayName}", "OK");
-            }
+            await ShowAccountMenuAsync(page, accounts);
 #else
             Debug.WriteLine("[YouTubeAccounts] Not supported on this platform");
 #endif
@@ -130,6 +110,82 @@ public class ImportYouTubeAuthSetting : ActionSetting
         catch (Exception ex)
         {
             Log($"error: {ex.Message}");
+        }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // Account menu — a real MCT Popup (YouTubeAccountsPopup), visible from
+    // ANY page including Settings (v5's ContextMenuSheet bottom sheet had
+    // no SheetManager.Host outside the main page and never appeared there).
+    // ─────────────────────────────────────────────────────────────────────
+
+    private async Task ShowAccountMenuAsync(Page page, AccountManager accounts)
+    {
+        var popup = new YouTubeAccountsPopup(accounts, removeMode: false);
+        await page.ShowPopupAsync(popup);
+        await HandleAccountMenuResultAsync(page, accounts, popup.Result, removeMode: false);
+    }
+
+    private async Task ShowRemoveMenuAsync(Page page, AccountManager accounts)
+    {
+        var popup = new YouTubeAccountsPopup(accounts, removeMode: true);
+        await page.ShowPopupAsync(popup);
+        await HandleAccountMenuResultAsync(page, accounts, popup.Result, removeMode: true);
+    }
+
+    private async Task HandleAccountMenuResultAsync(
+        Page page, AccountManager accounts, string? result, bool removeMode)
+    {
+        if (string.IsNullOrEmpty(result))
+            return;
+
+        if (result.StartsWith(YouTubeAccountsPopup.ResultAccountPrefix, StringComparison.Ordinal))
+        {
+            string accountId = result[YouTubeAccountsPopup.ResultAccountPrefix.Length..];
+            var target = accounts.GetAccounts(MusicPlatform.YouTube)
+                .FirstOrDefault(a => a.Id == accountId);
+            if (target == null)
+                return;
+
+            if (removeMode)
+                await ConfirmRemoveAccountAsync(page, accounts, target);
+            else
+                await SwitchAccountAsync(page, target);
+            return;
+        }
+
+        if (removeMode)
+            return; // the remove popup only picks accounts
+
+        switch (result)
+        {
+            case YouTubeAccountsPopup.ResultWebLogin:
+                await RunWebLoginAsync(page);
+                break;
+            case YouTubeAccountsPopup.ResultDeviceCode:
+                await RunGoogleDeviceFlowAsync(page, accounts);
+                break;
+            case YouTubeAccountsPopup.ResultCookieImport:
+                await RunCookieImportAsync(page, accounts);
+                break;
+            case YouTubeAccountsPopup.ResultRemove:
+                await ShowRemoveMenuAsync(page, accounts);
+                break;
+        }
+    }
+
+    private async Task SwitchAccountAsync(Page page, AccountRecord account)
+    {
+        try
+        {
+            await Accounts.SetActiveAsync(MusicPlatform.YouTube, account.Id);
+            RefreshDescription();
+            await page.DisplayAlertAsync("Account Switched",
+                $"Now using: {account.DisplayName}", "OK");
+        }
+        catch (Exception ex)
+        {
+            Log($"switch failed: {ex.Message}");
         }
     }
 
@@ -143,7 +199,7 @@ public class ImportYouTubeAuthSetting : ActionSetting
         {
             // The page itself resolves the AccountManager via _services, captures
             // every cookie/token and stores the account — see YouTubeWebLoginPage.
-            bool signedIn = await Views.YouTubeWebLoginPage.RunLoginAsync(_services, page);
+            bool signedIn = await YouTubeWebLoginPage.RunLoginAsync(_services, page);
             if (signedIn)
                 RefreshDescription();
         }
@@ -229,21 +285,20 @@ public class ImportYouTubeAuthSetting : ActionSetting
     }
 
     // ─────────────────────────────────────────────────────────────────────
-    // Legacy cookie / OpenTune import
+    // Cookie import / export (v6: real popup, current cookies pre-filled
+    // in OpenTune's copyable ***FIELD*** = value block format)
     // ─────────────────────────────────────────────────────────────────────
 
     private async Task RunCookieImportAsync(Page page, AccountManager accounts)
     {
-        string? pasted = await page.DisplayPromptAsync(
-            "Import Cookies",
-            "Paste the full OpenTune block\n(all ***...*** lines), or a raw cookie string:",
-            "Import",
-            "Cancel",
-            placeholder: "***INNERTUBE COOKIE*** =...",
-            maxLength: -1,
-            keyboard: Keyboard.Default);
+        string current = BuildCurrentAuthBlock(accounts);
 
-        if (string.IsNullOrWhiteSpace(pasted)) return;
+        var popup = new CookieImportPopup(current);
+        await page.ShowPopupAsync(popup);
+
+        string? pasted = popup.Result;
+        if (string.IsNullOrWhiteSpace(pasted) || pasted == current)
+            return; // cancelled or unchanged
 
         var parsed = OpenTuneAuthParser.Parse(pasted);
 
@@ -300,6 +355,56 @@ public class ImportYouTubeAuthSetting : ActionSetting
             $"Imported {parsed.CountSetFields()} field(s) for '{account.DisplayName}'.", "OK");
     }
 
+    /// <summary>
+    /// Serializes the CURRENT YouTube auth into OpenTune's copyable
+    /// ***FIELD*** = value block — the same format the import parses and
+    /// the same block other apps (OpenTune/InnerTune-style) export.
+    /// Source order: active cookie account → legacy hidden settings →
+    /// the resolver's live state (its cookies may be newer after PSIDTS
+    /// session rotation).
+    /// </summary>
+    private static string BuildCurrentAuthBlock(AccountManager accounts)
+    {
+        string? Pref(string key)
+        {
+            try
+            {
+                string value = Preferences.Default.Get(key, "");
+                return string.IsNullOrWhiteSpace(value) ? null : value;
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        var active = accounts.GetActive(MusicPlatform.YouTube);
+        AccountRecord? cookieAccount =
+            active is { YouTubeKind: YouTubeAuthKind.Cookies } ? active
+            : accounts.GetAccounts(MusicPlatform.YouTube)
+                .FirstOrDefault(a => a.YouTubeKind == YouTubeAuthKind.Cookies);
+
+        var data = cookieAccount?.DeserializeAuth<YouTubeAuthData>();
+
+        string? cookie = data?.Cookie ?? Pref("InnerTubeCookie") ?? Services.YouTubeResolverService.Cookies;
+        string? visitor = data?.VisitorData ?? Pref("VisitorData") ?? Services.YouTubeResolverService.VisitorData;
+        string? dataSync = data?.DataSyncId ?? Pref("DataSyncId");
+        string? poToken = data?.PoToken ?? Pref("PoToken") ?? Services.YouTubeResolverService.PoToken;
+        string? name = data?.AccountName ?? Pref("AccountName");
+        string? email = data?.AccountEmail ?? Pref("AccountEmail");
+        string? handle = data?.ChannelHandle ?? Pref("AccountChannelHandle");
+
+        var sb = new StringBuilder();
+        if (cookie != null) sb.AppendLine("***INNERTUBE COOKIE*** = " + cookie);
+        if (visitor != null) sb.AppendLine("***VISITOR DATA*** = " + visitor);
+        if (dataSync != null) sb.AppendLine("***DATA SYNC ID*** = " + dataSync);
+        if (poToken != null) sb.AppendLine("***PO TOKEN*** = " + poToken);
+        if (name != null) sb.AppendLine("***ACCOUNT NAME*** = " + name);
+        if (email != null) sb.AppendLine("***ACCOUNT EMAIL*** = " + email);
+        if (handle != null) sb.AppendLine("***ACCOUNT CHANNEL HANDLE*** = " + handle);
+        return sb.ToString();
+    }
+
     private static void WriteLegacyFromData(YouTubeAuthData data)
     {
         if (!string.IsNullOrEmpty(data.Cookie)) Preferences.Default.Set("InnerTubeCookie", data.Cookie);
@@ -315,24 +420,8 @@ public class ImportYouTubeAuthSetting : ActionSetting
     // Remove account
     // ─────────────────────────────────────────────────────────────────────
 
-    private async Task RemoveAccountFlowAsync(Page page, AccountManager accounts)
+    private async Task ConfirmRemoveAccountAsync(Page page, AccountManager accounts, AccountRecord account)
     {
-        var ytAccounts = accounts.GetAccounts(MusicPlatform.YouTube).ToList();
-        if (ytAccounts.Count == 0)
-        {
-            await page.DisplayAlertAsync("No Accounts", "There is no YouTube account to remove.", "OK");
-            return;
-        }
-
-        string choice = await page.DisplayActionSheetAsync(
-            "Remove YouTube Account", "Cancel", null,
-            ytAccounts.Select(a => a.DisplayName).ToArray());
-
-        if (choice == null || choice == "Cancel") return;
-
-        var account = ytAccounts.FirstOrDefault(a => a.DisplayName == choice);
-        if (account == null) return;
-
         bool confirm = await page.DisplayAlertAsync(
             "Remove Account",
             $"Remove '{account.DisplayName}'?\n\nIf this is a cookie account you may also want to clear the legacy fields with 'Clear YouTube Account'.",

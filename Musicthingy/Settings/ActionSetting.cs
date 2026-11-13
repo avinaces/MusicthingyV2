@@ -1,4 +1,4 @@
-﻿using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using System.Windows.Input;
 
@@ -13,7 +13,13 @@ public abstract class ActionSetting : ObservableObject, IActionSetting
     public string TemplateName => "ActionTemplate";
     public string DialogType => string.Empty;
 
-    public virtual string Icon => "action_icon.png";
+    // Default icon: circle_play_icon.png (the app's existing lucide "circle-play"
+    // asset, also used for the Playback category). The previous default
+    // "action_icon.png" does not exist in Resources/Images/lucide — every
+    // action row without an explicit Icon override rendered a blank icon
+    // (Glide FileNotFoundException in logcat). Derivables override with their
+    // own existing icon; see ImportYouTubeAuthSetting / ClearYouTubeAuthSetting.
+    public virtual string Icon => "circle_play_icon.png";
 
     public virtual string Description => GetBaseDescription();
     protected abstract string GetBaseDescription();

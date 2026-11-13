@@ -4,7 +4,11 @@
              xmlns:toolkit="http://schemas.microsoft.com/dotnet/2022/maui/toolkit"
              xmlns:helpers="clr-namespace:Musicthingy.Helpers"
              x:Class="Musicthingy.Views.Templates.ActionTemplateView">
-    <Grid Padding="16,16" helpers:AndroidRipple.AddRipple="True">
+    <!-- Same geometry as SwitchTemplateView (the icon column was previously
+         missing its ColumnDefinitions, so the icon sat centered on top of the
+         title/description — that is the "icon in the center overlapping the
+         text" bug). Icon column 0, text column 1, no trailing control. -->
+    <Grid ColumnDefinitions="Auto, *" Padding="16,16" ColumnSpacing="16" helpers:AndroidRipple.AddRipple="True">
         <Grid.GestureRecognizers>
             <TapGestureRecognizer Command="{Binding ActionCommand}" />
         </Grid.GestureRecognizers>
@@ -16,7 +20,7 @@
             </Image.Behaviors>
         </Image>
 
-        <VerticalStackLayout VerticalOptions="Center" Spacing="2">
+        <VerticalStackLayout Grid.Column="1" VerticalOptions="Center" Spacing="2">
             <Label Text="{Binding Title}" TextColor="{DynamicResource TitleColor}" FontSize="16" />
             <Label Text="{Binding Description}" TextColor="{DynamicResource MutedColor}" FontSize="14" />
         </VerticalStackLayout>
