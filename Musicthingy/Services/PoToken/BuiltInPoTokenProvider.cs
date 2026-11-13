@@ -48,6 +48,25 @@ public static class BuiltInPoTokenProvider
     public static bool IsEnabled { get; set; } = true;
 
     /// <summary>
+    /// v8.3: the youtube.com VISITOR_DATA captured alongside the BotGuard
+    /// minter (window.yt.config_.VISITOR_DATA in the WebView page). This is
+    /// the exact identity the attestation environment saw at init, so
+    /// WEB-family /player requests travel with it instead of a value adopted
+    /// from a VISIONOS/TVHTML5 responseContext blob. Null until the first
+    /// successful minter setup; cleared when the WebView is destroyed.
+    /// </summary>
+    public static string? WebVisitorData { get; set; }
+
+    /// <summary>
+    /// v8.4: the real native User-Agent of the Android WebView running
+    /// BotGuard (captured in WebViewPoTokenProvider.CreateWebView — never
+    /// spoofed). Used by MWEB so WebView, /player, and the SABR
+    /// StreamerContext match 1:1: same UA, same Client Hints, same platform.
+    /// Null on non-Android platforms.
+    /// </summary>
+    public static string? WebViewUserAgent { get; set; }
+
+    /// <summary>
     /// True when the built-in generator can actually mint: the master switch
     /// is ON and a platform mint hook is registered (Android). The resolver
     /// consults this to decide whether the manually imported ***PO TOKEN***
@@ -72,6 +91,37 @@ public static class BuiltInPoTokenProvider
             return impl(playerUrl, nValue, cancellationToken);
         }
         return Task.FromResult<string?>(null);
+    }
+
+    /// <summary>
+    /// v8.7: combined signature + n challenge solver hook:
+    /// (playerUrl, sValue, nValue, cancellationToken) => (solvedSig, solvedN).
+    /// sValue is the "s" throttling parameter from a signatureCipher format
+    /// (sp says which query param carries the solved signature); nValue the
+    /// "n" transform input. Either may be null — only present challenges are
+    /// solved. Registered once at startup by
+    /// Platforms/Android/WebViewPoTokenProvider.Initialize().
+    /// </summary>
+    public static Func<string, string?, string?, CancellationToken, Task<(string? Sig, string? N)>>?
+        SolveChallengesImplementation { get; set; }
+
+    public static async Task<(string? Sig, string? N)> SolveChallengesAsync(
+        string playerUrl, string? sValue, string? nValue, CancellationToken cancellationToken)
+    {
+        if (SolveChallengesImplementation is { } impl &&
+            !string.IsNullOrEmpty(playerUrl) &&
+            (!string.IsNullOrEmpty(sValue) || !string.IsNullOrEmpty(nValue)))
+        {
+            return await impl(playerUrl, sValue, nValue, cancellationToken).ConfigureAwait(false);
+        }
+
+        if (!string.IsNullOrEmpty(nValue))
+        {
+            string? n = await SolveNChallengeAsync(playerUrl, nValue, cancellationToken).ConfigureAwait(false);
+            return (null, n);
+        }
+
+        return (null, null);
     }
 
     private static readonly TimeSpan CacheTtl = TimeSpan.FromMinutes(10);

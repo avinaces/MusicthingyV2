@@ -252,7 +252,7 @@ public sealed class SabrStreamSession : IDisposable
                     string postUrl = AppendQueryParam(_url, "rn", _requestNumber.ToString(CultureInfo.InvariantCulture));
                     if (!_poTokenDisabled &&
                         !string.IsNullOrEmpty(_activeConfig.PoToken) &&
-                        _activeConfig.ClientInfo.ClientName is 1 or 56 &&
+                        _activeConfig.ClientInfo.ClientName is 1 or 2 or 56 &&
                         GetQueryParam(postUrl, "pot") is null)
                     {
                         postUrl = AppendQueryParam(postUrl, "pot", _activeConfig.PoToken);
@@ -263,10 +263,16 @@ public sealed class SabrStreamSession : IDisposable
                     request.Headers.TryAddWithoutValidation("Accept-Encoding", "identity");
                     if (!string.IsNullOrEmpty(_activeConfig.ClientInfo.UserAgent))
                         request.Headers.TryAddWithoutValidation("User-Agent", _activeConfig.ClientInfo.UserAgent);
-                    if (_activeConfig.ClientInfo.ClientName is 1 or 56)
+                    // v8.4: MWEB (clientName 2) is an m.youtube.com session — its
+                    // Origin/Referer must say so or the attested mobile identity
+                    // mismatches the request.
+                    if (_activeConfig.ClientInfo.ClientName is 1 or 2 or 56)
                     {
-                        request.Headers.TryAddWithoutValidation("Origin", "https://www.youtube.com");
-                        request.Headers.TryAddWithoutValidation("Referer", "https://www.youtube.com/");
+                        string origin = _activeConfig.ClientInfo.ClientName == 2
+                            ? "https://m.youtube.com"
+                            : "https://www.youtube.com";
+                        request.Headers.TryAddWithoutValidation("Origin", origin);
+                        request.Headers.TryAddWithoutValidation("Referer", origin + "/");
                     }
 
                     request.Content = new ByteArrayContent(payload);

@@ -23,7 +23,7 @@ public class PoTokenBuiltInSetting : BaseSetting<bool>
     public override string Key => "PoTokenBuiltInGenerator";
     public override string Title => "PO Token Generator (built-in)";
     public override SettingCategory Category => SettingCategory.General;
-    public override bool DefaultValue => true;
+    public override bool DefaultValue => false;
     public override string Icon => "shield_icon.png";
 
     protected override string GetBaseDescription()

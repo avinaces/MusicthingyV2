@@ -63,6 +63,7 @@ internal static class WebViewPoTokenProvider
     private const string EjsCoreUrl = "https://github.com/yt-dlp/ejs/releases/download/0.8.0/yt.solver.core.min.js";
     private static readonly HttpClient _ejsHttp = new() { Timeout = TimeSpan.FromSeconds(15) };
     private static readonly Dictionary<(string PlayerUrl, string N), string> _nCache = new();
+    private static readonly Dictionary<(string PlayerUrl, string S), string> _sCache = new();
     private static bool _ejsInjected;
 
     /// <summary>
@@ -75,6 +76,7 @@ internal static class WebViewPoTokenProvider
     {
         Services.PoToken.BuiltInPoTokenProvider.MintImplementation = MintAsync;
         Services.PoToken.BuiltInPoTokenProvider.SolveNChallengeImplementation = SolveNChallengeAsync;
+        Services.PoToken.BuiltInPoTokenProvider.SolveChallengesImplementation = SolveChallengesAsync;
 
         _ = Task.Run(async () =>
         {
@@ -130,7 +132,14 @@ internal static class WebViewPoTokenProvider
                     continue; // transient eval hiccup / still working
 
                 if (!string.IsNullOrEmpty(poll.Token))
+                {
+                    // v8.3: capture the youtube.com VISITOR_DATA the minter
+                    // environment was attested under — WEB-family /player
+                    // requests reuse it (see BuiltInPoTokenProvider.WebVisitorData).
+                    if (!string.IsNullOrEmpty(poll.VisitorData))
+                        Services.PoToken.BuiltInPoTokenProvider.WebVisitorData = poll.VisitorData;
                     return poll.Token;
+                }
 
                 // The JS side failed. If the PAGE side was the problem, the
                 // WebView is rebuilt so the hub's retry starts from scratch.
@@ -235,15 +244,24 @@ internal static class WebViewPoTokenProvider
         WebView wv = new(context);
         wv.SetWebViewClient(client);
         wv.Settings.JavaScriptEnabled = true;
-        wv.Settings.DomStorageEnabled = false;
+        // v8.4: DOM storage ON — a disabled localStorage is itself a
+        // bot tell BotGuard checks.
+        wv.Settings.DomStorageEnabled = true;
         wv.Settings.BlockNetworkImage = true;          // nothing is ever rendered
         wv.Settings.LoadsImagesAutomatically = false;
         wv.Settings.MediaPlaybackRequiresUserGesture = true;
-        // A real desktop-Chrome UA — the same one the resolver's WEB client
-        // sends — keeps the page, its fetches and the BotGuard runtime
-        // consistent with each other.
+        // v8.6: BACK to the desktop Chrome/131 spoof — the ONLY UA the field
+        // logs show passing GenerateIT (17:32 + 18:17, both minted). v8.5's
+        // mweb UA (Linux; Android 10; K) got [null,43200,null,...] — no
+        // integrity token at all, mint refused, 2-min cooldown (18:54 log).
+        // The spoof's platform mismatches (navigator Linux aarch64 / Client
+        // Hints moto g54) evidently do NOT block the attestation — the mweb
+        // UA itself does. DomStorage stays ON from v8.4; with the v8.6
+        // resolver sending the 128-char videoId-bound token in
+        // StreamerContext.po_token, this is the combination to field-test.
         wv.Settings.UserAgentString =
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
+        Services.PoToken.BuiltInPoTokenProvider.WebViewUserAgent = wv.Settings.UserAgentString;
         wv.Visibility = global::Android.Views.ViewStates.Invisible;
 
         if (activity is not null)
@@ -277,6 +295,9 @@ internal static class WebViewPoTokenProvider
                 _pageClient = null;
                 _scriptInjected = false;
                 _ejsInjected = false;
+                // v8.3: the captured VISITOR_DATA belonged to the destroyed
+                // page — drop it so the next mint re-captures it fresh.
+                Services.PoToken.BuiltInPoTokenProvider.WebVisitorData = null;
             });
 
     // ─────────────────────────────────────────────────────────────────────
@@ -317,10 +338,25 @@ internal static class WebViewPoTokenProvider
 
     private static async Task<string?> SolveNChallengeAsync(string playerUrl, string nValue, CancellationToken ct)
     {
+        // v8.7: n-only callers keep the same signature — the combined
+        // solver handles both challenges (sig is skipped when s is null).
+        (_, string? n) = await SolveChallengesAsync(playerUrl, null, nValue, ct).ConfigureAwait(false);
+        return n;
+    }
+
+    private static async Task<(string? Sig, string? N)> SolveChallengesAsync(
+        string playerUrl, string? sValue, string? nValue, CancellationToken ct)
+    {
+        string? cachedSig = null;
+        string? cachedN = null;
+
         lock (_nCache)
         {
-            if (_nCache.TryGetValue((playerUrl, nValue), out string? cached))
-                return cached;
+            if (string.IsNullOrEmpty(sValue) || _sCache.TryGetValue((playerUrl, sValue), out cachedSig))
+            {
+                if (string.IsNullOrEmpty(nValue) || _nCache.TryGetValue((playerUrl, nValue), out cachedN))
+                    return (cachedSig, cachedN);
+            }
         }
 
         await _gate.WaitAsync(ct).ConfigureAwait(false);
@@ -328,15 +364,19 @@ internal static class WebViewPoTokenProvider
         {
             lock (_nCache)
             {
-                if (_nCache.TryGetValue((playerUrl, nValue), out string? cached))
-                    return cached;
+                bool sigReady = string.IsNullOrEmpty(sValue) || _sCache.TryGetValue((playerUrl, sValue), out cachedSig);
+                bool nReady = string.IsNullOrEmpty(nValue) || _nCache.TryGetValue((playerUrl, nValue), out cachedN);
+                if (sigReady && nReady)
+                    return (cachedSig, cachedN);
             }
 
             await EnsureReadyAsync(ct).ConfigureAwait(false);
             if (!await EnsureEjsLoadedAsync(ct).ConfigureAwait(false))
-                return null;
+                return (null, null);
 
-            string args = $"{JsonSerializer.Serialize(playerUrl)}, {JsonSerializer.Serialize(nValue)}";
+            string needSig = string.IsNullOrEmpty(sValue) || cachedSig != null ? "null" : JsonSerializer.Serialize(sValue);
+            string needN = string.IsNullOrEmpty(nValue) || cachedN != null ? "null" : JsonSerializer.Serialize(nValue);
+            string args = $"{JsonSerializer.Serialize(playerUrl)}, {needSig}, {needN}";
             _ = await EvalAsync($"window.__mtEjsSolve({args})").ConfigureAwait(false);
 
             DateTimeOffset deadline = DateTimeOffset.UtcNow + TimeSpan.FromSeconds(15);
@@ -354,23 +394,31 @@ internal static class WebViewPoTokenProvider
                 EjsPoll? poll = JsonSerializer.Deserialize<EjsPoll>(json, _jsonOptions);
                 if (poll is null || poll.Busy) continue;
 
-                if (!string.IsNullOrEmpty(poll.Result))
+                if (!string.IsNullOrEmpty(poll.Error))
                 {
-                    lock (_nCache)
-                    {
-                        if (_nCache.Count > 128) _nCache.Clear();
-                        _nCache[(playerUrl, nValue)] = poll.Result;
-                    }
-                    Debug.WriteLine($"[PoToken] EJS solved n challenge ({nValue.Length} -> {poll.Result.Length} chars)");
-                    return poll.Result;
+                    Debug.WriteLine($"[PoToken] EJS challenge failed: {poll.Error}");
+                    return (cachedSig, cachedN);
                 }
 
-                Debug.WriteLine($"[PoToken] EJS n challenge failed: {poll.Error ?? "unknown"}");
-                return null;
+                string? outSig = cachedSig ?? poll.Sig;
+                string? outN = cachedN ?? poll.N;
+
+                lock (_nCache)
+                {
+                    if (_nCache.Count > 128) _nCache.Clear();
+                    if (_sCache.Count > 128) _sCache.Clear();
+                    if (!string.IsNullOrEmpty(sValue) && !string.IsNullOrEmpty(outSig))
+                        _sCache[(playerUrl, sValue)] = outSig;
+                    if (!string.IsNullOrEmpty(nValue) && !string.IsNullOrEmpty(outN))
+                        _nCache[(playerUrl, nValue)] = outN;
+                }
+
+                Debug.WriteLine($"[PoToken] EJS solved challenges (sig={outSig != null}, n={outN != null})");
+                return (outSig, outN);
             }
 
-            Debug.WriteLine("[PoToken] EJS n challenge timed out");
-            return null;
+            Debug.WriteLine("[PoToken] EJS challenge timed out");
+            return (cachedSig, cachedN);
         }
         finally
         {
@@ -407,31 +455,43 @@ internal static class WebViewPoTokenProvider
             const string bridgeJs = """
                 (() => {
                   if (window.__mtEjsSolve) return;
-                  const st = { busy: false, result: null, error: null, playerUrl: null, solver: null };
-                  window.__mtEjsSolve = (playerUrl, nVal) => {
+                  const st = { busy: false, sig: null, n: null, error: null, playerUrl: null, playerJs: null, fnSig: null, fnN: null };
+                  window.__mtEjsSolve = (playerUrl, sVal, nVal) => {
                     if (st.busy) return;
-                    st.busy = true; st.result = null; st.error = null;
+                    st.busy = true; st.sig = null; st.n = null; st.error = null;
                     (async () => {
                       try {
-                        if (st.playerUrl !== playerUrl || !st.solver) {
+                        if (st.playerUrl !== playerUrl || !st.playerJs) {
                           const r = await fetch(playerUrl);
                           if (!r.ok) throw new Error("player HTTP " + r.status);
-                          const playerJs = await r.text();
+                          st.playerJs = await r.text();
+                          st.playerUrl = playerUrl;
+                          st.fnSig = null;
+                          st.fnN = null;
+                        }
+                        const reqs = [];
+                        if (sVal && typeof st.fnSig !== "function") reqs.push({ type: "sig", challenges: [sVal] });
+                        if (nVal && typeof st.fnN !== "function") reqs.push({ type: "n", challenges: [nVal] });
+                        if (reqs.length > 0) {
                           const fn = typeof jsc === "function" ? jsc : jsc.default;
                           const out = fn({
                             type: "player",
-                            player: playerJs,
+                            player: st.playerJs,
                             output_preprocessed: true,
-                            requests: [{ type: "n", challenges: [nVal] }]
+                            requests: reqs
                           });
                           const t = { n: null, sig: null };
                           Function("_result", out.preprocessed_player)(t);
-                          if (typeof t.n !== "function") throw new Error("EJS found no n solver");
-                          st.playerUrl = playerUrl;
-                          st.solver = t;
-                          st.result = out.responses?.[0]?.data?.[nVal] ?? t.n(nVal);
-                        } else {
-                          st.result = st.solver.n(nVal);
+                          if (typeof t.sig === "function") st.fnSig = t.sig;
+                          if (typeof t.n === "function") st.fnN = t.n;
+                        }
+                        if (sVal) {
+                          if (typeof st.fnSig !== "function") throw new Error("EJS found no sig solver");
+                          st.sig = st.fnSig(sVal);
+                        }
+                        if (nVal) {
+                          if (typeof st.fnN !== "function") throw new Error("EJS found no n solver");
+                          st.n = st.fnN(nVal);
                         }
                       } catch (e) {
                         st.error = e && e.message ? e.message : String(e);
@@ -440,7 +500,7 @@ internal static class WebViewPoTokenProvider
                       }
                     })();
                   };
-                  window.__mtEjsPoll = () => JSON.stringify({ busy: st.busy, result: st.result, error: st.error });
+                  window.__mtEjsPoll = () => JSON.stringify({ busy: st.busy, sig: st.sig, n: st.n, error: st.error });
                 })();
                 """;
 
@@ -462,12 +522,12 @@ internal static class WebViewPoTokenProvider
         }
     }
 
-    private sealed record EjsPoll(bool Busy, string? Result, string? Error);
+    private sealed record EjsPoll(bool Busy, string? Sig, string? N, string? Error);
 
     /// <summary>One __mtPotPoll() result (see BotGuardScript's bridge docs).</summary>
     private sealed record PotPoll(
         int Ver, bool Busy, string? Token, string? Error, string? Phase,
-        bool MinterReady, long MinterExpiresAt, int MintedCount);
+        bool MinterReady, long MinterExpiresAt, int MintedCount, string? VisitorData = null);
 
     /// <summary>
     /// Page-load tracker + navigation guard: robots.txt must stay the

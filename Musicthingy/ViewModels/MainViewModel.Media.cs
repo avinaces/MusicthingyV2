@@ -164,7 +164,11 @@ public partial class MainViewModel
 
         if (!string.IsNullOrEmpty(nextTrack.Url) && !cancellationToken.IsCancellationRequested)
         {
-            await _youtubeResolver.ResolveMediaSourceAsync(nextTrack.Url);
+            // v8.4: forward the token — a skipped track's preload cancels
+            // immediately instead of racing the active track's resolve in
+            // the background (observed: iWoXQXI3Pig kept resolving for
+            // seconds after skipping away from it).
+            await _youtubeResolver.ResolveMediaSourceAsync(nextTrack.Url, cancellationToken);
         }
     }
 

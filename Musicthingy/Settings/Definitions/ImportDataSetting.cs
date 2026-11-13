@@ -9,6 +9,7 @@ public class ImportDataSetting : ActionSetting
 {
     public override string Key => "ImportAppData";
     public override string Title => "Import Data";
+    public override string Icon => "upload_icon.png";
     public override SettingCategory Category => SettingCategory.Storage;
 
     private bool _isImporting;

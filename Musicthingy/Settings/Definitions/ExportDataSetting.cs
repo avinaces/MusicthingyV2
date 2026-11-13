@@ -7,6 +7,8 @@ public class ExportDataSetting : ActionSetting
 {
     public override string Key => "ExportAppData";
     public override string Title => "Export Data";
+
+    public override string Icon => "download_icon.png";
     public override SettingCategory Category => SettingCategory.Storage;
 
     private bool _isExporting;
