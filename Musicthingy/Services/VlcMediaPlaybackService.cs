@@ -15,6 +15,9 @@ public class VlcMediaPlaybackService : IMediaPlaybackService
     public bool IsPlaying => _player?.IsPlaying ?? false;
     public double CurrentTimeMs => _player?.Time ?? 0;
     public double LengthMs => _player?.Length ?? 0;
+    // LibVLC does not expose a buffered position; report the playhead so the
+    // legacy Windows build keeps a sensible value.
+    public double BufferedPositionMs => CurrentTimeMs;
 
     public event EventHandler<bool>? BufferingChanged;
     public event EventHandler? Playing;

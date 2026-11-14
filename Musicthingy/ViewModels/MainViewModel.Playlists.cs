@@ -4,6 +4,7 @@ using CommunityToolkit.Maui.Storage;
 using CommunityToolkit.Mvvm.Input;
 using CommunityToolkit.Mvvm.Messaging;
 using Musicthingy.Models;
+using Musicthingy.Services;
 using Musicthingy.Views;
 using System.Diagnostics;
 using System.Text.Json;
@@ -16,6 +17,9 @@ public partial class MainViewModel
     private static readonly string[] windowsFileTypeJSON = [".json"];
 
     private Playlist? _cachedTracksPlaylist;
+    private int _cachedTracksVersion;
+    private int _cachedTracksBuiltVersion = -1;
+    private int _cachedTracksRefreshPending;
 
     public void InitializeSystemPlaylists()
     {
@@ -35,8 +39,11 @@ public partial class MainViewModel
 
         RefreshCachedTracksPlaylist();
 
-        // Listen for future cache downloads/deletions in the background
-        _trackCacheService.CacheUpdated += (s, e) => RefreshCachedTracksPlaylist();
+        // Listen for future cache downloads/deletions in the background.
+        // The handler only rebuilds the list while it is the visible
+        // playlist — a full rebuild per completed download used to run on
+        // the UI thread and freeze the app (ANR).
+        _trackCacheService.CacheUpdated += OnTrackCacheUpdated;
 
         // Listen for when the user imports tracks from a YouTube Playlist
         WeakReferenceMessenger.Default.Register<ImportPlaylistTracksMessage>(this, (r, m) =>
@@ -149,60 +156,196 @@ public partial class MainViewModel
         });
     }
 
+    private void OnTrackCacheUpdated(object? sender, EventArgs e)
+    {
+        Interlocked.Increment(ref _cachedTracksVersion);
+
+        // Only rebuild a list that is on screen; otherwise the next selection
+        // does it. CacheUpdated fires after every completed background
+        // download, and the rebuild scans the whole library.
+        MainThread.BeginInvokeOnMainThread(() =>
+        {
+            if (SelectedPlaylist == _cachedTracksPlaylist)
+                RefreshCachedTracksPlaylist();
+        });
+    }
+
+    /// <summary>
+    /// Rebuilds the auto-generated Cached Tracks playlist from the files on
+    /// disk. The scan runs on a worker thread; only the final row swap touches
+    /// the UI thread. Calls are coalesced because CacheUpdated fires after
+    /// every background download.
+    /// </summary>
     private void RefreshCachedTracksPlaylist()
     {
         if (_cachedTracksPlaylist == null) return;
 
-        MainThread.BeginInvokeOnMainThread(() =>
+        // One scan at a time. The version recorded here is marked as built
+        // only after the rows are applied, so a cache change that lands
+        // mid-scan triggers exactly one more pass.
+        if (Interlocked.CompareExchange(ref _cachedTracksRefreshPending, 1, 0) != 0)
+            return;
+
+        int version = Volatile.Read(ref _cachedTracksVersion);
+
+        // Snapshot the UI-owned collections before leaving the UI thread.
+        (Playlist Owner, PlaylistItem[] Items)[] sources = Playlists
+            .Where(p => !p.IsSystemPlaylist)
+            .Select(p => (Owner: p, Items: p.Items.ToArray()))
+            .ToArray();
+
+        _ = Task.Run(() =>
         {
-            _cachedTracksPlaylist.Items.Clear();
-
-            // We now track uniqueness by URL + StartTime + EndTime
-            var uniqueTrackKeys = new HashSet<string>();
-
-            // Scan all normal playlists for tracks that are currently in the cache
-            foreach (var p in Playlists.Where(x => !x.IsSystemPlaylist))
+            List<(PlaylistItem Track, Playlist Owner)> snapshot;
+            try
             {
-                foreach (var t in p.Items)
-                {
-                    // Create a unique footprint for this specific track slice
-                    string trackKey = $"{t.Url}::{t.StartTime ?? 0}::{t.EndTime ?? 0}";
-
-                    if (_trackCacheService.IsTrackCached(t.Url) && uniqueTrackKeys.Add(trackKey))
-                    {
-                        // Create a pointer copy that links to the original track and playlist
-                        var pointerTrack = new PlaylistItem
-                        {
-                            Title = t.Title,
-                            Url = t.Url,
-                            StartTime = t.StartTime,
-                            EndTime = t.EndTime,
-                            IconUrl = t.IconUrl,
-                            Duration = t.Duration,
-                            Lyrics = t.Lyrics,
-                            Views = t.Views,
-                            LastPlayedAt = t.LastPlayedAt,
-                            Playlist = _cachedTracksPlaylist,
-                            SourcePlaylist = p,
-                            SourceTrack = t
-                        };
-
-                        if (t.Tags != null)
-                        {
-                            foreach (var tag in t.Tags) pointerTrack.Tags.Add(tag);
-                        }
-
-                        _cachedTracksPlaylist.Items.Add(pointerTrack);
-                    }
-                }
+                snapshot = BuildCachedTracksSnapshot(sources);
             }
-            _cachedTracksPlaylist.RequestRecalculateDuration();
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"[Cache] Cached Tracks scan failed: {ex.Message}");
+                Interlocked.Exchange(ref _cachedTracksRefreshPending, 0);
+                return;
+            }
+
+            MainThread.BeginInvokeOnMainThread(() =>
+            {
+                try
+                {
+                    ApplyCachedTracksSnapshot(snapshot);
+                    Volatile.Write(ref _cachedTracksBuiltVersion, version);
+                }
+                catch (Exception ex)
+                {
+                    Debug.WriteLine($"[Cache] Cached Tracks apply failed: {ex.Message}");
+                }
+                finally
+                {
+                    Interlocked.Exchange(ref _cachedTracksRefreshPending, 0);
+                }
+
+                // A cache event that landed mid-scan needs one more pass.
+                if (Volatile.Read(ref _cachedTracksVersion) !=
+                    Volatile.Read(ref _cachedTracksBuiltVersion) &&
+                    SelectedPlaylist == _cachedTracksPlaylist)
+                {
+                    RefreshCachedTracksPlaylist();
+                }
+            });
         });
+    }
+
+    /// <summary>
+    /// Worker-thread half: one directory listing, then a SHA256 per track URL
+    /// (no file-system call per track).
+    /// </summary>
+    private List<(PlaylistItem Track, Playlist Owner)> BuildCachedTracksSnapshot(
+        (Playlist Owner, PlaylistItem[] Items)[] sources)
+    {
+        HashSet<string> cachedIds = _trackCacheService.GetCachedFileIds();
+        HashSet<string> uniqueKeys = new(StringComparer.Ordinal);
+        List<(PlaylistItem, Playlist)> result = new();
+
+        foreach ((Playlist owner, PlaylistItem[] items) in sources)
+        {
+            foreach (PlaylistItem track in items)
+            {
+                if (string.IsNullOrEmpty(track.Url)) continue;
+                if (!cachedIds.Contains(TrackCacheService.ComputeCacheId(track.Url))) continue;
+
+                // Unique footprint — the same URL can appear as several slices.
+                string key = $"{track.Url}::{track.StartTime ?? 0}::{track.EndTime ?? 0}";
+                if (uniqueKeys.Add(key)) result.Add((track, owner));
+            }
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    /// UI-thread half: swap the rows in one pass and rebuild DisplayedItems
+    /// once. The selection listener is detached during the swap, otherwise
+    /// every added row would trigger a full list refresh (O(n²)).
+    /// </summary>
+    private void ApplyCachedTracksSnapshot(List<(PlaylistItem Track, Playlist Owner)> snapshot)
+    {
+        if (_cachedTracksPlaylist == null) return;
+
+        bool isVisible = SelectedPlaylist == _cachedTracksPlaylist;
+
+        if (isVisible)
+            _cachedTracksPlaylist.Items.CollectionChanged -= SelectedPlaylistItems_CollectionChanged;
+
+        try
+        {
+            List<PlaylistItem> rows = new(snapshot.Count);
+
+            foreach ((PlaylistItem source, Playlist owner) in snapshot)
+            {
+                PlaylistItem pointerTrack = new()
+                {
+                    Title = source.Title,
+                    Url = source.Url,
+                    StartTime = source.StartTime,
+                    EndTime = source.EndTime,
+                    IconUrl = source.IconUrl,
+                    Duration = source.Duration,
+                    Lyrics = source.Lyrics,
+                    Views = source.Views,
+                    LastPlayedAt = source.LastPlayedAt,
+                    Playlist = _cachedTracksPlaylist,
+                    SourcePlaylist = owner,
+                    SourceTrack = source
+                };
+
+                if (source.Tags != null)
+                {
+                    foreach (string tag in source.Tags) pointerTrack.Tags.Add(tag);
+                }
+
+                rows.Add(pointerTrack);
+            }
+
+            _cachedTracksPlaylist.ReplaceItems(rows);
+        }
+        finally
+        {
+            if (isVisible)
+                _cachedTracksPlaylist.Items.CollectionChanged += SelectedPlaylistItems_CollectionChanged;
+        }
+
+        if (isVisible)
+        {
+            UpdateFilterTags();
+            RefreshDisplayedItems(forceReset: true);
+        }
     }
 
     partial void OnSelectedPlaylistChanged(Playlist? value)
     {
         return; // Dynamic theming disabled temporarily
+    }
+
+    /// <summary>
+    /// Deletes one track's cached file (Cached Tracks → "Delete from Cache").
+    /// The list refreshes itself through TrackCacheService.CacheUpdated, which
+    /// also updates the Storage stats card. The delete runs off the UI thread:
+    /// File.Delete on a multi-megabyte cache file used to block the main
+    /// thread long enough to trip the ANR watchdog.
+    /// </summary>
+    public void RemoveTrackFromCache(PlaylistItem track)
+    {
+        if (string.IsNullOrEmpty(track.Url)) return;
+
+        string url = track.Url;
+
+        _ = Task.Run(() =>
+        {
+            bool removed = _trackCacheService.DeleteCachedTrack(url);
+            Debug.WriteLine(removed
+                ? $"[Cache] Removed from cache by user: {url}"
+                : $"[Cache] No cached file for {url}");
+        });
     }
 
     [RelayCommand]

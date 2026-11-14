@@ -76,6 +76,15 @@ public static class BuiltInPoTokenProvider
     public static bool IsActive => IsEnabled && MintImplementation != null;
 
     /// <summary>
+    /// True when the platform EJS challenge solver (sig/n deciphering) is
+    /// registered — INDEPENDENT of the PO-token master switch. TVHTML5 needs
+    /// signatureCipher / "n" solved but never mints a PO token, so the resolver
+    /// must keep deciphering even when "PO Token Generator (built-in)" is off.
+    /// </summary>
+    public static bool HasChallengeSolver =>
+        SolveChallengesImplementation != null || SolveNChallengeImplementation != null;
+
+    /// <summary>
     /// Platform n-challenge solver hook: (playerUrl, nValue, cancellationToken) => solvedN.
     /// Registered once at startup by Platforms/Android/WebViewPoTokenProvider.Initialize().
     /// </summary>

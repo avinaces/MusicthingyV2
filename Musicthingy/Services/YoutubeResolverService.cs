@@ -476,7 +476,22 @@ public partial class YouTubeResolverService
             return null;
 
         if (!MediaUrlHelper.IsYouTubeUrl(trackUrl))
-            return new ResolvedMedia(trackUrl, DefaultUserAgent);
+        {
+            bool isLocalFile = trackUrl.StartsWith("/", StringComparison.Ordinal) ||
+                               trackUrl.StartsWith("file://", StringComparison.OrdinalIgnoreCase) ||
+                               trackUrl.StartsWith("content://", StringComparison.OrdinalIgnoreCase);
+
+            // A direct HTTP source (Bandcamp, file host, ...) has no manifest:
+            // its URL extension is the only format hint available.
+            (string? codec, string? container) = isLocalFile ? (null, null) : DescribeUrlFormat(trackUrl);
+
+            return new ResolvedMedia(
+                trackUrl, DefaultUserAgent,
+                Source: isLocalFile ? "Local file" : "Direct URL",
+                StreamType: isLocalFile ? "Local file" : "Direct HTTP",
+                Codec: codec,
+                Container: container);
+        }
 
         // Cache check
         if (_streamUrlCache.TryGetValue(trackUrl, out (ResolvedMedia Media, DateTime FetchedAt) cached)
@@ -521,7 +536,7 @@ public partial class YouTubeResolverService
 
                     if (yteClient != null)
                     {
-                        string? url = await Task.Run(async () =>
+                        AudioOnlyStreamInfo? bestStream = await Task.Run(async () =>
                         {
                             using CancellationTokenSource cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
                             cts.CancelAfter(TimeSpan.FromSeconds(ManifestFetchTimeoutSeconds));
@@ -531,12 +546,21 @@ public partial class YouTubeResolverService
                             return manifest.GetAudioOnlyStreams()
                                 .OrderByDescending(CodecRank)
                                 .ThenByDescending(s => s.Bitrate)
-                                .FirstOrDefault()?.Url;
+                                .FirstOrDefault();
                         }, cancellationToken);
 
-                        if (!string.IsNullOrEmpty(url))
+                        if (!string.IsNullOrEmpty(bestStream?.Url))
                         {
-                            resolvedMedia = new ResolvedMedia(url, DefaultUserAgent);
+                            resolvedMedia = new ResolvedMedia(
+                                bestStream.Url, DefaultUserAgent,
+                                Source: "YouTube",
+                                StreamType: "YoutubeExplode",
+                                Client: "YOUTUBEEXPLODE",
+                                Codec: bestStream.AudioCodec,
+                                Container: bestStream.Container.Name,
+                                BitrateKbps: bestStream.Bitrate.KiloBitsPerSecond > 0
+                                    ? (int)bestStream.Bitrate.KiloBitsPerSecond
+                                    : null);
                             Trace("[Resolve] YoutubeExplode SUCCESS");
                         }
                         else
@@ -917,11 +941,15 @@ public partial class YouTubeResolverService
                             if (withUrl > 0)
                             {
                                 // Direct URL — find best audio with a URL
-                                string? streamUrl = FindBestAudioWithUrl(formats);
-                                if (streamUrl != null)
+                                AudioChoice? choice = FindBestAudioWithUrl(formats);
+                                if (choice != null)
                                 {
+                                    string streamUrl = choice.Url;
                                     string ua = EffectiveUserAgent(client);
-                                    if (BuiltInPoTokenProvider.IsActive && GetQueryParamValue(streamUrl, "n") != null)
+                                    // EJS deciphering is independent of PO-token minting:
+                                    // TVHTML5 needs sig/n solved even when the built-in
+                                    // generator setting is OFF (it never uses PO tokens).
+                                    if (BuiltInPoTokenProvider.HasChallengeSolver && GetQueryParamValue(streamUrl, "n") != null)
                                         streamUrl = await DescrambleSabrNParamAsync(streamUrl, cancellationToken).ConfigureAwait(false);
 
                                     int probeStatus = await ProbeStreamUrlAsync(streamUrl, ua, cancellationToken).ConfigureAwait(false);
@@ -929,7 +957,7 @@ public partial class YouTubeResolverService
                                     {
                                         Trace($"[Resolve] SUCCESS — client: {client.Name} (direct URL)");
                                         attempt.Outcome($"{client.Name}: OK — direct audio URL");
-                                        return (new ResolvedMedia(streamUrl, ua), null, false);
+                                        return (choice.ToResolvedMedia(streamUrl, ua, "Direct HTTP", client.Name), null, false);
                                     }
 
                                     Trace($"[Resolve] {client.Name}: direct URL returned HTTP {probeStatus} — trying next client");
@@ -942,19 +970,22 @@ public partial class YouTubeResolverService
                                 attempt.Outcome($"{client.Name}: {withUrl} direct URL(s), none of them audio");
                             }
 
-                            if (withCipher > 0 && singleClientName == null && BuiltInPoTokenProvider.IsActive)
+                            // EJS deciphering does NOT depend on the PO-token setting:
+                            // TVHTML5 serves signatureCipher formats and needs sig/n
+                            // solved even with the built-in generator switched off.
+                            if (withCipher > 0 && singleClientName == null && BuiltInPoTokenProvider.HasChallengeSolver)
                             {
-                                string? decipheredUrl = await FindBestAudioWithCipherAsync(formats, cancellationToken)
+                                AudioChoice? choice = await FindBestAudioWithCipherAsync(formats, cancellationToken)
                                     .ConfigureAwait(false);
-                                if (!string.IsNullOrEmpty(decipheredUrl))
+                                if (choice != null)
                                 {
                                     string ua = EffectiveUserAgent(client);
-                                    int probeStatus = await ProbeStreamUrlAsync(decipheredUrl, ua, cancellationToken).ConfigureAwait(false);
+                                    int probeStatus = await ProbeStreamUrlAsync(choice.Url, ua, cancellationToken).ConfigureAwait(false);
                                     if (probeStatus >= 200 && probeStatus < 300)
                                     {
                                         Trace($"[Resolve] SUCCESS — client: {client.Name} (EJS deciphered URL)");
                                         attempt.Outcome($"{client.Name}: OK — deciphered audio URL");
-                                        return (new ResolvedMedia(decipheredUrl, ua), null, false);
+                                        return (choice.ToResolvedMedia(choice.Url, ua, "EJS deciphered", client.Name), null, false);
                                     }
 
                                     Trace($"[Resolve] {client.Name}: deciphered URL returned HTTP {probeStatus} — trying next client");
@@ -1059,7 +1090,21 @@ public partial class YouTubeResolverService
             Trace($"[Resolve] SABR session started — itag {session.ActiveItag}, {firstBytes} bytes received");
             attempt.Outcome($"SABR: streaming session started (itag {session.ActiveItag}, {firstBytes} bytes received)");
 
-            return new ResolvedMedia(SabrStreamRegistry.MakeUri(session), DefaultUserAgent);
+            SabrAudioFormat? activeFormat = config.PreferredAudio
+                .FirstOrDefault(f => f.Itag == session.ActiveItag)
+                ?? config.PreferredAudio.FirstOrDefault();
+            (string? codec, string? container) = SplitMimeType(activeFormat?.MimeType);
+
+            return new ResolvedMedia(
+                SabrStreamRegistry.MakeUri(session), DefaultUserAgent,
+                Source: "YouTube",
+                StreamType: "SABR",
+                Client: SabrRefreshClientName(config.ClientInfo.ClientName)
+                        ?? $"client {config.ClientInfo.ClientName}",
+                Codec: codec,
+                Container: container,
+                BitrateKbps: activeFormat is { Bitrate: > 0 } ? activeFormat.Bitrate / 1000 : null,
+                Itag: activeFormat?.Itag);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -1826,10 +1871,80 @@ public partial class YouTubeResolverService
     // ─────────────────────────────────────────────────────────────────────────
 
     /// <summary>
+    /// The chosen audio format: the stream URL plus the codec/bitrate identity
+    /// shown in the Playback settings diagnostics panel.
+    /// </summary>
+    private sealed record AudioChoice(string Url, int Itag, string MimeType, int Bitrate, int SampleRate)
+    {
+        public ResolvedMedia ToResolvedMedia(string url, string userAgent, string streamType, string client)
+        {
+            (string? codec, string? container) = SplitMimeType(MimeType);
+            return new ResolvedMedia(
+                url, userAgent,
+                Source: "YouTube",
+                StreamType: streamType,
+                Client: client,
+                Codec: codec,
+                Container: container,
+                BitrateKbps: Bitrate > 0 ? Bitrate / 1000 : null,
+                SampleRateHz: SampleRate > 0 ? SampleRate : null,
+                Itag: Itag > 0 ? Itag : null);
+        }
+    }
+
+    /// <summary>Best-effort format hint from a direct media URL's extension.</summary>
+    private static (string? Codec, string? Container) DescribeUrlFormat(string url)
+    {
+        string path = url;
+        int query = path.IndexOf('?');
+        if (query >= 0) path = path[..query];
+        int slash = path.LastIndexOf('/');
+        if (slash >= 0) path = path[(slash + 1)..];
+        int dot = path.LastIndexOf('.');
+        if (dot < 0 || dot == path.Length - 1) return (null, null);
+
+        string extension = path[(dot + 1)..].ToLowerInvariant();
+        return extension switch
+        {
+            "m4a" => ("mp4a", "m4a"),
+            "mp4" => ("mp4a", "mp4"),
+            "aac" => ("mp4a", "aac"),
+            "webm" => ("opus", "webm"),
+            "opus" => ("opus", "opus"),
+            "ogg" or "oga" => ("vorbis", "ogg"),
+            "mp3" => ("mp3", "mp3"),
+            "flac" => ("flac", "flac"),
+            "wav" => ("pcm", "wav"),
+            _ => (null, null),
+        };
+    }
+
+    /// <summary>Splits "audio/webm; codecs=\"opus\"" into codec and container labels.</summary>
+    private static (string? Codec, string? Container) SplitMimeType(string? mime)
+    {
+        if (string.IsNullOrEmpty(mime)) return (null, null);
+
+        string? container = null;
+        int slash = mime.IndexOf('/');
+        if (slash >= 0)
+        {
+            int end = mime.IndexOf(';', slash);
+            container = (end < 0 ? mime[(slash + 1)..] : mime[(slash + 1)..end]).Trim();
+        }
+
+        string? codec = null;
+        int codecsIndex = mime.IndexOf("codecs=", StringComparison.OrdinalIgnoreCase);
+        if (codecsIndex >= 0)
+            codec = mime[(codecsIndex + 7)..].Trim().Trim('"', '\'', ' ');
+
+        return (string.IsNullOrEmpty(codec) ? null : codec, string.IsNullOrEmpty(container) ? null : container);
+    }
+
+    /// <summary>
     /// Finds the best audio format with a direct (non-ciphered) URL.
     /// Enumerates the list once, picks by codec rank → bitrate → sample rate.
     /// </summary>
-    private static string? FindBestAudioWithUrl(List<JsonElement> formats)
+    private static AudioChoice? FindBestAudioWithUrl(List<JsonElement> formats)
     {
         JsonElement best = default;
         int bestRank = 0, bestBitrate = 0, bestSampleRate = 0;
@@ -1859,8 +1974,23 @@ public partial class YouTubeResolverService
         }
 
         return found && best.TryGetProperty("url", out JsonElement urlProp)
-            ? urlProp.GetString()
+            ? ToAudioChoice(best, urlProp.GetString())
             : null;
+    }
+
+    private static AudioChoice? ToAudioChoice(JsonElement format, string? url)
+    {
+        if (string.IsNullOrEmpty(url)) return null;
+
+        string mime = format.TryGetProperty("mimeType", out JsonElement mimeEl)
+            ? mimeEl.GetString() ?? ""
+            : "";
+        int itag = format.TryGetProperty("itag", out JsonElement itagEl) ? itagEl.GetInt32() : 0;
+        int bitrate = format.TryGetProperty("bitrate", out JsonElement b) ? b.GetInt32() : 0;
+        int sampleRate = format.TryGetProperty("audioSampleRate", out JsonElement sr) &&
+                         int.TryParse(sr.GetString(), out int rate) ? rate : 0;
+
+        return new AudioChoice(url, itag, mime, bitrate, sampleRate);
     }
 
     /// <summary>
@@ -1874,7 +2004,7 @@ public partial class YouTubeResolverService
     /// WebView provider, so the per-format cost is one WebView eval after
     /// the first track.
     /// </summary>
-    private async Task<string?> FindBestAudioWithCipherAsync(
+    private async Task<AudioChoice?> FindBestAudioWithCipherAsync(
         List<JsonElement> formats, CancellationToken cancellationToken)
     {
         JsonElement best = default;
@@ -1944,7 +2074,7 @@ public partial class YouTubeResolverService
             finalUrl = ReplaceQueryParamValue(finalUrl, "n", solvedN);
 
         Trace($"[Resolve] deciphered signatureCipher audio (sig {sVal.Length} chars, n {(nVal?.Length ?? 0)} -> {(solvedN?.Length ?? 0)})");
-        return finalUrl;
+        return ToAudioChoice(best, finalUrl);
     }
 
     private static int CodecRank(JsonElement format)

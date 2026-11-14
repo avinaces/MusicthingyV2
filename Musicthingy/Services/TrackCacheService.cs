@@ -100,7 +100,12 @@ public class TrackCacheService
 #endif
     }
 
-    private string GetSafeId(string url)
+    /// <summary>
+    /// SHA256 of the track URL — the on-disk file name (extension-less).
+    /// Exposed so callers can test a URL against a single directory listing
+    /// instead of doing one File.Exists per URL.
+    /// </summary>
+    public static string ComputeCacheId(string url)
     {
         using var sha = SHA256.Create();
         var hash = sha.ComputeHash(Encoding.UTF8.GetBytes(url));
@@ -109,16 +114,58 @@ public class TrackCacheService
 
     public string? GetCachedTrackPath(string originalUrl)
     {
-        string id = GetSafeId(originalUrl);
-        string path = Path.Combine(_cacheDir, id);
+        if (string.IsNullOrEmpty(originalUrl)) return null;
 
-        if (File.Exists(path))
+        string path = Path.Combine(_cacheDir, ComputeCacheId(originalUrl));
+        return File.Exists(path) ? path : null;
+    }
+
+    /// <summary>
+    /// Same as <see cref="GetCachedTrackPath"/> but also refreshes the LRU
+    /// access time. Only use this when the file is actually opened for
+    /// playback: the Cached Tracks list checks thousands of URLs, and a
+    /// metadata write per cached hit blocked the UI thread long enough to
+    /// trip the ANR watchdog.
+    /// </summary>
+    public string? GetCachedTrackPathForPlayback(string originalUrl)
+    {
+        string? path = GetCachedTrackPath(originalUrl);
+        if (path == null) return null;
+
+        try
         {
-            // Update last access time for LRU (Least Recently Used) cleanup
             File.SetLastAccessTimeUtc(path, DateTime.UtcNow);
-            return path;
         }
-        return null;
+        catch (Exception ex)
+        {
+            Log($"Could not touch LRU time for {path}: {ex.Message}");
+        }
+
+        return path;
+    }
+
+    /// <summary>
+    /// Names of every file currently in the cache (one directory read).
+    /// </summary>
+    public HashSet<string> GetCachedFileIds()
+    {
+        HashSet<string> ids = new(StringComparer.Ordinal);
+        if (!Directory.Exists(_cacheDir)) return ids;
+
+        try
+        {
+            foreach (FileInfo file in new DirectoryInfo(_cacheDir).EnumerateFiles())
+            {
+                if (!file.Name.EndsWith(".tmp", StringComparison.Ordinal))
+                    ids.Add(file.Name);
+            }
+        }
+        catch (Exception ex)
+        {
+            Log($"Could not list cache directory: {ex.Message}");
+        }
+
+        return ids;
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -324,7 +371,7 @@ public class TrackCacheService
             // (SHA256 of the track URL, no extension) so GetCachedTrackPath,
             // IsTrackCached, the statistics card and the Cached Tracks
             // playlist all see the file immediately.
-            string finalPath = Path.Combine(_cacheDir, GetSafeId(trackUrl));
+            string finalPath = Path.Combine(_cacheDir, ComputeCacheId(trackUrl));
             string tempPath = finalPath + "." + Guid.NewGuid() + ".tmp";
 
             try
@@ -644,6 +691,33 @@ public class TrackCacheService
         return new DirectoryInfo(_cacheDir).EnumerateFiles().Where(f => !f.Name.EndsWith(".tmp")).Sum(f => f.Length);
     }
 
+    /// <summary>
+    /// Deletes the cached file for ONE track (Cached Tracks → context menu).
+    /// Returns false when the track was not cached. Deleting a file that the
+    /// player currently has open is safe on Android — the OS keeps the handle
+    /// valid until playback releases it — and the next play simply re-caches.
+    /// </summary>
+    public bool DeleteCachedTrack(string originalUrl)
+    {
+        if (string.IsNullOrEmpty(originalUrl)) return false;
+
+        string? path = GetCachedTrackPath(originalUrl);
+        if (path == null) return false;
+
+        try
+        {
+            File.Delete(path);
+            Log($"Deleted cached track {Path.GetFileName(path)} ({originalUrl})");
+            CacheUpdated?.Invoke(this, EventArgs.Empty);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Log($"Could not delete cached track {path}: {ex.Message}");
+            return false;
+        }
+    }
+
     public Task ClearCacheAsync()
     {
         return Task.Run(() =>
@@ -701,7 +775,7 @@ public class TrackCacheService
                         fileProp.ValueKind != JsonValueKind.String) continue;
 
                     string src = Path.Combine(legacyDir, fileProp.GetString()!);
-                    string dst = Path.Combine(_cacheDir, GetSafeId(prop.Name));
+                    string dst = Path.Combine(_cacheDir, ComputeCacheId(prop.Name));
                     if (File.Exists(src) && !File.Exists(dst))
                     {
                         File.Move(src, dst);

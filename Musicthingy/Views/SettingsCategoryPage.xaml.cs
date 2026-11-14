@@ -1,6 +1,9 @@
+using Microsoft.Maui.Graphics;
+using Musicthingy.Models;
 using Musicthingy.Services;
 using Musicthingy.Settings;
 using Musicthingy.Settings.Definitions;
+using Musicthingy.ViewModels;
 
 namespace Musicthingy.Views;
 
@@ -8,6 +11,7 @@ public partial class SettingsCategoryPage : ContentPage
 {
     private readonly SettingsManager _settingsManager;
     private readonly TrackCacheService? _trackCacheService;
+    private readonly MainViewModel? _mainViewModel;
 
     public SettingsCategoryPage(SettingsManager settingsManager, SettingCategory category)
     {
@@ -17,8 +21,10 @@ public partial class SettingsCategoryPage : ContentPage
 
         _settingsManager = settingsManager;
 
-        // Safely resolve the cache service from DI
-        _trackCacheService = Application.Current?.Windows.FirstOrDefault()?.Page?.Handler?.MauiContext?.Services.GetService<TrackCacheService>();
+        // Safely resolve services from DI
+        IServiceProvider? services = Application.Current?.Windows.FirstOrDefault()?.Page?.Handler?.MauiContext?.Services;
+        _trackCacheService = services?.GetService<TrackCacheService>();
+        _mainViewModel = services?.GetService<MainViewModel>();
 
         TitleLabel.Text = category.ToString();
         SettingsList.ItemsSource = settingsManager.GetVisibleSettings().Where(s => s.Category == category).ToList();
@@ -34,6 +40,14 @@ public partial class SettingsCategoryPage : ContentPage
                 _trackCacheService.CacheUpdated += OnCacheUpdated;
                 _trackCacheService.DownloadProgressChanged += OnDownloadProgressChanged;
             }
+        }
+        else if (category == SettingCategory.Playback)
+        {
+            PlaybackDiagnosticsContainer.IsVisible = true;
+            UpdatePlaybackDiagnostics();
+
+            if (_mainViewModel != null)
+                _mainViewModel.DiagnosticsChanged += OnDiagnosticsChanged;
         }
     }
 
@@ -89,6 +103,141 @@ public partial class SettingsCategoryPage : ContentPage
         });
     }
 
+    // ─────────────────────────────────────────────────────────────────────
+    //  Playback diagnostics panel
+    // ─────────────────────────────────────────────────────────────────────
+
+    private void OnDiagnosticsChanged(object? sender, EventArgs e)
+    {
+        MainThread.BeginInvokeOnMainThread(UpdatePlaybackDiagnostics);
+    }
+
+    private void UpdatePlaybackDiagnostics()
+    {
+        PlaybackDiagnostics diag = _mainViewModel?.GetPlaybackDiagnostics() ?? PlaybackDiagnostics.Empty;
+
+        DiagDetailsContainer.IsVisible = diag.HasTrack;
+        DiagEmptyLabel.IsVisible = !diag.HasTrack;
+
+        if (!diag.HasTrack)
+        {
+            DiagTrackTitleLabel.Text = "Nothing playing";
+            DiagTrackSubtitleLabel.Text = "Technical playback details";
+            DiagCacheBadge.IsVisible = false;
+            SetStatus("IDLE", ThemeResources.Color("MutedColor"), ThemeResources.Color("SurfaceRaised"));
+            return;
+        }
+
+        DiagTrackTitleLabel.Text = diag.Title;
+
+        DiagTrackSubtitleLabel.Text = string.IsNullOrWhiteSpace(diag.PlaylistName) ? "Now playing" : diag.PlaylistName;
+        DiagCacheBadge.IsVisible = diag.IsCached;
+
+        if (diag.IsBuffering)
+            SetStatus(diag.StreamType == null ? "LOADING" : "BUFFERING",
+                ThemeResources.Color("AccentColor"), ThemeResources.Color("AccentContainer"));
+        else if (diag.IsPlaying)
+            SetStatus("PLAYING", ThemeResources.Color("AccentColor"), ThemeResources.Color("AccentContainer"));
+        else
+            SetStatus("PAUSED", ThemeResources.Color("MutedColor"), ThemeResources.Color("SurfaceRaised"));
+
+        DiagFormatValue.Text = FormatFormat(diag);
+        DiagStreamValue.Text = ValueOrDash(diag.StreamType);
+        DiagClientValue.Text = ValueOrDash(diag.Client);
+        DiagSampleRateValue.Text = diag.SampleRateHz is > 0
+            ? $"{diag.SampleRateHz.Value / 1000.0:0.#} kHz"
+            : "—";
+        DiagBitrateValue.Text = diag.BitrateKbps is > 0
+            ? $"{diag.BitrateKbps} kbps"
+            : "—";
+        DiagItagValue.Text = diag.Itag?.ToString() ?? "—";
+
+        double duration = diag.DurationMs;
+        double position = duration > 0 ? Math.Min(diag.PositionMs, duration) : diag.PositionMs;
+        DiagPositionLabel.Text = $"{FormatTime(position)} / {(duration > 0 ? FormatTime(duration) : "—")}";
+
+        double buffered = duration > 0 ? Math.Min(diag.BufferedMs, duration) : diag.BufferedMs;
+        double bufferProgress = duration > 0 ? Math.Clamp(buffered / duration, 0, 1) : 0;
+        DiagBufferBar.Progress = bufferProgress;
+        DiagBufferPercentLabel.Text = duration > 0 ? $"{bufferProgress * 100:F0}%" : "—";
+        DiagBufferLabel.Text = diag.BufferedMs > 0 ? $"Buffered {FormatTime(buffered)}" : "Buffered —";
+
+        var details = new List<string>();
+        if (diag.SabrBufferedBytes is > 0)
+            details.Add($"SABR buffer {FormatBytes(diag.SabrBufferedBytes.Value)}");
+        if (diag.FileSizeBytes is > 0)
+            details.Add(FormatBytes(diag.FileSizeBytes.Value));
+        if (diag.ResolveMs > 0)
+            details.Add($"Resolved in {diag.ResolveMs} ms");
+        string? host = GetStreamHost(diag.StreamUrl);
+        if (!string.IsNullOrEmpty(host))
+            details.Add(diag.IsCached ? "Cache" : host);
+        DiagDetailLabel.Text = details.Count > 0 ? string.Join("   ·   ", details) : string.Empty;
+    }
+
+    private void SetStatus(string text, Color textColor, Color backgroundColor)
+    {
+        DiagStatusLabel.Text = text;
+        DiagStatusLabel.TextColor = textColor;
+        DiagStatusBorder.BackgroundColor = backgroundColor;
+    }
+
+    private static string ValueOrDash(string? value) =>
+        string.IsNullOrWhiteSpace(value) ? "—" : value;
+
+    private static string FormatFormat(PlaybackDiagnostics diag)
+    {
+        string? codec = PrettyCodec(diag.Codec);
+        string? container = string.IsNullOrWhiteSpace(diag.Container)
+            ? null
+            : diag.Container.Trim().ToUpperInvariant();
+
+        if (codec != null && container != null) return $"{codec} · {container}";
+        if (codec != null) return codec;
+        if (container != null) return container;
+        return "—";
+    }
+
+    private static string? PrettyCodec(string? codec)
+    {
+        if (string.IsNullOrWhiteSpace(codec)) return null;
+
+        string value = codec.Trim();
+        if (value.StartsWith("mp4a", StringComparison.OrdinalIgnoreCase)) return "AAC";
+        if (value.Contains("opus", StringComparison.OrdinalIgnoreCase)) return "Opus";
+        if (value.Contains("vorbis", StringComparison.OrdinalIgnoreCase)) return "Vorbis";
+        if (value.Equals("flac", StringComparison.OrdinalIgnoreCase)) return "FLAC";
+        if (value.Equals("alac", StringComparison.OrdinalIgnoreCase)) return "ALAC";
+        if (value.Equals("pcm", StringComparison.OrdinalIgnoreCase)) return "PCM";
+        if (value.Equals("mp3", StringComparison.OrdinalIgnoreCase)) return "MP3";
+        return value.ToUpperInvariant();
+    }
+
+    private static string? GetStreamHost(string? url)
+    {
+        if (string.IsNullOrEmpty(url)) return null;
+        if (url.StartsWith("sabr://", StringComparison.OrdinalIgnoreCase)) return "SABR session";
+        if (url.StartsWith("/", StringComparison.Ordinal) ||
+            url.StartsWith("file://", StringComparison.OrdinalIgnoreCase) ||
+            url.StartsWith("content://", StringComparison.OrdinalIgnoreCase))
+            return "Local file";
+
+        return Uri.TryCreate(url, UriKind.Absolute, out Uri? uri) && !string.IsNullOrEmpty(uri.Host)
+            ? uri.Host
+            : null;
+    }
+
+    private static string FormatTime(double milliseconds)
+    {
+        if (double.IsNaN(milliseconds) || double.IsInfinity(milliseconds) || milliseconds < 0)
+            milliseconds = 0;
+
+        TimeSpan time = TimeSpan.FromMilliseconds(milliseconds);
+        return time.TotalHours >= 1
+            ? $"{(int)time.TotalHours}:{time.Minutes:00}:{time.Seconds:00}"
+            : $"{time.Minutes}:{time.Seconds:00}";
+    }
+
     private static string FormatBytes(long bytes)
     {
         if (bytes < 1024) return $"{bytes} B";
@@ -142,6 +291,10 @@ public partial class SettingsCategoryPage : ContentPage
             _trackCacheService.CacheUpdated -= OnCacheUpdated;
             _trackCacheService.DownloadProgressChanged -= OnDownloadProgressChanged;
         }
+
+        if (_mainViewModel != null)
+            _mainViewModel.DiagnosticsChanged -= OnDiagnosticsChanged;
+
         base.OnNavigatedFrom(args);
     }
 }

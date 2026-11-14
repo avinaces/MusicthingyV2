@@ -21,7 +21,7 @@ namespace Musicthingy.Settings.Definitions;
 public class PoTokenBuiltInSetting : BaseSetting<bool>
 {
     public override string Key => "PoTokenBuiltInGenerator";
-    public override string Title => "PO Token Generator (built-in)";
+    public override string Title => "PO Token Generator (built-in, BROKEN)";
     public override SettingCategory Category => SettingCategory.General;
     public override bool DefaultValue => false;
     public override string Icon => "shield_icon.png";
@@ -30,8 +30,8 @@ public class PoTokenBuiltInSetting : BaseSetting<bool>
     {
 #if ANDROID
         return Value
-            ? "On. GVS PO tokens are minted ON-DEVICE (hidden WebView running YouTube's own BotGuard attestation) and attached to SABR streams — full-length playback and seeking past the ~60s attestation cutoff, no external server needed."
-            : "Off. SABR-only videos re-buffer at every ~60s quota window, and seeking/skipping does not work (stream attestation is required for any non-zero start).";
+            ? "On. GVS PO tokens are minted ON-DEVICE (hidden WebView running YouTube's own BotGuard attestation) and attached to SABR streams — full-length playback and seeking past the ~60s attestation cutoff."
+            : "Off(Default). SABR-only videos stop at 60s, and seeking/skipping does not work.";
 #else
         return "Android-only feature. On Windows, set a PO Token Provider URL (below) or import a ***VISITOR DATA*** + ***PO TOKEN*** pair (YouTube Accounts → Paste cookies).";
 #endif

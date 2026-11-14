@@ -412,6 +412,12 @@ public partial class MainViewModel
             ActiveTimedLyrics.Clear();
             HasNoLyrics = true;
 
+            _currentResolvedMedia = null;
+            _currentResolvedMediaTrackUrl = null;
+            _currentIsCached = false;
+            _currentResolveMs = 0;
+            NotifyDiagnosticsChanged();
+
             // Queue finished (repeat off) - the app must stop itself now.
             // Before this, IsLoadingMedia stayed true (spinner forever) and the
             // partial wake lock + WiFi lock acquired for the finished track were
@@ -446,6 +452,8 @@ public partial class MainViewModel
 
         if (oldValue != null) oldValue.IsSelected = false;
         newValue.IsSelected = true;
+
+        NotifyDiagnosticsChanged();
 
         _ = ReloadMediaAsync(newValue);
     }

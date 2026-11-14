@@ -437,6 +437,15 @@ public partial class MainViewModel : ObservableObject, IDisposable
             }
 
             UpdateFilterTags();
+
+            // Cached Tracks is generated from the cache; if it went stale
+            // while another playlist was open, rebuild it on entry.
+            if (newValue == _cachedTracksPlaylist &&
+                Volatile.Read(ref _cachedTracksBuiltVersion) != Volatile.Read(ref _cachedTracksVersion))
+            {
+                RefreshCachedTracksPlaylist();
+            }
+
             RefreshDisplayedItems(forceReset: true);
         });
     }

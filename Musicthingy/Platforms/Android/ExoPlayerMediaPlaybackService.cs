@@ -27,6 +27,7 @@ public class ExoPlayerMediaPlaybackService : Java.Lang.Object, IMediaPlaybackSer
     private int _cachedPlaybackState = StateIdle;
     private long _cachedPositionMs = 0;
     private long _cachedDurationMs = 0;
+    private long _cachedBufferedPositionMs = 0;
 
     public string? CurrentMediaUrl { get; private set; }
 
@@ -65,6 +66,24 @@ public class ExoPlayerMediaPlaybackService : Java.Lang.Object, IMediaPlaybackSer
                 return 0;
             }
             return Interlocked.Read(ref _cachedDurationMs);
+        }
+    }
+
+    public double BufferedPositionMs
+    {
+        get
+        {
+            if (MainThread.IsMainThread && _player != null)
+            {
+                long buffered = _player.BufferedPosition;
+                if (buffered >= 0)
+                {
+                    Interlocked.Exchange(ref _cachedBufferedPositionMs, buffered);
+                    return buffered;
+                }
+                return 0;
+            }
+            return Interlocked.Read(ref _cachedBufferedPositionMs);
         }
     }
 
@@ -126,6 +145,7 @@ public class ExoPlayerMediaPlaybackService : Java.Lang.Object, IMediaPlaybackSer
                 {
                     long pos = _player.CurrentPosition;
                     Interlocked.Exchange(ref _cachedPositionMs, pos);
+                    Interlocked.Exchange(ref _cachedBufferedPositionMs, _player.BufferedPosition);
                     TimeChanged?.Invoke(this, pos);
                 }
             });
@@ -193,6 +213,7 @@ public class ExoPlayerMediaPlaybackService : Java.Lang.Object, IMediaPlaybackSer
 
                 _player.PlayWhenReady = true;
                 _cachedPlayWhenReady = true;
+                Interlocked.Exchange(ref _cachedBufferedPositionMs, (long)startTimeMs);
             }
         });
     }
@@ -229,6 +250,7 @@ public class ExoPlayerMediaPlaybackService : Java.Lang.Object, IMediaPlaybackSer
             {
                 _player.Stop();
                 _cachedPlaybackState = StateIdle;
+                Interlocked.Exchange(ref _cachedBufferedPositionMs, 0);
             }
         });
     }
@@ -289,12 +311,15 @@ public class ExoPlayerMediaPlaybackService : Java.Lang.Object, IMediaPlaybackSer
         switch (playbackState)
         {
             case StateBuffering:
+                if (_player != null)
+                    Interlocked.Exchange(ref _cachedBufferedPositionMs, _player.BufferedPosition);
                 BufferingChanged?.Invoke(this, true);
                 break;
             case StateReady:
                 BufferingChanged?.Invoke(this, false);
                 if (_player != null)
                 {
+                    Interlocked.Exchange(ref _cachedBufferedPositionMs, _player.BufferedPosition);
                     long dur = _player.Duration;
                     if (dur > 0)
                     {

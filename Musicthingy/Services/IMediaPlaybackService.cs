@@ -14,6 +14,8 @@ public interface IMediaPlaybackService : IDisposable
     bool IsPlaying { get; }
     double CurrentTimeMs { get; }
     double LengthMs { get; }
+    /// <summary>Position up to which the player has buffered, in milliseconds (0 when unknown).</summary>
+    double BufferedPositionMs { get; }
     string? CurrentMediaUrl { get; }
 
     void Play(string streamUrl, string userAgent, double startTimeMs);

@@ -63,6 +63,7 @@ public partial class MainViewModel
         {
             if (IsLoadingMedia != isBuffering)
                 IsLoadingMedia = isBuffering;
+            NotifyDiagnosticsChanged();
         });
     }
 
@@ -80,12 +81,14 @@ public partial class MainViewModel
                 IsPlaying = false;
                 SyncOSPlaybackState();
                 ReleaseTransientWakeLock();
+                NotifyDiagnosticsChanged();
                 return;
             }
 
             IsPlaying = true;
             IsLoadingMedia = false;
             SyncOSPlaybackState();
+            NotifyDiagnosticsChanged();
         });
     }
 
@@ -95,6 +98,7 @@ public partial class MainViewModel
         {
             IsPlaying = false;
             SyncOSPlaybackState();
+            NotifyDiagnosticsChanged();
         });
         if (!IsLoadingMedia) ReleaseTransientWakeLock();
     }
@@ -105,6 +109,7 @@ public partial class MainViewModel
         {
             IsPlaying = false;
             SyncOSPlaybackState();
+            NotifyDiagnosticsChanged();
         });
         if (!IsLoadingMedia) ReleaseTransientWakeLock();
     }
@@ -115,6 +120,7 @@ public partial class MainViewModel
         MainThread.BeginInvokeOnMainThread(() =>
         {
             IsLoadingMedia = false;
+            NotifyDiagnosticsChanged();
             PlayNextCommand.Execute("Error");
         });
         ReleaseTransientWakeLock();
@@ -138,7 +144,11 @@ public partial class MainViewModel
     private void OnLengthChanged(object? sender, double lengthMs)
     {
         Debug.WriteLine($"[Playback] LengthChanged={lengthMs}ms @ {_playbackStartupSw?.ElapsedMilliseconds}ms");
-        MainThread.BeginInvokeOnMainThread(() => UpdateTrackDuration(lengthMs / 1000.0, CurrentTrack));
+        MainThread.BeginInvokeOnMainThread(() =>
+        {
+            UpdateTrackDuration(lengthMs / 1000.0, CurrentTrack);
+            NotifyDiagnosticsChanged();
+        });
         UpdateMediaWidgetForTrack(CurrentTrack);
     }
 
@@ -279,6 +289,7 @@ public partial class MainViewModel
 
                 UpdateTrackDuration(lengthSecs, CurrentTrack);
                 SyncOSPlaybackState();
+                NotifyDiagnosticsChanged();
             });
 
             // v7.4: the widget update is binder IPC to the launcher (can take
@@ -304,6 +315,7 @@ public partial class MainViewModel
             // ==========================================
             ResolvedMedia? resolvedMedia = null;
             bool isCached = false;
+            long resolveMs = 0;
 
             if (!string.IsNullOrEmpty(newValue.Url))
             {
@@ -312,11 +324,13 @@ public partial class MainViewModel
                 // sees every cached file and the stats page/playlist agree with
                 // playback. (The separate FastTrackDownloader cache is gone; its
                 // old files are migrated at startup.)
-                string? cachedPath = _trackCacheService.GetCachedTrackPath(newValue.Url);
+                string? cachedPath = _trackCacheService.GetCachedTrackPathForPlayback(newValue.Url);
                 if (cachedPath != null)
                 {
                     Debug.WriteLine($"[Playback] Using Local Cache for: {newValue.Url}");
-                    resolvedMedia = new ResolvedMedia(cachedPath, "");
+                    resolvedMedia = new ResolvedMedia(
+                        cachedPath, "",
+                        Source: "Local cache", StreamType: "Cached file");
                     isCached = true;
                 }
                 else
@@ -324,7 +338,8 @@ public partial class MainViewModel
                     Stopwatch resolveSw = Stopwatch.StartNew();
                     resolvedMedia = await _youtubeResolver.ResolveMediaSourceAsync(newValue.Url, token);
                     resolveSw.Stop();
-                    Debug.WriteLine($"[Playback] Resolved via Internet in {resolveSw.ElapsedMilliseconds}ms");
+                    resolveMs = resolveSw.ElapsedMilliseconds;
+                    Debug.WriteLine($"[Playback] Resolved via Internet in {resolveMs}ms");
                 }
             }
 
@@ -352,6 +367,7 @@ public partial class MainViewModel
 
                 ReleaseTransientWakeLock();
                 IsLoadingMedia = false;
+                SetResolvedMedia(null, false, 0, newValue.Url);
                 return;
             }
 
@@ -361,6 +377,7 @@ public partial class MainViewModel
 
             _playbackStartupSw = Stopwatch.StartNew();
             _playbackService.Play(resolvedMedia.Url, resolvedMedia.UserAgent, targetStartMs);
+            SetResolvedMedia(resolvedMedia, isCached, resolveMs, newValue.Url);
 
             // ==========================================
             // BACKGROUND CACHE (v5 — one queue, one cache):
@@ -498,6 +515,7 @@ public partial class MainViewModel
                 CurrentPositionSeconds = CurrentPosition.TotalSeconds;
 
             SyncActiveLyric(CurrentPosition);
+            NotifyDiagnosticsThrottled();
         });
     }
 

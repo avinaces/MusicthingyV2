@@ -16,6 +16,7 @@ public static class MenuHelper
     public static void ShowTrackOptions(PlaylistItem track, MainViewModel vm)
     {
         bool isReadOnly = track.Playlist != null && track.Playlist.IsSystemPlaylist;
+        bool isCachedTracks = isReadOnly && track.Playlist?.Name == "Cached Tracks";
 
         ContextMenuSheet menuSheet = new ContextMenuSheet
         {
@@ -60,6 +61,19 @@ public static class MenuHelper
                 IconSource = "trash_2_icon.png",
                 IsDestructive = true,
                 Action = () => { HideContextMenu(menuSheet); vm.DeleteTrackCommand.Execute(track); }
+            });
+        }
+        else if (isCachedTracks)
+        {
+            // System playlists are read-only, but the Cached Tracks rows are a
+            // view over the on-disk cache - deleting the file is the only edit
+            // that makes sense there. The row disappears on CacheUpdated.
+            dangerGroup.Add(new ContextMenuItem
+            {
+                Title = "Delete from Cache",
+                IconSource = "hard_drive_icon.png",
+                IsDestructive = true,
+                Action = () => { HideContextMenu(menuSheet); vm.RemoveTrackFromCache(track); }
             });
         }
 

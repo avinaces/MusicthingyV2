@@ -120,6 +120,7 @@ public partial class Playlist : ObservableObject
     private ImageSource? _iconImageSource;
     private bool _isGeneratingIcon;
     private bool _recalcPending;
+    private bool _suppressItemChanged;
 
     [JsonIgnore]
     public ImageSource? IconImageSource
@@ -236,6 +237,10 @@ public partial class Playlist : ObservableObject
 
     private void Items_CollectionChanged(object? sender, NotifyCollectionChangedEventArgs e)
     {
+        // ReplaceItems does one recalculation at the end instead of one per
+        // added row (a generated list rebuild is O(n²) otherwise).
+        if (_suppressItemChanged) return;
+
         if (e.NewItems != null)
         {
             foreach (PlaylistItem item in e.NewItems) item.Playlist = this;
@@ -244,6 +249,34 @@ public partial class Playlist : ObservableObject
         {
             foreach (PlaylistItem item in e.OldItems) item.Playlist = null;
         }
+
+        OnPropertyChanged(nameof(ItemCount));
+        RecalculateDuration();
+    }
+
+    /// <summary>
+    /// Replaces the whole item list in one pass. Used by the generated Cached
+    /// Tracks playlist: per-item back-reference and duration work is skipped
+    /// until the end, so a large rebuild stays a single pass.
+    /// </summary>
+    public void ReplaceItems(IReadOnlyList<PlaylistItem> items)
+    {
+        _suppressItemChanged = true;
+        try
+        {
+            Items.Clear();
+            foreach (PlaylistItem item in items)
+            {
+                item.Playlist = this;
+                Items.Add(item);
+            }
+        }
+        finally
+        {
+            _suppressItemChanged = false;
+        }
+
+        OnPropertyChanged(nameof(ItemCount));
         RecalculateDuration();
     }
 
