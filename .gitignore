@@ -366,3 +366,8 @@ MigrationBackup/
 FodyWeavers.xsd
 /PACKAGE_VERSIONS_AND_INFO.txt
 /Musicthingy/Platforms/Windows/ffmpeg.exe
+
+# Agent scratch and local diagnostics (never source)
+/.agent/
+/logs/
+/AGENTS.md
