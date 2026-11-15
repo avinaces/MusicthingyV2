@@ -55,6 +55,18 @@ public sealed class SabrStreamSession : IDisposable
     private const long BroadcastTargetSegmentDurationMs = 5000;
     private const long BroadcastEstSegmentDurationMs = 4900;
 
+    // The WEB client version the reference UMP clients pin (pytubefix 11.x /
+    // googlevideo). Ours comes from the InnerTube constants (a newer date);
+    // this pinned value is the one GVS is known to attest on this network.
+    private const string ReferenceWebClientVersion = "2.20250523.01.00";
+
+    /// <summary>
+    /// Test-only (adb: <c>--es dump sabr</c>): log the first UMP request
+    /// bodies as base64 so they can be decoded and diffed against a working
+    /// reference client's payload.
+    /// </summary>
+    public static bool DumpRequests { get; set; }
+
     // The UMP body streams for as long as the server has parts; the shared
     // resolver handler is reused (IPv4-forcing) but without a client timeout.
     private static readonly HttpClient SharedHttp = new(
@@ -214,8 +226,8 @@ public sealed class SabrStreamSession : IDisposable
         {
             Log($"[SABR] session starting: video {_config.VideoId}, client {_activeConfig.ClientInfo.ClientName} " +
                 $"({_activeConfig.ClientInfo.ClientVersion}), {_activeConfig.PreferredAudio.Count} preferred audio format(s)" +
-                (string.IsNullOrEmpty(_activeConfig.PoToken) ? ", no PO token" : ", PO token attached") +
-                (string.IsNullOrEmpty(_activeConfig.SessionPoToken) ? "" : ", session PO token attached") +
+                (string.IsNullOrEmpty(_activeConfig.PoToken) ? ", no PO token" : $", PO token attached ({_activeConfig.PoToken.Length} chars)") +
+                (string.IsNullOrEmpty(_activeConfig.SessionPoToken) ? "" : $", session PO token attached ({_activeConfig.SessionPoToken.Length} chars)") +
                 (GetQueryParam(_url, "n") != null ? ", n=present" : ""));
 
             int consecutiveFailures = 0;
@@ -246,17 +258,18 @@ public sealed class SabrStreamSession : IDisposable
                 byte[] payload = BuildVpabrRequest();
                 _requestNumber++;
 
+                if (DumpRequests && _requestNumber <= 3)
+                    Log($"[SABR] request #{_requestNumber} b64: {Convert.ToBase64String(payload)}");
+
                 bool gotNewSegments = false;
                 try
                 {
                     string postUrl = AppendQueryParam(_url, "rn", _requestNumber.ToString(CultureInfo.InvariantCulture));
-                    if (!_poTokenDisabled &&
-                        !string.IsNullOrEmpty(_activeConfig.PoToken) &&
-                        _activeConfig.ClientInfo.ClientName is 1 or 2 or 56 &&
-                        GetQueryParam(postUrl, "pot") is null)
-                    {
-                        postUrl = AppendQueryParam(postUrl, "pot", _activeConfig.PoToken);
-                    }
+                    // v9.2: NO &pot= on a SABR URL. The token belongs in
+                    // StreamerContext.po_token only — the reference clients
+                    // (pytubefix, rustypipe) never put it on the UMP request
+                    // URL, and youtubei.js adds "?pot=" only when the URL is
+                    // NOT a SABR one.
 
                     using HttpRequestMessage request = new(HttpMethod.Post, postUrl);
                     request.Headers.TryAddWithoutValidation("Accept", "application/vnd.yt-ump");
@@ -276,8 +289,11 @@ public sealed class SabrStreamSession : IDisposable
                     }
 
                     request.Content = new ByteArrayContent(payload);
+                    // v9.2: the UMP reference clients post the protobuf as
+                    // application/vnd.yt-ump (pytubefix). Kept identical here
+                    // since GVS attestation is the thing under test.
                     request.Content.Headers.ContentType =
-                        new System.Net.Http.Headers.MediaTypeHeaderValue("application/x-protobuf");
+                        new System.Net.Http.Headers.MediaTypeHeaderValue("application/vnd.yt-ump");
 
                     using HttpResponseMessage response = await SharedHttp.SendAsync(
                         request, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
@@ -1108,12 +1124,20 @@ public sealed class SabrStreamSession : IDisposable
 
         w.SubMessage(1, cabr =>
         {
-            // ClientAbrState: 28 player_time_ms, 40 enabled_track_types_bitfield,
-            // 46 drc_enabled, 76 enable_voice_boost, 38 media_capabilities
+            // ClientAbrState: 16 last_manual_selected_resolution,
+            // 21 sticky_resolution, 28 player_time_ms,
+            // 40 enabled_track_types_bitfield.
+            //
+            // v9.2: trimmed to what the WORKING reference clients send
+            // (pytubefix, rustypipe) — 720 resolution hints even for audio,
+            // no drc_enabled, no voice boost, no media_capabilities. The
+            // attestation failure this file chased for days was never about
+            // which fields we ADD; sending fewer brought the request in line
+            // with a client GVS accepts.
+            cabr.VarintField(16, 720);
+            cabr.VarintField(21, 720);
             cabr.VarintField(28, _playerTimeMs);
             cabr.VarintField(40, 1);          // audio-only track selection
-            cabr.BoolField(46, true);         // DRC formats allowed
-            cabr.BoolField(76, true);         // voice boost
             if (IncludeMediaCapabilities) WriteMediaCapabilities(cabr);
         });
 
@@ -1161,16 +1185,32 @@ public sealed class SabrStreamSession : IDisposable
             // 5 sabr_contexts, 6 unsent_sabr_contexts
             sc.SubMessage(1, ci =>
             {
-                // ClientInfo: 1 hl, 2 gl, 12 device_make, 13 device_model, 14 visitor_data,
-                // 15 user_agent, 16 client_name, 17 client_version, 18 os_name, 19 os_version,
+                // ClientInfo: 1 locale, 2 gl, 12 device_make, 13 device_model,
+                // 14 visitor_data, 15 user_agent, 16 client_name,
+                // 17 client_version, 18 os_name, 19 os_version,
                 // 64 android_sdk_version
+                //
+                // v9.2: for the WEB session (client 1) this mirrors the
+                // reference UMP clients EXACTLY (pytubefix 11.x, verified on
+                // this very network: it reports StreamProtectionStatus OK with
+                // the same bgutil token, while this app got "attestation
+                // pending"): client_name, client_version, os_name, os_version
+                // and nothing else — no visitor_data, no user_agent, no hl/gl.
+                // Other clients keep their full identity.
                 SabrClientInfo c = _activeConfig.ClientInfo;
+                if (c.ClientName == 1)
+                {
+                    ci.VarintField(16, 1);
+                    ci.StringField(17, ReferenceWebClientVersion);
+                    ci.StringField(18, "Windows");
+                    ci.StringField(19, "10.0");
+                    return;
+                }
+
                 ci.StringField(1, c.Hl);
                 ci.StringField(2, c.Gl);
                 if (c.DeviceMake != null) ci.StringField(12, c.DeviceMake);
                 if (c.DeviceModel != null) ci.StringField(13, c.DeviceModel);
-                if (!string.IsNullOrEmpty(c.VisitorData)) ci.StringField(14, c.VisitorData);
-                if (!string.IsNullOrEmpty(c.UserAgent)) ci.StringField(15, c.UserAgent);
                 ci.VarintField(16, c.ClientName);
                 ci.StringField(17, c.ClientVersion);
                 if (c.OsName != null) ci.StringField(18, c.OsName);

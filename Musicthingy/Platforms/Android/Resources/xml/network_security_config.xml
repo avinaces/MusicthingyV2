@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    The app talks to YouTube/Google over HTTPS only, EXCEPT the optional local
+    PO-token provider (Services/YoutubeResolverService.GetProviderGvsPoTokenAsync),
+    which is reached over plain HTTP on a loopback/private address:
+    http://127.0.0.1:4416 (adb reverse) or http://<lan-ip>:4416 (a bgutil
+    server on the same network). Android blocks cleartext by default
+    (usesCleartextTraffic="false" in AndroidManifest.xml), which made that
+    provider fail with "Connection failure" — so cleartext is permitted for
+    local/private hosts ONLY. Everything else keeps the secure default.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false" />
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="false">127.0.0.1</domain>
+        <domain includeSubdomains="false">localhost</domain>
+    </domain-config>
+</network-security-config>

@@ -373,6 +373,8 @@ public partial class MainViewModel : ObservableObject, IDisposable
                 TogglePlayCommand.Execute(null);
             else if (m.Action == "ScrollToCurrentTrack")
                 ScrollToCurrentTrack();
+            else if (m.Action == "PlayVideo" && !string.IsNullOrEmpty(m.VideoId))
+                _ = PlayVideoByIdAsync(m.VideoId, m.StartSeconds);
         });
     }
 

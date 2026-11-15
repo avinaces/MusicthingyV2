@@ -71,7 +71,7 @@
                             <Border Grid.Column="0" WidthRequest="38" HeightRequest="38" VerticalOptions="Center"
                                     BackgroundColor="{DynamicResource AccentContainer}" StrokeThickness="0"
                                     StrokeShape="RoundRectangle 10">
-                                <Image Source="music_3_icon.png" WidthRequest="19" HeightRequest="19"
+                                <Image Source="music_4_icon.png" WidthRequest="19" HeightRequest="19"
                                        HorizontalOptions="Center" VerticalOptions="Center">
                                     <Image.Behaviors>
                                         <toolkit:IconTintColorBehavior TintColor="{DynamicResource AccentColor}" />

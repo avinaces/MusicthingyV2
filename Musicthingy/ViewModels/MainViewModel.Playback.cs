@@ -273,6 +273,44 @@ public partial class MainViewModel
         CurrentTrack = PlaybackQueue[prevIndex];
     }
 
+    /// <summary>
+    /// Debug entry point (MainActivity's MUSIC_ACTION_PLAY_VIDEO intent, used
+    /// over adb) that plays a bare YouTube video by ID with no playlist
+    /// involved. It exists so the resolver/SABR path can be driven on a device
+    /// without UI taps:
+    ///   adb shell am start -n Musicthingy/crc64….MainActivity \
+    ///       -a MUSIC_ACTION_PLAY_VIDEO --es videoId w6g1yQV0dIY --ei startSeconds 55
+    /// Setting CurrentTrack flows through OnCurrentTrackChanged →
+    /// ReloadMediaAsync exactly like a normal track selection.
+    /// </summary>
+    public async Task PlayVideoByIdAsync(string videoId, int? startSeconds = null)
+    {
+        if (string.IsNullOrWhiteSpace(videoId)) return;
+
+        // Startup restores the previous track (RestorePlaybackState) a moment
+        // after OnCreate delivers the intent — wait it out so the debug track
+        // is not immediately replaced by the restored one.
+        for (int i = 0; i < 50 && SettingsManager.IsRestoringState; i++)
+            await Task.Delay(200).ConfigureAwait(false);
+
+        PlaylistItem item = new()
+        {
+            Title = $"debug {videoId}",
+            Url = $"https://www.youtube.com/watch?v={videoId}",
+            StartTime = startSeconds is > 0 ? startSeconds : null,
+        };
+
+        System.Diagnostics.Debug.WriteLine($"[DebugApi] PlayVideo {videoId} (start {startSeconds?.ToString() ?? "0"}s)");
+        await MainThread.InvokeOnMainThreadAsync(() =>
+        {
+            // Replace the queue so next/previous cannot jump into the user's
+            // real playlist while the debug track is playing.
+            PlaybackQueue.Clear();
+            PlaybackQueue.Add(item);
+            CurrentTrack = item;
+        }).ConfigureAwait(false);
+    }
+
     [RelayCommand]
     public void Play()
     {
