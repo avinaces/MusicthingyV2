@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Net;
 using System.Net.Sockets;
 using Musicthingy.Services.PoToken;
 
@@ -67,10 +68,80 @@ public sealed class SabrStreamSession : IDisposable
     /// </summary>
     public static bool DumpRequests { get; set; }
 
+    /// <summary>
+    /// Test-only (adb: <c>--ez sabrNoRn true</c>): do NOT append the
+    /// <c>?rn=&lt;request number&gt;</c> query param to the UMP POST URL. The
+    /// captured working reference request (pytubefix 11.x) carries no
+    /// <c>rn</c> and no <c>pot</c> on its SABR URL, while this client still
+    /// sends <c>rn</c> — the last byte-level difference on the request line,
+    /// so it is exposed as an A/B switch instead of another guess.
+    /// </summary>
+    public static bool OmitRequestNumberForTest { get; set; }
+
+    /// <summary>
+    /// Test-only (adb: <c>--ez sabrUrlPot true</c>): append
+    /// <c>&amp;pot=&lt;po token&gt;</c> to the UMP POST URL.
+    /// <para>
+    /// v9.2 removed the URL token because the comments here said the
+    /// reference clients only put it in StreamerContext — but pytubefix
+    /// 11.2.1's <c>extract.apply_po_token()</c> appends <c>pot</c> to EVERY
+    /// stream URL, the SABR <c>serverAbrStreamingUrl</c> included, and it is
+    /// the run that reports StreamProtectionStatus OK on this network. The
+    /// missing combination — reference-mirrored ClientInfo (v9.2) + the token
+    /// on the UMP URL — has never been tested, so it is a switch, not a
+    /// silent default.
+    /// </para>
+    /// </summary>
+    public static bool SendUrlPoTokenForTest { get; set; }
+
+    /// <summary>
+    /// Test-only (adb: <c>--ez sabrRefHeaders true</c>): make the UMP POST
+    /// byte-for-byte what the WORKING reference client (pytubefix 11.2.1)
+    /// puts on the wire, to isolate an attestation mismatch to the HTTP layer:
+    /// <c>User-Agent: Mozilla/5.0</c>, <c>accept-language: en-US,en</c>, NO
+    /// <c>Origin</c>/<c>Referer</c>, and HTTP/1.1 with
+    /// <c>RequestVersionExact</c> (Python urllib speaks 1.1; .NET negotiates
+    /// h2 over ALPN by default). Returns <c>sps</c> to 1 only if GVS cares
+    /// about one of those, in which case the offending item becomes the
+    /// production behaviour.
+    /// </summary>
+    public static bool ReferenceHeadersForTest { get; set; }
+
+    /// <summary>
+    /// Test-only (adb: <c>--ez sabrSkipSession true</c>): do not start the
+    /// in-app SABR session. The resolver still makes the real /player call,
+    /// so a FRESH signed serverAbrStreamingUrl + ustreamer config + token are
+    /// logged (with <see cref="DumpRequests"/>) for a cross-over replay on the
+    /// PC (sabr_cross.py). Required because a SABR URL belongs to one
+    /// in-progress player session: replaying a URL the app already streamed
+    /// gets a context handshake instead of media, which tells us nothing.
+    /// </summary>
+    public static bool SkipSessionForTest { get; set; }
+
+    /// <summary>
+    /// Logs everything needed to replay a captured /player answer from another
+    /// client: the signed URL, the ustreamer config, the token, and the
+    /// preferred formats (itag:lastModified:xtags).
+    /// </summary>
+    public static void LogConfig(string url, SabrSessionConfig config)
+    {
+        SabrTrace.Log($"[SABR] config url: {url}");
+        SabrTrace.Log($"[SABR] config ustreamer: {config.UstreamerConfigB64}");
+        SabrTrace.Log($"[SABR] config pot: {config.PoToken ?? "(none)"}");
+        SabrTrace.Log($"[SABR] config sessionPot: {config.SessionPoToken ?? "(none)"}");
+        SabrTrace.Log($"[SABR] config visitor: {config.ClientInfo.VisitorData ?? "(none)"}");
+        SabrTrace.Log($"[SABR] config client: {config.ClientInfo.ClientName} {config.ClientInfo.ClientVersion}");
+        SabrTrace.Log($"[SABR] config formats: {string.Join(",", config.PreferredAudio.Select(f => $"{f.Itag}:{f.LastModified}:{f.Xtags ?? ""}"))}");
+    }
+
     // The UMP body streams for as long as the server has parts; the shared
     // resolver handler is reused (IPv4-forcing) but without a client timeout.
+    // v9.3: InnerTubeHandler (UseCookies=false) — the SABR POST must never
+    // pick up cookies that leaked into the IPv4 handler's container from
+    // earlier /player responses; an anonymous session posting authed
+    // cookies is a guaranteed attestation mismatch.
     private static readonly HttpClient SharedHttp = new(
-        YouTubeResolverService.Ipv4Handler, disposeHandler: false)
+        YouTubeResolverService.InnerTubeHandler, disposeHandler: false)
     {
         Timeout = Timeout.InfiniteTimeSpan
     };
@@ -230,6 +301,12 @@ public sealed class SabrStreamSession : IDisposable
                 (string.IsNullOrEmpty(_activeConfig.SessionPoToken) ? "" : $", session PO token attached ({_activeConfig.SessionPoToken.Length} chars)") +
                 (GetQueryParam(_url, "n") != null ? ", n=present" : ""));
 
+            if (ReferenceHeadersForTest)
+                Log("[SABR] test: reference headers (UA Mozilla/5.0, accept-language, no Origin/Referer, HTTP/1.1 exact)");
+
+            if (DumpRequests)
+                LogConfig(_url, _activeConfig);
+
             int consecutiveFailures = 0;
             while (!ct.IsCancellationRequested)
             {
@@ -264,7 +341,17 @@ public sealed class SabrStreamSession : IDisposable
                 bool gotNewSegments = false;
                 try
                 {
-                    string postUrl = AppendQueryParam(_url, "rn", _requestNumber.ToString(CultureInfo.InvariantCulture));
+                    string postUrl = OmitRequestNumberForTest
+                        ? _url
+                        : AppendQueryParam(_url, "rn", _requestNumber.ToString(CultureInfo.InvariantCulture));
+                    // Test-only: the reference client (pytubefix) also carries
+                    // the same token on the UMP URL itself.
+                    if (SendUrlPoTokenForTest &&
+                        (_activeConfig.SessionPoToken ?? _activeConfig.PoToken) is string urlPot &&
+                        !string.IsNullOrEmpty(urlPot))
+                    {
+                        postUrl = AppendQueryParam(postUrl, "pot", urlPot);
+                    }
                     // v9.2: NO &pot= on a SABR URL. The token belongs in
                     // StreamerContext.po_token only — the reference clients
                     // (pytubefix, rustypipe) never put it on the UMP request
@@ -274,18 +361,30 @@ public sealed class SabrStreamSession : IDisposable
                     using HttpRequestMessage request = new(HttpMethod.Post, postUrl);
                     request.Headers.TryAddWithoutValidation("Accept", "application/vnd.yt-ump");
                     request.Headers.TryAddWithoutValidation("Accept-Encoding", "identity");
-                    if (!string.IsNullOrEmpty(_activeConfig.ClientInfo.UserAgent))
-                        request.Headers.TryAddWithoutValidation("User-Agent", _activeConfig.ClientInfo.UserAgent);
-                    // v8.4: MWEB (clientName 2) is an m.youtube.com session — its
-                    // Origin/Referer must say so or the attested mobile identity
-                    // mismatches the request.
-                    if (_activeConfig.ClientInfo.ClientName is 1 or 2 or 56)
+                    if (ReferenceHeadersForTest)
                     {
-                        string origin = _activeConfig.ClientInfo.ClientName == 2
-                            ? "https://m.youtube.com"
-                            : "https://www.youtube.com";
-                        request.Headers.TryAddWithoutValidation("Origin", origin);
-                        request.Headers.TryAddWithoutValidation("Referer", origin + "/");
+                        // pytubefix's exact wire request (urllib): plain UA,
+                        // accept-language, no Origin/Referer, HTTP/1.1.
+                        request.Headers.TryAddWithoutValidation("User-Agent", "Mozilla/5.0");
+                        request.Headers.TryAddWithoutValidation("Accept-Language", "en-US,en");
+                        request.Version = HttpVersion.Version11;
+                        request.VersionPolicy = HttpVersionPolicy.RequestVersionExact;
+                    }
+                    else
+                    {
+                        if (!string.IsNullOrEmpty(_activeConfig.ClientInfo.UserAgent))
+                            request.Headers.TryAddWithoutValidation("User-Agent", _activeConfig.ClientInfo.UserAgent);
+                        // v8.4: MWEB (clientName 2) is an m.youtube.com session — its
+                        // Origin/Referer must say so or the attested mobile identity
+                        // mismatches the request.
+                        if (_activeConfig.ClientInfo.ClientName is 1 or 2 or 56)
+                        {
+                            string origin = _activeConfig.ClientInfo.ClientName == 2
+                                ? "https://m.youtube.com"
+                                : "https://www.youtube.com";
+                            request.Headers.TryAddWithoutValidation("Origin", origin);
+                            request.Headers.TryAddWithoutValidation("Referer", origin + "/");
+                        }
                     }
 
                     request.Content = new ByteArrayContent(payload);
@@ -1235,6 +1334,15 @@ public sealed class SabrStreamSession : IDisposable
                 {
                     sc.SubMessage(5, ctx =>
                     {
+                        // Request-side StreamerContextUpdate: 1 type, 2 value.
+                        // The value goes in field 2 — NOT field 3, which is
+                        // where the RESPONSE part (parsed above) carries it.
+                        // Verified against pytubefix 11.2.1: its encoder emits
+                        // `writer.uint32(18)` (field 2) and GVS accepts it,
+                        // while echoing the response bytes in field 3 answers
+                        // SABR_ERROR "sabr.malformed_config" and no media ever
+                        // starts. (Its decoder reads field 3, so the reference
+                        // wire format is deliberately asymmetric here.)
                         ctx.VarintField(1, type);
                         ctx.BytesField(2, value);
                     });

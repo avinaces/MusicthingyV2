@@ -22,14 +22,19 @@ namespace Musicthingy
 			builder.Services.AddAppSettings();
 			builder.Services.AddSingleton<ColorExtractionService>();
 
-			// Replace this line:
-			builder.Services.AddSingleton<YouTubeResolverService>();
-			// With:
+			// v9.3: the "youtube" named client sits on the resolver's cookie-
+			// free InnerTubeHandler (UseCookies=false — Set-Cookie harvesting
+			// from earlier /player answers must not leak into later anonymous
+			// requests). Handler lifetime is infinite on purpose: the handler
+			// is a static singleton shared with SABR and direct URL requests,
+			// so letting IHttpClientFactory dispose/cycle it every 2 minutes
+			// would tear down live SABR connections; PooledConnectionLifetime
+			// already rotates connections underneath.
 			builder.Services.AddHttpClient("youtube", c => {
 				c.Timeout = TimeSpan.FromSeconds(30);
 				c.DefaultRequestHeaders.UserAgent.ParseAdd(YouTubeResolverService.DefaultUserAgent);
-			}).ConfigurePrimaryHttpMessageHandler(_ => YouTubeResolverService.Ipv4Handler)
-			  .SetHandlerLifetime(TimeSpan.FromMinutes(2));
+			}).ConfigurePrimaryHttpMessageHandler(_ => YouTubeResolverService.InnerTubeHandler)
+			  .SetHandlerLifetime(Timeout.InfiniteTimeSpan);
 			builder.Services.AddSingleton<YouTubeResolverService>(sp =>
 				new YouTubeResolverService(sp.GetRequiredService<IHttpClientFactory>()));
 

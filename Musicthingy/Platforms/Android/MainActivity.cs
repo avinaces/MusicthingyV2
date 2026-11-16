@@ -37,7 +37,7 @@ public class MainActivity : MauiAppCompatActivity
     protected override void OnCreate(Bundle? savedInstanceState)
     {
         base.OnCreate(savedInstanceState);
-        Android.Util.Log.Info("Musicthingy", "[DebugApi] build v9.1-potbinding loaded");
+        Android.Util.Log.Info("Musicthingy", "[DebugApi] build v9.5-cipherretry loaded");
         HandleIntent(Intent);
 
         // v8.0: the built-in ON-DEVICE GVS PO token generator (a hidden
@@ -67,7 +67,8 @@ public class MainActivity : MauiAppCompatActivity
         // Debug API for driving playback over adb (see
         // MainViewModel.PlayVideoByIdAsync):
         //   adb shell am start -n <package>/<activity> -a MUSIC_ACTION_PLAY_VIDEO \
-        //       --es videoId <id> [--ei startSeconds 55]
+        //       --es videoId <id> [--ei startSeconds 55] \
+        //       [--es clients tv|sabr|web,mweb] [--es cache off]
         else if (intent?.Action == "MUSIC_ACTION_PLAY_VIDEO")
         {
             string? videoId = intent.GetStringExtra("videoId");
@@ -83,7 +84,42 @@ public class MainActivity : MauiAppCompatActivity
             string? identity = intent.GetStringExtra("identity");
             Musicthingy.Services.YouTubeResolverService.ForceAnonymousForTest =
                 string.Equals(identity, "anon", StringComparison.OrdinalIgnoreCase);
-            Android.Util.Log.Info("Musicthingy", $"[DebugApi] intent MUSIC_ACTION_PLAY_VIDEO {videoId} start={startSeconds} mode={mode ?? "auto"} binding={binding ?? "video"} identity={identity ?? "auto"}");
+
+            // Test-only client selection: replace the fallback chain with
+            // exactly these clients ("tv", "sabr", "web", "mweb",
+            // "web_embedded", "visionos"; comma-separated). Empty = full chain.
+            string? clients = intent.GetStringExtra("clients")?.Trim();
+            Musicthingy.Services.YouTubeResolverService.ClientsForTest =
+                string.IsNullOrWhiteSpace(clients) ? null : clients;
+
+            // Test-only cache bypass: "off"/"none"/"bypass" (or --ez noCache
+            // true) makes both playback and the background downloader ignore
+            // the on-disk cache, so the live network path is always exercised.
+            string? cache = intent.GetStringExtra("cache")?.Trim();
+            bool noCache = intent.GetBooleanExtra("noCache", false) ||
+                string.Equals(cache, "off", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(cache, "none", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(cache, "bypass", StringComparison.OrdinalIgnoreCase);
+            Musicthingy.Services.TrackCacheService.BypassCacheForTest = noCache;
+            Musicthingy.Services.YouTubeResolverService.BypassUrlCacheForTest = noCache;
+
+            // Test-only SABR diagnostics: --es dump sabr logs the first three
+            // UMP bodies (base64) for a diff against a working reference
+            // client; --ez sabrNoRn true omits the ?rn= request-number param
+            // (the reference request line has none).
+            string? dump = intent.GetStringExtra("dump")?.Trim();
+            Musicthingy.Services.Sabr.SabrStreamSession.DumpRequests =
+                string.Equals(dump, "sabr", StringComparison.OrdinalIgnoreCase);
+            Musicthingy.Services.Sabr.SabrStreamSession.OmitRequestNumberForTest =
+                intent.GetBooleanExtra("sabrNoRn", false);
+            Musicthingy.Services.Sabr.SabrStreamSession.SendUrlPoTokenForTest =
+                intent.GetBooleanExtra("sabrUrlPot", false);
+            Musicthingy.Services.Sabr.SabrStreamSession.ReferenceHeadersForTest =
+                intent.GetBooleanExtra("sabrRefHeaders", false);
+            Musicthingy.Services.Sabr.SabrStreamSession.SkipSessionForTest =
+                intent.GetBooleanExtra("sabrSkipSession", false);
+
+            Android.Util.Log.Info("Musicthingy", $"[DebugApi] intent MUSIC_ACTION_PLAY_VIDEO {videoId} start={startSeconds} mode={mode ?? "auto"} binding={binding ?? "video"} identity={identity ?? "auto"} clients={clients ?? "all"} cache={(noCache ? "bypass" : "normal")} dump={dump ?? "none"} sabrNoRn={Musicthingy.Services.Sabr.SabrStreamSession.OmitRequestNumberForTest} sabrUrlPot={Musicthingy.Services.Sabr.SabrStreamSession.SendUrlPoTokenForTest}");
             WeakReferenceMessenger.Default.Send(new MediaControlMessage
             {
                 Action = "PlayVideo",

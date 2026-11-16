@@ -89,7 +89,20 @@ public partial class YouTubeResolverService
     // How many cipher formats one client may probe before it is considered
     // blocked. TVHTML5's deciphered URLs fail per-stream (one itag 403s while
     // the next plays), so a single failed probe must not condemn the client.
-    private const int MaxCipheredFormatAttempts = 3;
+    // 6 covers every audio format a client returns in practice (Opus 251/250/
+    // 249 + AAC 140/139): stopping at 3 used to give up before the M4A
+    // formats — the ones that most often survive when the WebM/Opus URLs 403.
+    private const int MaxCipheredFormatAttempts = 6;
+
+    // v9.5: how many times a deciphered googlevideo URL may be re-probed after
+    // an HTTP 403 before its format is considered dead. Measured field pattern
+    // (TVHTML5, several runs): the first GETs of a freshly deciphered URL are
+    // rejected and a later GET of the SAME URL is served — 403, 403, 206 for
+    // itag 251, sometimes 403, 403, 403, 206. Treating the first 403 as fatal
+    // used to demote every playback to itag 250/249/140 (and made MWEB look
+    // like it had no usable format at all).
+    private const int CipheredProbeRetries = 3;
+    private const int CipheredProbeRetryDelayMs = 400;
     private const int MaxCacheSize = 500;
     private const int CacheEvictBatch = 50;
 
@@ -136,6 +149,24 @@ public partial class YouTubeResolverService
     };
 
     public static SocketsHttpHandler Ipv4Handler => _ipv4Handler;
+
+    // v9.3: cookie-free handler for the InnerTube client. SocketsHttpHandler
+    // defaults to UseCookies=true, so every Set-Cookie YouTube answered
+    // (iframe_api, base.js, WEB/MWEB/TVHTML5 /player responses …) piled up in
+    // _ipv4Handler.CookieContainer and leaked into later "anonymous"
+    // requests — most visibly TVHTML5 going 403 mid-session after a fresh
+    // restart, because restart RESETS the container while a running app kept
+    // replaying the accumulated cookies. Auth cookies are attached
+    // per-request (Cookie/SAPISIDHASH headers in BuildPlayerRequestAsync),
+    // so nothing legitimate loses its cookies by turning the container off.
+    private static readonly SocketsHttpHandler _innerTubeHandler = new()
+    {
+        UseCookies = false,
+        AutomaticDecompression = DecompressionMethods.GZip | DecompressionMethods.Deflate,
+        PooledConnectionLifetime = TimeSpan.FromMinutes(2),
+    };
+
+    public static SocketsHttpHandler InnerTubeHandler => _innerTubeHandler;
 
     // ── HTTP clients ────────────────────────────────────────────────────────
     private readonly HttpClient _innerTubeClient;
@@ -281,9 +312,12 @@ public partial class YouTubeResolverService
 #endif
     }
 
-    // ── Per-client circuit breaker (10-min cooldown on HTTP 403) ─────────────
+    // ── Per-client circuit breaker (15 s cooldown on HTTP 403) ───────────────
+    // v9.3: was 10 minutes — one edge 403 locked TVHTML5 out until the app
+    // was restarted. 15 s rides out transient GVS refusals without a
+    // session-long lockout.
     private static readonly ConcurrentDictionary<string, DateTime> _failedUntil = new();
-    private static readonly TimeSpan FailedClientBackoff = TimeSpan.FromMinutes(10);
+    private static readonly TimeSpan FailedClientBackoff = TimeSpan.FromSeconds(15);
 
     private static void MarkStreamClientFailed(string videoId, string clientKey, int httpStatus)
     {
@@ -332,7 +366,7 @@ public partial class YouTubeResolverService
         if (httpFactory != null)
             _innerTubeClient = httpFactory.CreateClient("youtube");
         else
-            _innerTubeClient = new HttpClient(_ipv4Handler) { Timeout = TimeSpan.FromSeconds(30) };
+            _innerTubeClient = new HttpClient(_innerTubeHandler) { Timeout = TimeSpan.FromSeconds(30) };
 
         _youtubeClient = new YoutubeClient(new HttpClient(_ipv4Handler));
     }
@@ -498,8 +532,12 @@ public partial class YouTubeResolverService
                 Container: container);
         }
 
-        // Cache check
-        if (_streamUrlCache.TryGetValue(trackUrl, out (ResolvedMedia Media, DateTime FetchedAt) cached)
+        // Cache check. Test-only bypass: a cached ResolvedMedia would answer a
+        // per-client experiment with a URL that a DIFFERENT client resolved in
+        // an earlier run (the process survives `am start`), so the test would
+        // silently test nothing.
+        if (!BypassUrlCacheForTest &&
+            _streamUrlCache.TryGetValue(trackUrl, out (ResolvedMedia Media, DateTime FetchedAt) cached)
             && (DateTime.Now - cached.FetchedAt).TotalHours < CacheExpiryHours)
         {
             Debug.WriteLine("[Resolve] CACHE HIT");
@@ -531,7 +569,15 @@ public partial class YouTubeResolverService
 
             // YoutubeExplode fallback — always try, even if InnerTube failed.
             // YoutubeExplode has its own cipher deciphering + watch-page scraping.
-            if (resolvedMedia == null)
+            // Test-only: skipped while a client filter is active — otherwise a
+            // failed TVHTML5 run could "succeed" through YoutubeExplode and
+            // report the wrong client as working.
+            if (resolvedMedia == null && (!string.IsNullOrWhiteSpace(ClientsForTest) || ForceSabrForTest))
+            {
+                Trace($"[Resolve] YoutubeExplode fallback skipped (test: " +
+                      (string.IsNullOrWhiteSpace(ClientsForTest) ? "mode sabr" : $"clients={ClientsForTest}") + ")");
+            }
+            else if (resolvedMedia == null)
             {
                 Trace("[Resolve] InnerTube chain failed — trying YoutubeExplode fallback");
                 try
@@ -593,7 +639,8 @@ public partial class YouTubeResolverService
             return null;
         }
 
-        if (resolvedMedia.Url != trackUrl &&
+        if (!BypassUrlCacheForTest &&
+            resolvedMedia.Url != trackUrl &&
             !resolvedMedia.Url.StartsWith("sabr://", StringComparison.Ordinal))
         {
             // sabr:// URIs are deliberately NOT cached: the session registry
@@ -677,10 +724,92 @@ public partial class YouTubeResolverService
     //  Private: client fallback chain
     // ─────────────────────────────────────────────────────────────────────────
 
+    /// <summary>
+    /// Test-only (adb: <c>--es clients tv,sabr</c>): builds the resolve chain
+    /// from ONLY the named clients. Aliases:
+    /// <list type="bullet">
+    /// <item><c>sabr</c> — anonymous WEB + MWEB, the two clients that return a
+    /// serverAbrStreamingUrl with no direct URLs (the SABR transport).</item>
+    /// <item><c>tv</c>/<c>tvhtml5</c>/<c>tv_samsung</c> — TVHTML5 (Tizen),
+    /// authenticated when cookies/OAuth exist (pair with
+    /// <c>identity anon</c> for the anonymous variant).</item>
+    /// <item><c>web</c>, <c>mweb</c>, <c>web_embedded</c>, <c>visionos</c> —
+    /// that single client; <c>web</c>/<c>web_embedded</c> are authenticated
+    /// when auth exists.</item>
+    /// </list>
+    /// Several names may be comma-separated; order is kept. Unknown names are
+    /// logged and ignored (an empty result fails the resolve loudly, which is
+    /// the point of a test switch).
+    /// </summary>
+    private static List<(InnerTubeClientInfo Client, bool AllowAuth)> BuildTestClientChain(string filter)
+    {
+        List<(InnerTubeClientInfo Client, bool AllowAuth)> chain = new();
+
+        void Add(InnerTubeClientInfo client, bool allowAuth)
+        {
+            if (!chain.Any(c => c.Client.Name == client.Name && c.AllowAuth == allowAuth))
+                chain.Add((client, allowAuth));
+        }
+
+        foreach (string rawToken in filter.Split(
+                     new[] { ',', ';', ' ' }, StringSplitOptions.RemoveEmptyEntries))
+        {
+            string token = rawToken.Trim().ToLowerInvariant();
+            switch (token)
+            {
+                case "sabr":
+                    Add(InnerTubeClients.Web, false);
+                    Add(InnerTubeClients.Mweb, false);
+                    break;
+                case "web":
+                    Add(InnerTubeClients.Web, HasAuthentication);
+                    Add(InnerTubeClients.Web, false);
+                    break;
+                case "web_embedded":
+                case "embedded":
+                    Add(InnerTubeClients.WebEmbedded, HasAuthentication);
+                    break;
+                case "mweb":
+                    Add(InnerTubeClients.Mweb, false);
+                    break;
+                case "tv":
+                case "tvhtml5":
+                case "tv_samsung":
+                    // Both modes, exactly like the production chain: `identity
+                    // anon` then drops the authenticated entry instead of
+                    // leaving an empty chain.
+                    Add(InnerTubeClients.TvSamsung, HasAuthentication);
+                    Add(InnerTubeClients.TvSamsung, false);
+                    break;
+                case "visionos":
+                    Add(InnerTubeClients.VisionOS, false);
+                    break;
+                default:
+                    Trace($"[Resolve] clients={filter}: unknown client '{rawToken}' (test) ignored");
+                    break;
+            }
+        }
+
+        return chain;
+    }
+
+    /// <summary>
+    /// True when the test client filter names the <c>sabr</c> alias, i.e. the
+    /// run wants the SABR transport (not a direct URL that those clients may
+    /// also return).
+    /// </summary>
+    private static bool ClientsForTestContainsSabr(string filter) =>
+        filter.Split(new[] { ',', ';', ' ' }, StringSplitOptions.RemoveEmptyEntries)
+            .Any(token => token.Trim().Equals("sabr", StringComparison.OrdinalIgnoreCase));
+
     private async Task<(ResolvedMedia? Media, SabrSessionConfig? SabrConfig, bool SabrAllowAuth)> GetFastStreamUrlAsync(
         string videoId, ResolveAttempt attempt, CancellationToken cancellationToken,
         string? singleClientName = null, bool singleAllowAuth = true)
     {
+        // Test-only: --es mode sabr (or the `sabr` client alias below) makes
+        // every DIRECT URL unusable so the resolve must take the SABR path.
+        bool skipDirectUrlsForTest = ForceSabrForTest;
+
         // Build the client chain (v8.1). The authenticated clients are only
         // included when cookies OR an OAuth Bearer are available.
         //
@@ -752,6 +881,29 @@ public partial class YouTubeResolverService
             Trace($"[Resolve] Client chain: {string.Join(" → ", clientsToTry.Select(c => c.AllowAuth ? c.Client.Name : c.Client.Name + "(anon)"))}");
         }
 
+        // Test-only: --es clients tv,sabr. REPLACES the production fallback
+        // chain with exactly the named clients, so one transport can be
+        // exercised deterministically (TVHTML5's direct URLs vs the
+        // anonymous WEB/MWEB SABR path) instead of whatever the full chain
+        // happens to reach first. Empty = production chain untouched.
+        if (!string.IsNullOrWhiteSpace(ClientsForTest) && singleClientName == null)
+        {
+            clientsToTry = BuildTestClientChain(ClientsForTest);
+            if (ClientsForTestContainsSabr(ClientsForTest) && !ForceSabrForTest)
+            {
+                // The alias is literally named after the transport: selecting
+                // `sabr` must not quietly play through one of those clients'
+                // ciphered direct URLs instead. Local to this resolve — the
+                // static switch keeps its adb-controlled value.
+                skipDirectUrlsForTest = true;
+                Trace("[Resolve] clients=sabr (test): direct URLs skipped — SABR transport only");
+            }
+            Trace($"[Resolve] clients={ClientsForTest} (test): " +
+                  (clientsToTry.Count == 0
+                      ? "no known client name matched — chain is empty"
+                      : string.Join(" → ", clientsToTry.Select(c => c.AllowAuth ? c.Client.Name : c.Client.Name + "(anon)"))));
+        }
+
         // Test-only: --es identity anon. The SABR POST carries no cookies, so a
         // serverAbrStreamingUrl issued to an AUTHENTICATED /player call makes the
         // streamer an unattested stranger to that session. Forcing an anonymous
@@ -762,6 +914,12 @@ public partial class YouTubeResolverService
             int removed = clientsToTry.RemoveAll(c => c.AllowAuth);
             Trace($"[Resolve] identity=anon (test): {removed} authenticated client(s) removed from the chain");
         }
+
+        // A test filter + identity switch can legitimately leave nothing (e.g.
+        // clients=web_embedded with no anonymous variant). Say so plainly
+        // instead of failing with an empty chain and no explanation.
+        if (clientsToTry.Count == 0)
+            Trace($"[Resolve] Client chain is EMPTY after the test filters (clients={ClientsForTest ?? "all"}, identity={(ForceAnonymousForTest ? "anon" : "auto")}) — resolve will fail");
 
         // v7 (SABR): filled when a client answers SABR-only; used as the
         // last resort if the whole chain finds no direct URL. v8.1: the
@@ -978,7 +1136,7 @@ public partial class YouTubeResolverService
                                 attempt.Outcome($"{client.Name}: audio formats but no direct URLs and no SABR session URL");
                             }
 
-                            if (withUrl > 0 && ForceSabrForTest)
+                            if (withUrl > 0 && skipDirectUrlsForTest)
                             {
                                 Trace($"[Resolve] {client.Name}: direct URLs skipped (test: force SABR)");
                                 attempt.Outcome($"{client.Name}: {withUrl} direct URL(s) skipped (force SABR)");
@@ -987,7 +1145,17 @@ public partial class YouTubeResolverService
                             {
                                 // Direct URL — find best audio with a URL
                                 AudioChoice? choice = FindBestAudioWithUrl(formats);
-                                if (choice != null)
+                                if (choice is { IsUltraLow: true } && sabrConfig != null)
+                                {
+                                    // v9.4: this client's only direct-URL audio is the
+                                    // AUDIO_QUALITY_ULTRALOW saver tier (~31 kbps), and the
+                                    // same response carries a SABR session. Keep the SABR
+                                    // config and move on — another client, or the SABR path
+                                    // at the end of the resolve, gives better audio.
+                                    Trace($"[Resolve] {client.Name}: skippable ultra-low direct audio (itag {choice.Itag}) — SABR session available");
+                                    attempt.Outcome($"{client.Name}: ultra-low direct audio skipped (SABR available)");
+                                }
+                                else if (choice != null)
                                 {
                                     string streamUrl = choice.Url;
                                     string ua = EffectiveUserAgent(client);
@@ -1010,15 +1178,23 @@ public partial class YouTubeResolverService
                                     MarkStreamClientFailed(videoId, circuitKey, probeStatus);
                                     break;
                                 }
-
-                                Trace($"[Resolve] {client.Name}: direct URLs present but no usable audio format");
-                                attempt.Outcome($"{client.Name}: {withUrl} direct URL(s), none of them audio");
+                                else
+                                {
+                                    Trace($"[Resolve] {client.Name}: direct URLs present but no usable audio format");
+                                    attempt.Outcome($"{client.Name}: {withUrl} direct URL(s), none of them audio");
+                                }
                             }
 
                             // EJS deciphering does NOT depend on the PO-token setting:
                             // TVHTML5 serves signatureCipher formats and needs sig/n
                             // solved even with the built-in generator switched off.
-                            if (withCipher > 0 && singleClientName == null && BuiltInPoTokenProvider.HasChallengeSolver)
+                            if (withCipher > 0 && singleClientName == null &&
+                                BuiltInPoTokenProvider.HasChallengeSolver && skipDirectUrlsForTest)
+                            {
+                                Trace($"[Resolve] {client.Name}: ciphered URLs skipped (test: SABR transport only)");
+                                attempt.Outcome($"{client.Name}: {withCipher} ciphered URL(s) skipped (test: SABR only)");
+                            }
+                            else if (withCipher > 0 && singleClientName == null && BuiltInPoTokenProvider.HasChallengeSolver)
                             {
                                 // v9.0: MWEB serves ordinary HTTPS audio formats
                                 // behind signatureCipher, and googlevideo requires
@@ -1058,6 +1234,21 @@ public partial class YouTubeResolverService
                                     lastTried = choice;
                                     probeStatus = await ProbeStreamUrlAsync(choice.Url, ua, cancellationToken)
                                         .ConfigureAwait(false);
+
+                                    // v9.5: the first GETs of a freshly deciphered URL are
+                                    // rejected with 403 while a later request for the SAME
+                                    // URL is served; the 403 is a per-request warm-up
+                                    // rejection, not a bad signature. Re-probe before
+                                    // condemning the format (field: 403, 403, 206 for itag
+                                    // 251 — every run demoted to 250/249/140 before this).
+                                    for (int retryTry = 1; probeStatus == 403 && retryTry <= CipheredProbeRetries; retryTry++)
+                                    {
+                                        await Task.Delay(CipheredProbeRetryDelayMs, cancellationToken).ConfigureAwait(false);
+                                        int retryStatus = await ProbeStreamUrlAsync(choice.Url, ua, cancellationToken)
+                                            .ConfigureAwait(false);
+                                        Trace($"[Resolve] {client.Name}: itag {choice.Itag} HTTP 403, retry {retryTry}/{CipheredProbeRetries} -> {retryStatus}");
+                                        probeStatus = retryStatus;
+                                    }
                                     if (probeStatus >= 200 && probeStatus < 300)
                                     {
                                         Trace($"[Resolve] SUCCESS — client: {client.Name}{(allowAuth ? "" : " (anon)")} (EJS deciphered URL, itag {choice.Itag})");
@@ -1083,7 +1274,7 @@ public partial class YouTubeResolverService
                                 }
                             }
 
-                            if (withCipher > 0)
+                            if (withCipher > 0 && !skipDirectUrlsForTest)
                             {
                                 Trace($"[Resolve] {client.Name}: ciphered URLs only — will use YoutubeExplode fallback");
                                 attempt.Outcome($"{client.Name}: {withCipher} ciphered URL(s) — YoutubeExplode can decipher");
@@ -1189,6 +1380,16 @@ public partial class YouTubeResolverService
                 Refresher = (fromTimeMs, ct) => RefreshSabrConfigAsync(
                     config.VideoId, refreshClientName, sabrAllowAuth, fromTimeMs, ct),
             };
+
+            // Test-only cross-over: hand the fresh /player answer to an
+            // external streamer instead of consuming it here.
+            if (Sabr.SabrStreamSession.SkipSessionForTest)
+            {
+                Sabr.SabrStreamSession.LogConfig(config.ServerAbrStreamingUrl, config);
+                Trace("[Resolve] SABR session skipped (test cross-over) — config dumped, URL left unused");
+                attempt.Outcome("SABR: session skipped (test cross-over)");
+                return null;
+            }
 
             session = SabrStreamRegistry.GetOrCreate(config);
             session.EnsureRunning();
@@ -1399,12 +1600,36 @@ public partial class YouTubeResolverService
 
     /// <summary>
     /// Test-only switch (adb: <c>-a MUSIC_ACTION_PLAY_VIDEO --es mode sabr</c>):
-    /// ignore every DIRECT-URL client so the resolver must take the SABR path.
+    /// ignore EVERY direct URL (both plain and ciphered, plus the
+    /// YoutubeExplode fallback) so the resolver must take the SABR path.
     /// Direct URLs for a PO-token-enforced video are intermittent — the same
     /// TVHTML5 URL 403s in one run and streams in the next — so a SABR
-    /// experiment is otherwise non-deterministic.
+    /// experiment is otherwise non-deterministic. Implied by the <c>sabr</c>
+    /// alias in <see cref="ClientsForTest"/>.
     /// </summary>
     public static bool ForceSabrForTest { get; set; }
+
+    /// <summary>
+    /// Test-only switch (adb: <c>--es clients tv</c>, <c>--es clients sabr</c>,
+    /// comma-separated for several): replace the production fallback chain
+    /// with EXACTLY those clients (see the alias list on
+    /// <see cref="BuildTestClientChain"/>). null/empty keeps the full chain.
+    /// Lets one transport be tested in isolation instead of whichever client
+    /// the chain happens to reach first — <c>--es clients tv</c> for TVHTML5's
+    /// direct URLs, <c>--es clients sabr</c> for the anonymous WEB/MWEB SABR
+    /// session.
+    /// </summary>
+    public static string? ClientsForTest { get; set; }
+
+    /// <summary>
+    /// Test-only switch (adb: <c>--es cache off</c>, set together with
+    /// <see cref="TrackCacheService.BypassCacheForTest"/>): never answer a
+    /// resolve from — or write it into — the 2-hour in-memory ResolvedMedia
+    /// cache. The app process survives <c>am start</c>, so without this a
+    /// URL resolved by a different client in an earlier run would keep
+    /// answering the per-client experiment.
+    /// </summary>
+    public static bool BypassUrlCacheForTest { get; set; }
 
     /// <summary>
     /// Test-only switch (adb: <c>--es binding visitor</c>): send the
@@ -2054,7 +2279,9 @@ public partial class YouTubeResolverService
     /// The chosen audio format: the stream URL plus the codec/bitrate identity
     /// shown in the Playback settings diagnostics panel.
     /// </summary>
-    private sealed record AudioChoice(string Url, int Itag, string MimeType, int Bitrate, int SampleRate)
+    private sealed record AudioChoice(
+        string Url, int Itag, string MimeType, int Bitrate, int SampleRate,
+        bool IsUltraLow = false)
     {
         public ResolvedMedia ToResolvedMedia(string url, string userAgent, string streamType, string client)
         {
@@ -2121,6 +2348,28 @@ public partial class YouTubeResolverService
     }
 
     /// <summary>
+    /// v9.4: true when <paramref name="candidate"/> should replace the current
+    /// best audio pick. A normal-quality format always beats the "saver" tier
+    /// (AUDIO_QUALITY_ULTRALOW, itag 599 at ~31 kbps) even when the saver
+    /// format ranks higher by codec/bitrate — 599 is still taken when it is
+    /// the only audio the client offers, so nothing regresses.
+    /// </summary>
+    private static bool IsBetterAudio(
+        int rank, int bitrate, int sampleRate, bool ultraLow,
+        int bestRank, int bestBitrate, int bestSampleRate, bool bestUltraLow)
+    {
+        if (ultraLow != bestUltraLow)
+            return bestUltraLow;
+        return rank > bestRank ||
+               (rank == bestRank && bitrate > bestBitrate) ||
+               (rank == bestRank && bitrate == bestBitrate && sampleRate > bestSampleRate);
+    }
+
+    private static bool IsUltraLowAudio(JsonElement format) =>
+        format.TryGetProperty("audioQuality", out JsonElement quality) &&
+        quality.GetString() == "AUDIO_QUALITY_ULTRALOW";
+
+    /// <summary>
     /// Finds the best audio format with a direct (non-ciphered) URL.
     /// Enumerates the list once, picks by codec rank → bitrate → sample rate.
     /// </summary>
@@ -2128,6 +2377,7 @@ public partial class YouTubeResolverService
     {
         JsonElement best = default;
         int bestRank = 0, bestBitrate = 0, bestSampleRate = 0;
+        bool bestUltraLow = false;
         bool found = false;
 
         foreach (var f in formats)
@@ -2140,15 +2390,16 @@ public partial class YouTubeResolverService
             int bitrate = f.TryGetProperty("bitrate", out JsonElement b) ? b.GetInt32() : 0;
             int sampleRate = f.TryGetProperty("audioSampleRate", out JsonElement sr) &&
                              int.TryParse(sr.GetString(), out int rate) ? rate : 0;
+            bool ultraLow = IsUltraLowAudio(f);
 
-            if (!found || rank > bestRank ||
-                (rank == bestRank && bitrate > bestBitrate) ||
-                (rank == bestRank && bitrate == bestBitrate && sampleRate > bestSampleRate))
+            if (!found || IsBetterAudio(rank, bitrate, sampleRate, ultraLow,
+                                        bestRank, bestBitrate, bestSampleRate, bestUltraLow))
             {
                 best = f;
                 bestRank = rank;
                 bestBitrate = bitrate;
                 bestSampleRate = sampleRate;
+                bestUltraLow = ultraLow;
                 found = true;
             }
         }
@@ -2169,8 +2420,10 @@ public partial class YouTubeResolverService
         int bitrate = format.TryGetProperty("bitrate", out JsonElement b) ? b.GetInt32() : 0;
         int sampleRate = format.TryGetProperty("audioSampleRate", out JsonElement sr) &&
                          int.TryParse(sr.GetString(), out int rate) ? rate : 0;
+        bool isUltraLow = format.TryGetProperty("audioQuality", out JsonElement q) &&
+                          q.GetString() == "AUDIO_QUALITY_ULTRALOW";
 
-        return new AudioChoice(url, itag, mime, bitrate, sampleRate);
+        return new AudioChoice(url, itag, mime, bitrate, sampleRate, isUltraLow);
     }
 
     /// <summary>
@@ -2190,6 +2443,7 @@ public partial class YouTubeResolverService
     {
         JsonElement best = default;
         int bestRank = 0, bestBitrate = 0, bestSampleRate = 0;
+        bool bestUltraLow = false;
         bool found = false;
 
         foreach (var f in formats)
@@ -2204,15 +2458,16 @@ public partial class YouTubeResolverService
             int bitrate = f.TryGetProperty("bitrate", out JsonElement b) ? b.GetInt32() : 0;
             int sampleRate = f.TryGetProperty("audioSampleRate", out JsonElement sr) &&
                              int.TryParse(sr.GetString(), out int rate) ? rate : 0;
+            bool ultraLow = IsUltraLowAudio(f);
 
-            if (!found || rank > bestRank ||
-                (rank == bestRank && bitrate > bestBitrate) ||
-                (rank == bestRank && bitrate == bestBitrate && sampleRate > bestSampleRate))
+            if (!found || IsBetterAudio(rank, bitrate, sampleRate, ultraLow,
+                                        bestRank, bestBitrate, bestSampleRate, bestUltraLow))
             {
                 best = f;
                 bestRank = rank;
                 bestBitrate = bitrate;
                 bestSampleRate = sampleRate;
+                bestUltraLow = ultraLow;
                 found = true;
             }
         }
@@ -2266,7 +2521,11 @@ public partial class YouTubeResolverService
             potAppended = true;
         }
 
-        Trace($"[Resolve] deciphered signatureCipher audio (sig {sVal.Length} chars, n {(nVal?.Length ?? 0)} -> {(solvedN?.Length ?? 0)}{(potAppended ? ", &pot= appended" : "")})");
+        // v9.4: log the SOLVED sig length next to the raw one. The player's
+        // sig function permutes the decoded bytes, so a correct solve keeps the
+        // length; a mismatch means EJS returned a wrong/partial result and the
+        // URL is guaranteed to 403 (field logs: raw-s 104 chars never worked).
+        Trace($"[Resolve] deciphered signatureCipher audio (sig {sVal.Length}->{solvedSig.Length} chars, n {(nVal?.Length ?? 0)} -> {(solvedN?.Length ?? 0)}{(potAppended ? ", &pot= appended" : "")})");
         return ToAudioChoice(best, finalUrl);
     }
 

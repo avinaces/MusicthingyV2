@@ -403,8 +403,7 @@ public partial class MainViewModel
                     !string.IsNullOrEmpty(resolvedMedia.Url) &&
                     !resolvedMedia.Url.StartsWith("/") &&
                     !resolvedMedia.Url.StartsWith("file://") &&
-                    !resolvedMedia.Url.StartsWith("content://") &&
-                    !resolvedMedia.Url.StartsWith("sabr://") // SABR sessions are not download URLs
+                    !resolvedMedia.Url.StartsWith("content://")
                         ? resolvedMedia.Url : null;
 
                 // YoutubeExplode client only makes sense for YouTube tracks.

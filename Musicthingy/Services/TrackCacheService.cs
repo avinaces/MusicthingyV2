@@ -6,6 +6,7 @@ using System.Text;
 using System.Text.Json;
 using Microsoft.Maui.Storage;
 using Microsoft.Win32.SafeHandles;
+using Musicthingy.Services.Sabr;
 using Musicthingy.Settings.Definitions;
 using YoutubeExplode;
 using YoutubeExplode.Videos;
@@ -55,6 +56,16 @@ public class TrackCacheService
 
     /// <summary>Singleton handle for static callers (FastTrackDownloader facade).</summary>
     public static TrackCacheService? Instance { get; private set; }
+
+    /// <summary>
+    /// Test-only switch (adb: <c>--es cache off</c>): play straight from the
+    /// resolver and write nothing to the cache for this run. Checked in
+    /// <see cref="GetCachedTrackPathForPlayback"/> (no disk reuse) and
+    /// <see cref="EnqueueFast"/> (no background download), so a SABR /
+    /// TVHTML5 experiment always exercises the live network path instead of a
+    /// file cached by an earlier build.
+    /// </summary>
+    public static bool BypassCacheForTest { get; set; }
 
     public event EventHandler? CacheUpdated;
 
@@ -129,6 +140,10 @@ public class TrackCacheService
     /// </summary>
     public string? GetCachedTrackPathForPlayback(string originalUrl)
     {
+        // Test-only: --es cache off. Never hand a cached file to playback, so
+        // every run resolves and streams live (see BypassCacheForTest).
+        if (BypassCacheForTest) return null;
+
         string? path = GetCachedTrackPath(originalUrl);
         if (path == null) return null;
 
@@ -207,6 +222,11 @@ public class TrackCacheService
     public void EnqueueFast(YoutubeClient? yteClient, string trackUrl, string? fallbackDirectUrl)
     {
         if (string.IsNullOrEmpty(trackUrl)) return;
+        if (BypassCacheForTest)
+        {
+            Log($"cache bypass active (test) — not caching {trackUrl}");
+            return;
+        }
         try
         {
             if (GetCachedTrackPath(trackUrl) != null) return;   // already on disk
@@ -356,6 +376,17 @@ public class TrackCacheService
             bool usingFallback = false;
             CancellationToken downloadCt = ct;
 
+            // v9.3: a sabr:// fallback rides the resolver's SABR session —
+            // copy the bytes the session already streams into the cache
+            // instead of a plain HTTP download (the opaque URI has no HTTP
+            // endpoint at all). YoutubeExplode is skipped for these.
+            if (string.IsNullOrEmpty(streamUrl) &&
+                !string.IsNullOrEmpty(fallbackDirectUrl) &&
+                fallbackDirectUrl.StartsWith("sabr://", StringComparison.OrdinalIgnoreCase))
+            {
+                return await CacheSabrStreamAsync(trackUrl, fallbackDirectUrl, ct);
+            }
+
             if (string.IsNullOrEmpty(streamUrl) && !string.IsNullOrEmpty(fallbackDirectUrl))
             {
                 streamUrl = fallbackDirectUrl;
@@ -423,6 +454,102 @@ public class TrackCacheService
         {
             fallbackCts?.Dispose();
             _singleFlight.Release();
+        }
+    }
+
+    /// <summary>
+    /// v9.3: caches a track whose only stream is the resolver's SABR session
+    /// ("sabr://&lt;guid&gt;" URIs have no HTTP endpoint — YoutubeExplode and the
+    /// range-downloader cannot touch them). The session is the download
+    /// engine: the cache worker copies the bytes it streams, so ExoPlayer's
+    /// playback download and the cache download are ONE GVS transfer.
+    /// The file is committed only when the session reaches full EOF without
+    /// errors — a stalled (60 s cutoff) or failed session never lands in the
+    /// cache as a truncated track.
+    /// </summary>
+    private async Task<bool> CacheSabrStreamAsync(string trackUrl, string sabrUri, CancellationToken ct)
+    {
+        SabrStreamSession? session = SabrStreamRegistry.Find(sabrUri);
+        if (session is null)
+        {
+            Log($"SABR cache skipped — session not found for {trackUrl}");
+            return false;
+        }
+
+        string finalPath = Path.Combine(_cacheDir, ComputeCacheId(trackUrl));
+        string tempPath = finalPath + "." + Guid.NewGuid() + ".tmp";
+
+        session.EnsureRunning();
+        session.AcquireReader(); // keeps the session pinned in SabrStreamRegistry while caching
+        try
+        {
+            using var deadlineCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            deadlineCts.CancelAfter(TimeSpan.FromMinutes(5));
+            CancellationToken sabrCt = deadlineCts.Token;
+
+            await using (var dst = new FileStream(tempPath, FileMode.Create, FileAccess.Write, FileShare.None, 65536, useAsync: true))
+            {
+                byte[] buffer = new byte[65536];
+                long offset = 0;
+                long lastReportBytes = 0;
+                long lastReportTicks = Stopwatch.GetTimestamp();
+
+                while (true)
+                {
+                    bool hasData = session.Buffer.WaitForData(offset, 1, TimeSpan.FromSeconds(30), sabrCt);
+                    if (!hasData && !session.Buffer.IsEof)
+                        throw new TimeoutException($"SABR stream stalled while caching at offset {offset}");
+
+                    int read = session.Buffer.Read(offset, buffer, 0, buffer.Length);
+                    if (read <= 0)
+                        break; // clean EOF
+
+                    await dst.WriteAsync(buffer.AsMemory(0, read), sabrCt);
+                    offset += read;
+
+                    long now = Stopwatch.GetTimestamp();
+                    double elapsedSec = (now - lastReportTicks) / (double)Stopwatch.Frequency;
+                    if (elapsedSec > 0.5)
+                    {
+                        double speedKBps = (offset - lastReportBytes) / 1024.0 / elapsedSec;
+                        lastReportBytes = offset;
+                        lastReportTicks = now;
+                        DownloadProgressChanged?.Invoke(new DownloadProgress(
+                            trackUrl, offset, null, speedKBps));
+                    }
+                }
+            }
+
+            // Never persist a truncated file if the SABR session stalled at 60s or errored.
+            if (!session.Buffer.IsEof || session.HasFailed)
+                throw new IOException("SABR stream ended incomplete before EOF");
+
+            if (File.Exists(finalPath))
+                File.Delete(finalPath);
+            File.Move(tempPath, finalPath);
+
+            long finalSize = new FileInfo(finalPath).Length;
+            if (finalSize <= 0)
+            {
+                TryDelete(finalPath);
+                return false;
+            }
+
+            DownloadProgressChanged?.Invoke(new DownloadProgress(trackUrl, finalSize, finalSize, 0));
+            EnforceCacheLimit();
+            CacheUpdated?.Invoke(this, EventArgs.Empty);
+            Log($"cached {finalSize} bytes from SABR stream: {trackUrl}");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Log($"SABR cache failed for {trackUrl}: {ex.Message}");
+            TryDelete(tempPath);
+            return false;
+        }
+        finally
+        {
+            session.ReleaseReader();
         }
     }
 
