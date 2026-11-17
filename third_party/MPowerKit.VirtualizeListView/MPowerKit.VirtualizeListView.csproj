@@ -1,0 +1,65 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+	<!--
+		Vendored copy of https://github.com/MPowerKit/VirtualizeListView (MIT), pinned at
+		https://github.com/avinaces/VirtualizeListView b4c0879 "Updated packages and some cache fixes",
+		which carries the autoscroll fix in Layouts/VirtualizeItemsLayoutManger.cs that the app needs.
+		See README.md in this folder before editing.
+	-->
+
+	<PropertyGroup>
+		<!-- Only the targets the app builds; the app's Windows TFM is legacy but still compiles. -->
+		<TargetFrameworks>net10.0-android</TargetFrameworks>
+		<TargetFrameworks Condition="$([MSBuild]::IsOSPlatform('windows'))">$(TargetFrameworks);net10.0-windows10.0.19041.0</TargetFrameworks>
+
+		<UseMaui>true</UseMaui>
+		<SingleProject>true</SingleProject>
+		<ImplicitUsings>enable</ImplicitUsings>
+		<Nullable>enable</Nullable>
+
+		<SupportedOSPlatformVersion Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'android'">21.0</SupportedOSPlatformVersion>
+		<SupportedOSPlatformVersion Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'windows'">10.0.17763.0</SupportedOSPlatformVersion>
+		<TargetPlatformMinVersion Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'windows'">10.0.17763.0</TargetPlatformMinVersion>
+
+		<Title>MPowerKit.VirtualizeListView</Title>
+		<Version>2.8.0</Version>
+		<Authors>MPowerKit,Alex Dobrynin</Authors>
+		<Description>MAUI Virtualize ListView with smooth scrolling and without platform-specific code</Description>
+		<Copyright>MPowerKit</Copyright>
+		<PackageProjectUrl>https://github.com/MPowerKit/VirtualizeListView</PackageProjectUrl>
+	</PropertyGroup>
+
+	<PropertyGroup Condition="$(TargetFramework.Contains('windows'))">
+		<AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+	</PropertyGroup>
+
+	<!-- Exclude Android platform files on non-Android targets -->
+	<ItemGroup Condition="!$(TargetFramework.Contains('android'))">
+		<Compile Remove="**\*.Android.cs" />
+		<Compile Remove="**\Android\**\*.cs" />
+		<None Include="**\*.Android.cs" Exclude="$(DefaultItemExcludes);$(DefaultExcludesInProjectFolder)" />
+		<None Include="**\Android\**\*.cs" Exclude="$(DefaultItemExcludes);$(DefaultExcludesInProjectFolder)" />
+	</ItemGroup>
+
+	<!-- Exclude Mac/iOS platform files (not built by this app) -->
+	<ItemGroup Condition="!$(TargetFramework.Contains('ios')) AND !$(TargetFramework.Contains('maccatalyst'))">
+		<Compile Remove="**\*.MaciOS.cs" />
+		<Compile Remove="**\MaciOS\**\*.cs" />
+		<None Include="**\*.MaciOS.cs" Exclude="$(DefaultItemExcludes);$(DefaultExcludesInProjectFolder)" />
+		<None Include="**\MaciOS\**\*.cs" Exclude="$(DefaultItemExcludes);$(DefaultExcludesInProjectFolder)" />
+	</ItemGroup>
+
+	<!-- Exclude Windows platform files on non-Windows targets -->
+	<ItemGroup Condition="!$(TargetFramework.Contains('windows'))">
+		<Compile Remove="**\*.Windows.cs" />
+		<Compile Remove="**\Windows\**\*.cs" />
+		<None Include="**\*.Windows.cs" Exclude="$(DefaultItemExcludes);$(DefaultExcludesInProjectFolder)" />
+		<None Include="**\Windows\**\*.cs" Exclude="$(DefaultItemExcludes);$(DefaultExcludesInProjectFolder)" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<!-- Keep in sync with Musicthingy.csproj: a version split makes the Windows TFM fail with PRI175/PRI277. -->
+		<PackageReference Include="Microsoft.Maui.Controls" Version="10.0.130" />
+	</ItemGroup>
+
+</Project>

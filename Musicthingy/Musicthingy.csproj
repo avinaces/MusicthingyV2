@@ -74,7 +74,8 @@
 	</ItemGroup>
 
 	<ItemGroup>
-		<ProjectReference Include="..\..\..\VirualizeList\MPowerKit.VirtualizeListView\MPowerKit.VirtualizeListView.csproj" />
+		<!-- Vendored fork (MIT) with the autoscroll fix; see third_party/MPowerKit.VirtualizeListView/README.md -->
+		<ProjectReference Include="..\third_party\MPowerKit.VirtualizeListView\MPowerKit.VirtualizeListView.csproj" />
 	</ItemGroup>
 
 	<ItemGroup Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'windows'">
