@@ -1,3 +1,4 @@
+using System.Text;
 using Musicthingy.Models;
 
 namespace Musicthingy.Views;
@@ -5,11 +6,12 @@ namespace Musicthingy.Views;
 /// <summary>
 /// Details for one About-page row: what it is, where it comes from and the full license text
 /// (bundled in Resources/Raw/licenses, so this works without a network connection).
+/// A bundled group can carry several licenses, so one text block is built per license present.
 /// </summary>
 public partial class LicenseDetailPage : ContentPage
 {
     private readonly LicenseEntry _entry;
-    private bool _textLoaded;
+    private bool _contentBuilt;
 
     public LicenseDetailPage(LicenseEntry entry)
     {
@@ -54,34 +56,135 @@ public partial class LicenseDetailPage : ContentPage
     {
         base.OnAppearing();
 
-        if (_textLoaded)
+        if (_contentBuilt)
             return;
 
-        _textLoaded = true;
-        await LoadLicenseTextAsync();
+        _contentBuilt = true;
+        await BuildLicenseTextsAsync();
     }
 
-    private async Task LoadLicenseTextAsync()
+    /// <summary>One header + text card per license the entry ships under.</summary>
+    private async Task BuildLicenseTextsAsync()
     {
-        string? asset = _entry.License.TextAsset;
-        if (string.IsNullOrEmpty(asset))
+        List<LicenseTextBlock> blocks = [];
+
+        foreach ((LicenseKind kind, int packageCount) in LicensesForEntry())
         {
-            TextHeaderLabel.Text = "LICENSE";
-            LicenseTextLabel.Text = "This license has no redistributable text. Use \"License online\" to read it.";
-            return;
+            LicenseInfo info = LicenseCatalog.GetKind(kind);
+            string header = info.Name.ToUpperInvariant();
+            if (packageCount > 0)
+                header += packageCount == 1 ? " · 1 PACKAGE" : $" · {packageCount} PACKAGES";
+
+            blocks.Add(new LicenseTextBlock(header, await ReadLicenseTextAsync(info)));
         }
+
+        BindableLayout.SetItemsSource(LicenseTextsSection, blocks);
+    }
+
+    private IEnumerable<(LicenseKind Kind, int PackageCount)> LicensesForEntry()
+    {
+        if (!_entry.IsGroup)
+            return [(_entry.Kind, 0)];
+
+        return _entry.Packages
+            .GroupBy(package => package.Kind)
+            .OrderByDescending(group => group.Count())
+            .Select(group => (group.Key, group.Count()))
+            .ToList();
+    }
+
+    private static async Task<string> ReadLicenseTextAsync(LicenseInfo info)
+    {
+        if (string.IsNullOrEmpty(info.TextAsset))
+            return "This license has no redistributable text. Use \"License online\" to read it.";
 
         try
         {
-            using Stream stream = await FileSystem.OpenAppPackageFileAsync(asset);
+            using Stream stream = await FileSystem.OpenAppPackageFileAsync(info.TextAsset);
             using StreamReader reader = new(stream);
-            LicenseTextLabel.Text = (await reader.ReadToEndAsync()).Trim();
+            return Reflow(await reader.ReadToEndAsync());
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"[About] Could not read {asset}: {ex.Message}");
-            LicenseTextLabel.Text = "The bundled license text could not be read. Use \"License online\" instead.";
+            System.Diagnostics.Debug.WriteLine($"[About] Could not read {info.TextAsset}: {ex.Message}");
+            return "The bundled license text could not be read. Use \"License online\" instead.";
         }
+    }
+
+    /// <summary>
+    /// License files are hard-wrapped at ~70 characters, which fights the Label's own wrapping
+    /// and leaves single orphan words. Join each block of consecutive lines into one paragraph,
+    /// keep the blank lines that separate them, and pull out the two things these texts glue to
+    /// the next line: separator rules and short ALL-CAPS headings (PREAMBLE, DEFINITIONS, ...).
+    /// </summary>
+    private static string Reflow(string raw)
+    {
+        string[] lines = raw.Replace("\r\n", "\n").Split('\n');
+        StringBuilder result = new();
+        StringBuilder paragraph = new();
+
+        void FlushParagraph()
+        {
+            if (paragraph.Length == 0)
+                return;
+
+            result.Append(paragraph).Append('\n').Append('\n');
+            paragraph.Clear();
+        }
+
+        foreach (string line in lines)
+        {
+            string trimmed = line.Trim();
+
+            if (trimmed.Length == 0)
+            {
+                FlushParagraph();
+                continue;
+            }
+
+            // "-----" and friends frame the title, so they get a paragraph of their own.
+            if (trimmed.Length >= 3 && trimmed.All(c => !char.IsLetterOrDigit(c)))
+            {
+                FlushParagraph();
+                result.Append(trimmed).Append('\n').Append('\n');
+                continue;
+            }
+
+            if (paragraph.Length > 0)
+                paragraph.Append(' ');
+
+            paragraph.Append(trimmed);
+
+            if (IsShortAllCaps(trimmed))
+                FlushParagraph();
+        }
+
+        FlushParagraph();
+        return result.ToString().Trim();
+    }
+
+    /// <summary>
+    /// True for the standalone headings the license texts put on their own line without a blank
+    /// line after them. Long all-caps runs (the warranty disclaimers) are paragraphs, not headings.
+    /// </summary>
+    private static bool IsShortAllCaps(string line)
+    {
+        if (line.Length > 40)
+            return false;
+
+        bool hasLetter = false;
+        foreach (char c in line)
+        {
+            if (!char.IsLetter(c))
+                continue;
+
+            if (char.IsLower(c))
+                return false;
+
+            hasLetter = true;
+        }
+
+        return hasLetter;
     }
 
     private async void OnBackClicked(object sender, EventArgs e)

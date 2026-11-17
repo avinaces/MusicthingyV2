@@ -67,9 +67,14 @@ public sealed class LicenseEntry
 
     public LicenseInfo License => LicenseCatalog.GetKind(Kind);
     public bool IsGroup => Packages.Count > 0;
-    public string VersionLabel => string.IsNullOrEmpty(Version) ? string.Empty : "v" + Version;
+    public string VersionLabel => string.IsNullOrEmpty(Version)
+        ? string.Empty
+        : IsGroup ? Version : "v" + Version;
     public string BadgeText => Badge;
 }
+
+/// <summary>One license text block on the detail page (a bundled group can have several).</summary>
+public sealed record LicenseTextBlock(string Header, string Text);
 
 /// <summary>A titled section of the About page. CollectionView grouping needs a list subclass.</summary>
 public sealed class LicenseGroup : List<LicenseEntry>

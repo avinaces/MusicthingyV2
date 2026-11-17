@@ -194,7 +194,7 @@ public static class LicenseCatalog
                     Name = "YoutubeExplode.Converter",
                     Badge = "YC",
                     Version = "6.6.3",
-                    Summary = "Stream transcoding via FFmpeg, used for unsupported audio containers.",
+                    Summary = "FFmpeg-based stream conversion companion to YoutubeExplode.",
                     Kind = LicenseKind.Mit,
                     Copyright = "Copyright (c) 2019-2025 Oleksii Holub",
                     ProjectUrl = "https://github.com/Tyrrrz/YoutubeExplode"
