@@ -46,6 +46,20 @@ internal static class WebViewPoTokenProvider
 {
     private const string BootUrl = "https://www.youtube.com/";
 
+    // v9.6: ONE identity on the wire. The page UA and the UA the proxied
+    // homepage/GenerateIT calls send were duplicated constants with the same
+    // value; they are now the same constant so they cannot drift apart.
+    //
+    // An Android-consistent identity (mobile Chrome/131 UA everywhere, real
+    // Client Hints, matching viewport) was tried and is WORSE: the BotGuard
+    // snapshot grows from ~1.86 KB to ~3.15 KB, but GenerateIT then answers
+    // [null,43200,null,"<fallback>"] — no integrity token at all, so SABR
+    // falls back to a token-less 60 s session. That is also why the old
+    // native-mobile-UA run got null: not the WebView header leak (these calls
+    // are proxied now), the claimed identity itself. Keep the desktop one.
+    private const string BotGuardUserAgent =
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
+
     // v8.8: a real phone viewport (390x844 dp-ish px). A 1x1 layout makes
     // window.innerWidth === innerHeight === 1 — a classic hidden-bot tell that
     // BotGuard checks before issuing an integrity token.
@@ -70,12 +84,12 @@ internal static class WebViewPoTokenProvider
     private static DateTimeOffset _lastUsed = DateTimeOffset.MinValue;
 
     /// <summary>
-    /// v8.9: makes the page's identity match the Chrome/131 UA it already
-    /// sends. Android WebView exposes navigator.userAgentData as
-    /// ["Android WebView"/157] + platform "Android" + mobile, and has no
-    /// window.chrome at all — three things every desktop Chrome has and a
-    /// WebView never does. Guarded, idempotent, and best-effort: if a future
-    /// WebView refuses the defineProperty calls the mint path is unchanged.
+    /// v8.9: makes the page's identity match the Chrome/131 UA it sends.
+    /// Android WebView exposes navigator.userAgentData as ["Android WebView"/157]
+    /// + platform "Android" + mobile, and has no window.chrome at all — three
+    /// things every desktop Chrome has and a WebView never does. Guarded,
+    /// idempotent, and best-effort: if a future WebView refuses the
+    /// defineProperty calls the mint path is unchanged.
     /// </summary>
     private const string EnvironmentShimJavaScript = """
         (() => {
@@ -260,6 +274,23 @@ internal static class WebViewPoTokenProvider
         // Chrome/131. GenerateIT tolerates that; the GVS verdict is what
         // matters. Shim the three attributes a desktop Chrome always has,
         // BEFORE the BotGuard bundle runs (it reads them at create/snapshot).
+        //
+        // v9.6: tested as a sps=2 suspect and RULED OUT — with this eval
+        // commented out AND the cookie jar emptied, the mint for w6g1yQV0dIY
+        // still came back 128 chars and GVS still answered
+        // StreamProtectionStatus=2 (stall at 60 s). The shim is not what
+        // separates this mint from bgutil's 124-char/OK token.
+        //
+        // v9.6: so is the sandbox idea. What GVS accepts is not a "cleaner"
+        // environment: an Android-consistent identity raises the snapshot from
+        // ~1.86 KB to ~3.15 KB and still gets refused ([null,43200,null,…]),
+        // while bgutils-js mints sps=1 from JSDOM, which has no WebGL, no
+        // rendering DOM and no touch points at all. Moving this VM into a Web
+        // Worker is therefore not a WebGL problem — a worker's WorkerNavigator
+        // still exposes Android WebView Client Hints unless shadowed, and it
+        // would need a hand-maintained window/document/createElement shim that
+        // breaks every time Google recompiles the BotGuard bytecode. Not done;
+        // a provider URL (bgutil) is the supported way to get an attested token.
         _ = await EvalAsync(EnvironmentShimJavaScript).ConfigureAwait(false);
 
         _ = await EvalAsync(BotGuardScript.JavaScript).ConfigureAwait(false);
@@ -321,16 +352,8 @@ internal static class WebViewPoTokenProvider
         wv.Settings.BlockNetworkImage = true;          // nothing is ever rendered
         wv.Settings.LoadsImagesAutomatically = false;
         wv.Settings.MediaPlaybackRequiresUserGesture = true;
-        // v8.9: BACK to the desktop Chrome/131 UA. Field evidence (02:42 run):
-        // the NATIVE mobile UA (Chrome/157, real Client Hints, matching
-        // navigator.platform, real 390x844 viewport, https://www.youtube.com/
-        // document) STILL got [null,43200,null,"…"] from GenerateIT — while
-        // every desktop-Chrome/131 run (17:32, 18:17, 19:23, 19:46, 02:11)
-        // minted fine. The viewport/boot-document fixes stay; only the UA goes
-        // back. Everything else about the environment is now logged (poll.env)
-        // so the next run shows brands/platform/viewport/sigLen inside the page.
-        wv.Settings.UserAgentString =
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
+        // v9.6: same identity as the page it fetches from — see BotGuardUserAgent.
+        wv.Settings.UserAgentString = BotGuardUserAgent;
 
         Services.PoToken.BuiltInPoTokenProvider.WebViewUserAgent = wv.Settings.UserAgentString;
         // v8.8: real viewport, zero alpha, invisible — attached (see below) but
@@ -361,6 +384,9 @@ internal static class WebViewPoTokenProvider
             }
         }
 
+        // v9.6: clearing the cookie jar (tested alongside the shim removal)
+        // did not change the mint, and CookieManager is app-global — it would
+        // also wipe the WebView cookies the visitor data depends on. Not done.
         wv.LoadUrl(BootUrl);
 
         _pageClient = client;
@@ -639,6 +665,16 @@ internal static class WebViewPoTokenProvider
     /// </summary>
     private sealed class PageClient : WebViewClient
     {
+        // v9.6: the proxied calls claim the same identity as the page that made
+        // them (BotGuardUserAgent), so the two cannot drift apart.
+        private const string BotGuardHttpUserAgent = BotGuardUserAgent;
+
+        private static readonly HttpClient _bgHttp = new(
+            Services.YouTubeResolverService.InnerTubeHandler, disposeHandler: false)
+        {
+            Timeout = TimeSpan.FromSeconds(20),
+        };
+
         private readonly TaskCompletionSource<bool> _done = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
         public Task<bool> Completion => _done.Task;
@@ -652,15 +688,120 @@ internal static class WebViewPoTokenProvider
 
         public override WebResourceResponse? ShouldInterceptRequest(WebView? view, IWebResourceRequest? request)
         {
+            string? url = request?.Url?.ToString();
+            if (string.IsNullOrEmpty(url))
+                return base.ShouldInterceptRequest(view, request);
+
             if (request?.IsForMainFrame == true &&
-                string.Equals(request.Url?.ToString(), BootUrl, StringComparison.OrdinalIgnoreCase))
+                string.Equals(url, BootUrl, StringComparison.OrdinalIgnoreCase))
             {
                 byte[] html = System.Text.Encoding.UTF8.GetBytes(
                     "<!doctype html><html><head><title>YouTube</title></head><body></body></html>");
                 return new WebResourceResponse("text/html", "utf-8", 200, "OK", null, new MemoryStream(html));
             }
 
+            // Proxy BotGuard's homepage, interpreter script, and GenerateIT calls
+            // through C# InnerTubeHandler so Chromium WebView never leaks
+            // Sec-CH-UA: "Android WebView" / Platform: "Android" headers on the wire.
+            if (string.Equals(url, "https://www.youtube.com/__mt_homepage", StringComparison.OrdinalIgnoreCase))
+                return ProxyGet("https://www.youtube.com", "text/html");
+
+            if (url.StartsWith("https://www.google.com/js/th/", StringComparison.OrdinalIgnoreCase))
+                return ProxyGet(url, "application/javascript");
+
+            if (string.Equals(url, "https://www.youtube.com/__mt_generate_it", StringComparison.OrdinalIgnoreCase))
+                return ProxyGenerateIt(request?.RequestHeaders);
+
             return base.ShouldInterceptRequest(view, request);
+        }
+
+        private static WebResourceResponse ProxyGet(string targetUrl, string mimeType)
+        {
+            try
+            {
+                using HttpRequestMessage msg = new(HttpMethod.Get, targetUrl);
+                msg.Headers.TryAddWithoutValidation("Accept", "*/*");
+                msg.Headers.TryAddWithoutValidation("Accept-Language", "en-US,en;q=0.7");
+                msg.Headers.TryAddWithoutValidation("User-Agent", BotGuardHttpUserAgent);
+
+                using HttpResponseMessage resp = _bgHttp.Send(msg);
+                byte[] bytes = resp.Content.ReadAsByteArrayAsync().GetAwaiter().GetResult();
+                string reason = string.IsNullOrWhiteSpace(resp.ReasonPhrase) ? "OK" : resp.ReasonPhrase;
+                return new WebResourceResponse(mimeType, "utf-8", (int)resp.StatusCode, reason, null, new MemoryStream(bytes));
+            }
+            catch (Exception ex)
+            {
+                Log($"[PoToken] ProxyGet failed ({targetUrl}): {ex.Message}");
+                byte[] err = System.Text.Encoding.UTF8.GetBytes(ex.Message);
+                return new WebResourceResponse("text/plain", "utf-8", 502, "Bad Gateway", null, new MemoryStream(err));
+            }
+        }
+
+        private static WebResourceResponse ProxyGenerateIt(IDictionary<string, string>? requestHeaders)
+        {
+            try
+            {
+                var sb = new System.Text.StringBuilder();
+                if (requestHeaders != null)
+                {
+                    var ci = new Dictionary<string, string>(requestHeaders, StringComparer.OrdinalIgnoreCase);
+                    for (int i = 0; ci.TryGetValue($"x-mt-b{i}", out string? part); i++)
+                        sb.Append(part);
+                }
+
+                string bodyJson = sb.ToString();
+                if (string.IsNullOrEmpty(bodyJson))
+                    throw new InvalidOperationException("GenerateIT proxy received empty body");
+
+                // v9.6 probe: size of the two halves of [requestKey, snapshot].
+                // bgutil's reference mint logs the same pair, so the two numbers
+                // are directly comparable when judging the mint environment.
+                string? snapshot = null;
+                try
+                {
+                    using System.Text.Json.JsonDocument doc = System.Text.Json.JsonDocument.Parse(bodyJson);
+                    if (doc.RootElement.ValueKind == System.Text.Json.JsonValueKind.Array &&
+                        doc.RootElement.GetArrayLength() > 1)
+                        snapshot = doc.RootElement[1].GetString();
+                }
+                catch (System.Text.Json.JsonException)
+                {
+                    // Log the raw body length only; the mint below will report
+                    // whichever error Google returns.
+                }
+
+                // The BotGuard snapshot is the VM's collected fingerprint, and its
+                // size is the one number that explains this generator's weak GVS
+                // verdict: ~1.86 KB here versus ~4.3 KB from bgutils-js in JSDOM,
+                // stable across runs. It is not the request (the [requestKey,
+                // snapshot] shape is identical to bgutil's) and not the env shim
+                // (removing it changed nothing) - the VM simply collects far less
+                // signal inside an Android WebView. Keep the size in field logs so
+                // a future mint can be compared against a known-good provider.
+                Log($"[PoToken] GenerateIT body {bodyJson.Length}B (snapshot {snapshot?.Length ?? 0}B)");
+
+                using HttpRequestMessage msg = new(HttpMethod.Post,
+                    "https://jnn-pa.googleapis.com/$rpc/google.internal.waa.v1.Waa/GenerateIT");
+                msg.Headers.TryAddWithoutValidation("x-goog-api-key", "AIzaSyDyT5W0Jh49F30Pqqtyfdf7pDLFKLJoAnw");
+                msg.Headers.TryAddWithoutValidation("x-user-agent", "grpc-web-javascript/0.1");
+                msg.Headers.TryAddWithoutValidation("User-Agent", BotGuardHttpUserAgent);
+
+                byte[] payloadBytes = System.Text.Encoding.UTF8.GetBytes(bodyJson);
+                msg.Content = new ByteArrayContent(payloadBytes);
+                msg.Content.Headers.ContentType =
+                    new System.Net.Http.Headers.MediaTypeHeaderValue("application/json+protobuf");
+
+                using HttpResponseMessage resp = _bgHttp.Send(msg);
+                byte[] bytes = resp.Content.ReadAsByteArrayAsync().GetAwaiter().GetResult();
+                string reason = string.IsNullOrWhiteSpace(resp.ReasonPhrase) ? "OK" : resp.ReasonPhrase;
+                return new WebResourceResponse("application/json", "utf-8", (int)resp.StatusCode, reason, null, new MemoryStream(bytes));
+            }
+            catch (Exception ex)
+            {
+                Log($"[PoToken] ProxyGenerateIt failed: {ex.Message}");
+                byte[] err = System.Text.Encoding.UTF8.GetBytes(ex.Message);
+                return new WebResourceResponse("text/plain", "utf-8", 502, "Bad Gateway", null, new MemoryStream(err));
+            }
         }
     }
 
