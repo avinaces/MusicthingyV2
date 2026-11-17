@@ -371,3 +371,9 @@ FodyWeavers.xsd
 /.agent/
 /logs/
 /AGENTS.md
+
+# Signing material (never publish)
+*.keystore
+*.jks
+Musicthingy/Keystore/
+
