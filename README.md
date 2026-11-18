@@ -2,22 +2,18 @@
 
 A Material 3 music player for Android that plays YouTube and local audio files in one library.
 
-Musicthingy is a personal project: one MAUI app, no telemetry, no account system beyond the
-YouTube cookies you choose to import. It is not affiliated with, endorsed by, or supported by
+Musicthingy is a personal project: one MAUI app, no telemetry. It is not affiliated with, endorsed by, or supported by
 YouTube or Google.
 
 ## Features
 
 - **One library** — local files and YouTube videos side by side, with playlists, search and queue
   control (play next, shuffle, remove).
-- **YouTube playback** through ExoPlayer with SABR streaming, on-device PO token generation and a
-  multi-client resolver chain (VISIONOS → TVHTML5 → WEB) that falls back automatically.
-- **Offline cache** — tracks you play are kept in a size-limited LRU cache and replayed without
+- **YouTube playback** through ExoPlayer with a multi-client resolver chain (VISIONOS → TVHTML5 → WEB).
+- **Offline cache** — tracks you play are kept in a size-limited cache and replayed without
   the network.
-- **Lyrics** with time-synced highlighting and karaoke-style auto-scroll.
+- **Lyrics** with time-synced highlighting and auto-scroll.
 - **Themes** — Material 3 dark palette, switchable accent colour or system theme.
-- Everything is resizable/scalable: the player pane, track rows and sheets were built for phones
-  but follow the system font scale.
 
 ## Requirements
 
