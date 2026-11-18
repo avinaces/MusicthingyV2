@@ -3,7 +3,7 @@ using Android.Runtime;
 
 namespace Musicthingy
 {
-    [Application]
+    [Application(AppCategory = Android.Content.PM.ApplicationCategories.Audio)]
     public class MainApplication : MauiApplication
     {
         public MainApplication(IntPtr handle, JniHandleOwnership ownership)

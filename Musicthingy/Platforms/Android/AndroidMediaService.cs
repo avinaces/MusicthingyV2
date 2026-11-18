@@ -140,17 +140,6 @@ public class MediaActionReceiver : BroadcastReceiver
                     try { context.StopService(new Intent(context, typeof(AndroidMediaService))); } catch { }
                 }
             }
-            else if (intent?.Action == "MUSIC_ACTION_NOTIFICATION_DELETED")
-            {
-                // While playing the notification is 'ongoing' and cannot be
-                // swiped away, so this only fires when nothing is audible.
-                // Stop the foreground service so no background process
-                // outlives a dismissed media widget.
-                if (!AndroidMediaService.IsMediaPlaying && context != null)
-                {
-                    try { context.StopService(new Intent(context, typeof(AndroidMediaService))); } catch { }
-                }
-            }
         });
     }
 }
