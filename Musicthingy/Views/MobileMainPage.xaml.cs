@@ -1,7 +1,10 @@
 using CommunityToolkit.Mvvm.Messaging;
 using Musicthingy.Helpers;
 using Musicthingy.Models;
+using Musicthingy.Search;
+using Musicthingy.Settings;
 using Musicthingy.ViewModels;
+using System.ComponentModel;
 
 namespace Musicthingy.Views;
 
@@ -22,12 +25,61 @@ public partial class MobileMainPage : ContentPage
     // Tracks the height of the playlist header for sticky toolbar logic
     private double _playlistHeaderHeight = 0;
 
-    public MobileMainPage(MainViewModel viewModel)
+    private readonly SearchHostViewModel _mainSearchHost;
+    private readonly SearchHostViewModel _sidebarSearchHost;
+    private readonly MainViewModel _viewModel;
+
+    public MobileMainPage(MainViewModel viewModel, SearchService searchService)
     {
         InitializeComponent();
         BindingContext = viewModel;
+        _viewModel = viewModel;
 
         Services.SheetManager.Host = GlobalSheetHost;
+
+        _mainSearchHost = new SearchHostViewModel(searchService, SearchOrigin.OpenPlaylist)
+        {
+            Placeholder = "Search tracks"
+        };
+        _sidebarSearchHost = new SearchHostViewModel(searchService, SearchOrigin.PlaylistSidebar)
+        {
+            Placeholder = "Search playlists"
+        };
+
+        MainSearchBar.BindingContext = _mainSearchHost;
+        SidebarSearchBar.BindingContext = _sidebarSearchHost;
+        MainSearchResults.BindingContext = _mainSearchHost;
+        SidebarSearchResults.BindingContext = _sidebarSearchHost;
+
+        MainSearchBar.SetBinding(SearchBarView.QueryProperty, new Binding(nameof(SearchHostViewModel.Query), BindingMode.TwoWay, source: _mainSearchHost));
+        SidebarSearchBar.SetBinding(SearchBarView.QueryProperty, new Binding(nameof(SearchHostViewModel.Query), BindingMode.TwoWay, source: _sidebarSearchHost));
+        SidebarSearchBar.Placeholder = _sidebarSearchHost.Placeholder;
+
+        _mainSearchHost.ResultActivated += OnSearchResultActivated;
+        _sidebarSearchHost.ResultActivated += OnSearchResultActivated;
+        _mainSearchHost.Dismissed += (_, _) => MainSearchBar.Blur();
+        _sidebarSearchHost.Dismissed += (_, _) => SidebarSearchBar.Blur();
+        _mainSearchHost.PropertyChanged += OnSearchHostPropertyChanged;
+        _sidebarSearchHost.PropertyChanged += OnSearchHostPropertyChanged;
+
+        MainSearchBar.SearchFocused += OnMainSearchFocused;
+        SidebarSearchBar.SearchFocused += OnSidebarSearchFocused;
+
+        _viewModel.PropertyChanged += OnViewModelPropertyChanged;
+        UpdateSearchPlaceholders();
+
+        // Start the drawer one width to the left; the XAML -5000 sentinel is
+        // only there to hide it before the page has a width, and animating from
+        // it on the first hamburger tap could be skipped entirely.
+        SidebarGrid.TranslationX = -SidebarWidth;
+
+        SizeChanged += (_, _) =>
+        {
+            UpdateSearchHeights();
+            if (!_isSidebarOpen && !_isSidebarPanning)
+                SidebarGrid.TranslationX = -SidebarWidth;
+        };
+        UpdateSearchHeights();
 
         WeakReferenceMessenger.Default.Register<ScrollToTrackMessage>(this, (r, m) =>
         {
@@ -47,6 +99,76 @@ public partial class MobileMainPage : ContentPage
                 });
             });
         });
+    }
+
+    // --- Search hosts ---
+
+    private void OnViewModelPropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(MainViewModel.SelectedPlaylist))
+            MainThread.BeginInvokeOnMainThread(UpdateSearchPlaceholders);
+    }
+
+    private void UpdateSearchPlaceholders()
+    {
+        string name = _viewModel.SelectedPlaylist?.Name?.Trim() ?? string.Empty;
+        _mainSearchHost.Placeholder = name.Length == 0 ? "Search tracks" : $"Search {name}";
+        MainSearchBar.Placeholder = _mainSearchHost.Placeholder;
+    }
+
+    private void UpdateSearchHeights()
+    {
+        double available = Height > 0 ? Height - 56 : 640;
+        _mainSearchHost.SetAvailableHeight(available);
+        _sidebarSearchHost.SetAvailableHeight(available);
+    }
+
+    private void OnSearchHostPropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName != nameof(SearchHostViewModel.IsOpen)) return;
+        if (sender is not SearchHostViewModel host || !host.IsOpen) return;
+
+        // Only one results menu can be open at a time.
+        if (host == _mainSearchHost)
+            _sidebarSearchHost.CloseCommand.Execute(null);
+        else
+            _mainSearchHost.CloseCommand.Execute(null);
+    }
+
+    private void OnMainSearchFocused(object? sender, EventArgs e)
+    {
+        _sidebarSearchHost.CloseCommand.Execute(null);
+        _mainSearchHost.NotifyFocused();
+    }
+
+    private void OnSidebarSearchFocused(object? sender, EventArgs e)
+    {
+        _mainSearchHost.CloseCommand.Execute(null);
+        _sidebarSearchHost.NotifyFocused();
+    }
+
+    private async void OnSearchResultActivated(object? sender, SearchResultItem item)
+    {
+        switch (item.Payload)
+        {
+            case Playlist playlist:
+                _viewModel.SelectedPlaylist = playlist;
+                if (_isSidebarOpen) await CloseSidebarInternalAsync();
+                break;
+
+            case PlaylistItem track:
+                if (track.Playlist != null && track.Playlist != _viewModel.SelectedPlaylist)
+                    _viewModel.SelectedPlaylist = track.Playlist;
+
+                _viewModel.CurrentTrack = track;
+                if (_isSidebarOpen) await CloseSidebarInternalAsync();
+                break;
+
+            case ISetting setting:
+                if (_isSidebarOpen) await CloseSidebarInternalAsync();
+                await _viewModel.OpenSettingAsync(setting);
+                break;
+        }
     }
 
     // --- Sticky Toolbar Calculations ---
@@ -81,6 +203,7 @@ public partial class MobileMainPage : ContentPage
         switch (e.StatusType)
         {
             case GestureStatus.Started:
+                _mainSearchHost.CloseCommand.Execute(null);
                 _isSidebarPanning = true;
                 SidebarDarken.IsVisible = true;
                 EdgeSwipeZone.IsVisible = false;
@@ -129,10 +252,28 @@ public partial class MobileMainPage : ContentPage
 
     private void OnCloseSidebarClicked(object? sender, EventArgs e) => _ = CloseSidebarInternalAsync();
     private void OnSidebarOverlayTapped(object? sender, TappedEventArgs e) => _ = CloseSidebarInternalAsync();
-    private void OnHamburgerTapped(object? sender, TappedEventArgs e) => _ = OpenSidebarInternalAsync();
+
+    private void OnHamburgerTapped(object? sender, TappedEventArgs e)
+    {
+        _mainSearchHost.CloseCommand.Execute(null);
+        _ = OpenSidebarInternalAsync();
+    }
+
+    protected override void OnAppearing()
+    {
+        base.OnAppearing();
+
+        // The library restores asynchronously, so the name in the placeholder
+        // may only be known after the page was first constructed.
+        UpdateSearchPlaceholders();
+    }
 
     private async Task OpenSidebarInternalAsync(double velocityX = 0)
     {
+        // Opening the drawer must not leave a hidden search entry focused with
+        // the keyboard up; the user types in the drawer's own bar.
+        MainSearchBar.Blur();
+
         _isSidebarOpen = true;
         SidebarDarken.IsVisible = true;
         EdgeSwipeZone.IsVisible = false;
@@ -147,6 +288,9 @@ public partial class MobileMainPage : ContentPage
 
     private async Task CloseSidebarInternalAsync(double velocityX = 0)
     {
+        _sidebarSearchHost.CloseCommand.Execute(null);
+        SidebarSearchBar.Blur();
+
         _isSidebarOpen = false;
 
         uint duration = 250;
@@ -162,6 +306,18 @@ public partial class MobileMainPage : ContentPage
 
     protected override bool OnBackButtonPressed()
     {
+        if (_mainSearchHost.IsOpen)
+        {
+            _mainSearchHost.CloseCommand.Execute(null);
+            return true;
+        }
+
+        if (_sidebarSearchHost.IsOpen)
+        {
+            _sidebarSearchHost.CloseCommand.Execute(null);
+            return true;
+        }
+
         if (_isSidebarOpen)
         {
             _ = CloseSidebarInternalAsync();

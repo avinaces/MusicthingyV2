@@ -217,7 +217,7 @@ public static class LicenseCatalog
                 {
                     Name = "Lucide icons",
                     Badge = "LU",
-                    Summary = "Line icon set tinted white for the whole interface.",
+                    Summary = "Line icon for the whole interface.",
                     Kind = LicenseKind.Isc,
                     Copyright = "Copyright (c) Lucide Contributors",
                     ProjectUrl = "https://lucide.dev"

@@ -1,0 +1,276 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentView xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             xmlns:search="clr-namespace:Musicthingy.Search"
+             xmlns:toolkit="http://schemas.microsoft.com/dotnet/2022/maui/toolkit"
+             xmlns:helpers="clr-namespace:Musicthingy.Helpers"
+             xmlns:local="clr-namespace:Musicthingy.Views"
+             x:Class="Musicthingy.Views.SearchResultsView"
+             x:Name="ResultsRoot"
+             IsVisible="{Binding IsOpen}">
+
+    <ContentView.Resources>
+        <DataTemplate x:Key="SearchGroupHeaderTemplate" x:DataType="search:SearchResultGroup">
+            <Grid HeightRequest="44"
+                  Padding="16,0"
+                  ColumnDefinitions="Auto, *, Auto, Auto"
+                  ColumnSpacing="10"
+                  BackgroundColor="{DynamicResource SurfacePanel}"
+                  helpers:AndroidRipple.AddRipple="True">
+                <Grid.GestureRecognizers>
+                    <TapGestureRecognizer
+                        Command="{Binding Path=BindingContext.ToggleGroupCommand, Source={RelativeSource AncestorType={x:Type local:SearchResultsView}}}"
+                        CommandParameter="{Binding .}" />
+                </Grid.GestureRecognizers>
+
+                <Image Grid.Column="0"
+                       Source="{Binding Icon}"
+                       WidthRequest="16"
+                       HeightRequest="16"
+                       VerticalOptions="Center">
+                    <Image.Behaviors>
+                        <toolkit:IconTintColorBehavior TintColor="{DynamicResource AccentColor}" />
+                    </Image.Behaviors>
+                </Image>
+
+                <Label Grid.Column="1"
+                       Text="{Binding Title}"
+                       TextColor="{DynamicResource MutedColor}"
+                       FontSize="11"
+                       FontAttributes="Bold"
+                       CharacterSpacing="1"
+                       TextTransform="Uppercase"
+                       LineBreakMode="TailTruncation"
+                       VerticalOptions="Center" />
+
+                <Border Grid.Column="2"
+                        BackgroundColor="{DynamicResource SurfaceRaised}"
+                        StrokeThickness="0"
+                        StrokeShape="RoundRectangle 10"
+                        Padding="8,2"
+                        VerticalOptions="Center">
+                    <Label Text="{Binding CountText}"
+                           TextColor="{DynamicResource MutedColor}"
+                           FontSize="10"
+                           FontAttributes="Bold" />
+                </Border>
+
+                <Image Grid.Column="3"
+                       Source="chevron_down_icon.png"
+                       WidthRequest="15"
+                       HeightRequest="15"
+                       VerticalOptions="Center">
+                    <Image.Behaviors>
+                        <toolkit:IconTintColorBehavior TintColor="{DynamicResource MutedColor}" />
+                    </Image.Behaviors>
+                    <Image.Triggers>
+                        <DataTrigger TargetType="Image" Binding="{Binding IsExpanded}" Value="False">
+                            <Setter Property="Rotation" Value="-90" />
+                        </DataTrigger>
+                    </Image.Triggers>
+                </Image>
+            </Grid>
+        </DataTemplate>
+
+        <DataTemplate x:Key="SearchItemTemplate" x:DataType="search:SearchResultItem">
+            <Grid HeightRequest="58"
+                  Padding="16,0"
+                  ColumnDefinitions="Auto, *, Auto"
+                  ColumnSpacing="12"
+                  helpers:AndroidRipple.AddRipple="True">
+                <Grid.GestureRecognizers>
+                    <TapGestureRecognizer
+                        Command="{Binding Path=BindingContext.ActivateResultCommand, Source={RelativeSource AncestorType={x:Type local:SearchResultsView}}}"
+                        CommandParameter="{Binding .}" />
+                </Grid.GestureRecognizers>
+
+                <Grid Grid.Column="0"
+                      WidthRequest="40"
+                      HeightRequest="40"
+                      VerticalOptions="Center">
+
+                    <Border WidthRequest="38"
+                            HeightRequest="38"
+                            HorizontalOptions="Start"
+                            VerticalOptions="Start"
+                            BackgroundColor="{DynamicResource SurfaceRaised}"
+                            StrokeThickness="0"
+                            StrokeShape="RoundRectangle 11">
+                        <Grid>
+                            <!-- Type glyph, shown when the item has no cached artwork. -->
+                            <Image Source="{Binding Icon}"
+                                   WidthRequest="18"
+                                   HeightRequest="18"
+                                   HorizontalOptions="Center"
+                                   VerticalOptions="Center">
+                                <Image.Behaviors>
+                                    <toolkit:IconTintColorBehavior TintColor="{DynamicResource MutedColor}" />
+                                </Image.Behaviors>
+                            </Image>
+
+                            <!-- The item's own cover/thumbnail when one is available. -->
+                            <Image Source="{Binding Artwork}"
+                                   IsVisible="{Binding HasArtwork}"
+                                   Aspect="AspectFill"
+                                   WidthRequest="38"
+                                   HeightRequest="38">
+                                <Image.Clip>
+                                    <RoundRectangleGeometry CornerRadius="11" Rect="0,0,38,38" />
+                                </Image.Clip>
+                            </Image>
+                        </Grid>
+                    </Border>
+
+                    <!-- Corner badge keeps the result type obvious over a cover. -->
+                    <Border IsVisible="{Binding HasArtwork}"
+                            WidthRequest="17"
+                            HeightRequest="17"
+                            HorizontalOptions="End"
+                            VerticalOptions="End"
+                            BackgroundColor="{DynamicResource SurfaceRaised}"
+                            Stroke="{DynamicResource BgColor}"
+                            StrokeThickness="1.5"
+                            StrokeShape="RoundRectangle 9"
+                            Padding="0">
+                        <Image Source="{Binding Icon}"
+                               WidthRequest="9"
+                               HeightRequest="9"
+                               HorizontalOptions="Center"
+                               VerticalOptions="Center">
+                            <Image.Behaviors>
+                                <toolkit:IconTintColorBehavior TintColor="{DynamicResource MutedColor}" />
+                            </Image.Behaviors>
+                        </Image>
+                    </Border>
+                </Grid>
+
+                <VerticalStackLayout Grid.Column="1"
+                                     Spacing="1"
+                                     VerticalOptions="Center">
+                    <Label Text="{Binding Title}"
+                           TextColor="{DynamicResource TextColor}"
+                           FontSize="14"
+                           FontAttributes="Bold"
+                           LineBreakMode="TailTruncation"
+                           MaxLines="1" />
+                    <Label Text="{Binding Subtitle}"
+                           TextColor="{DynamicResource MutedColor}"
+                           FontSize="11"
+                           LineBreakMode="TailTruncation"
+                           MaxLines="1" />
+                </VerticalStackLayout>
+
+                <Border Grid.Column="2"
+                        IsVisible="{Binding HasBadge}"
+                        BackgroundColor="{DynamicResource TagBgColor}"
+                        StrokeThickness="0"
+                        StrokeShape="RoundRectangle 8"
+                        Padding="7,3"
+                        VerticalOptions="Center">
+                    <Label Text="{Binding Badge}"
+                           TextColor="{DynamicResource TagTextColor}"
+                           FontSize="9"
+                           FontAttributes="Bold"
+                           CharacterSpacing="0.6"
+                           TextTransform="Uppercase" />
+                </Border>
+            </Grid>
+        </DataTemplate>
+
+        <helpers:SearchResultTemplateSelector x:Key="SearchTemplateSelector"
+                                              GroupTemplate="{StaticResource SearchGroupHeaderTemplate}"
+                                              ItemTemplate="{StaticResource SearchItemTemplate}" />
+    </ContentView.Resources>
+
+    <Grid>
+        <!-- Tapping outside the results closes the menu and restores the header. -->
+        <BoxView BackgroundColor="{DynamicResource ModalSurfaceScrim}">
+            <BoxView.GestureRecognizers>
+                <TapGestureRecognizer Command="{Binding CloseCommand}" />
+            </BoxView.GestureRecognizers>
+        </BoxView>
+
+        <Border VerticalOptions="Start"
+                HorizontalOptions="Fill"
+                Margin="8,4,8,12"
+                HeightRequest="{Binding PanelHeight}"
+                BackgroundColor="{DynamicResource CardColor}"
+                Stroke="{DynamicResource BorderColor}"
+                StrokeThickness="1"
+                StrokeShape="RoundRectangle 16"
+                Padding="0">
+            <Grid RowDefinitions="Auto, *">
+
+                <!-- Panel header -->
+                <Grid Grid.Row="0"
+                      Padding="16,10,8,8"
+                      ColumnDefinitions="*, Auto, Auto"
+                      ColumnSpacing="4">
+                    <Label Grid.Column="0"
+                           Text="{Binding ResultsSummary}"
+                           TextColor="{DynamicResource TitleColor}"
+                           FontSize="13"
+                           FontAttributes="Bold"
+                           VerticalOptions="Center" />
+
+                    <ActivityIndicator Grid.Column="1"
+                                       IsVisible="{Binding IsSearching}"
+                                       IsRunning="{Binding IsSearching}"
+                                       Color="{DynamicResource AccentColor}"
+                                       WidthRequest="18"
+                                       HeightRequest="18"
+                                       VerticalOptions="Center" />
+
+                    <ImageButton Grid.Column="2"
+                                 Source="x_icon.png"
+                                 Command="{Binding CloseCommand}"
+                                 WidthRequest="36"
+                                 HeightRequest="36"
+                                 Padding="9"
+                                 BackgroundColor="Transparent"
+                                 BorderWidth="0"
+                                 CornerRadius="18"
+                                 VerticalOptions="Center">
+                        <ImageButton.Behaviors>
+                            <toolkit:IconTintColorBehavior TintColor="{DynamicResource MutedColor}" />
+                        </ImageButton.Behaviors>
+                    </ImageButton>
+                </Grid>
+
+                <!-- Flat, virtualised rows: group headers and their items. -->
+                <CollectionView Grid.Row="1"
+                                ItemsSource="{Binding Rows}"
+                                ItemTemplate="{StaticResource SearchTemplateSelector}"
+                                SelectionMode="None"
+                                VerticalScrollBarVisibility="Never"
+                                Margin="0,0,0,6" />
+
+                <!-- Empty state -->
+                <VerticalStackLayout Grid.Row="1"
+                                     IsVisible="{Binding IsEmpty}"
+                                     Spacing="6"
+                                     Padding="24,12,24,20"
+                                     HorizontalOptions="Center"
+                                     VerticalOptions="Center">
+                    <Image Source="search_x_icon.png"
+                           WidthRequest="26"
+                           HeightRequest="26"
+                           HorizontalOptions="Center">
+                        <Image.Behaviors>
+                            <toolkit:IconTintColorBehavior TintColor="{DynamicResource MutedColor}" />
+                        </Image.Behaviors>
+                    </Image>
+                    <Label Text="{Binding EmptyMessage}"
+                           TextColor="{DynamicResource TextColor}"
+                           FontSize="13"
+                           FontAttributes="Bold"
+                           HorizontalTextAlignment="Center" />
+                    <Label Text="Try a playlist, track or setting name."
+                           TextColor="{DynamicResource MutedColor}"
+                           FontSize="11"
+                           HorizontalTextAlignment="Center" />
+                </VerticalStackLayout>
+            </Grid>
+        </Border>
+    </Grid>
+</ContentView>

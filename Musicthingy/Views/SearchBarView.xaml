@@ -1,0 +1,86 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentView xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             xmlns:toolkit="http://schemas.microsoft.com/dotnet/2022/maui/toolkit"
+             x:Class="Musicthingy.Views.SearchBarView"
+             x:Name="Root">
+
+    <Border BackgroundColor="{DynamicResource SurfaceInput}"
+            Stroke="{DynamicResource BorderColor}"
+            StrokeThickness="1"
+            StrokeShape="RoundRectangle 22"
+            HeightRequest="44"
+            Padding="0"
+            VerticalOptions="Center">
+        <Border.GestureRecognizers>
+            <TapGestureRecognizer Tapped="OnBarTapped" />
+        </Border.GestureRecognizers>
+
+        <Grid ColumnDefinitions="Auto, *, Auto" ColumnSpacing="0">
+            <Image Grid.Column="0"
+                   Source="search_icon.png"
+                   WidthRequest="17"
+                   HeightRequest="17"
+                   Margin="12,0,0,0"
+                   VerticalOptions="Center"
+                   InputTransparent="True">
+                <Image.Behaviors>
+                    <toolkit:IconTintColorBehavior TintColor="{DynamicResource MutedColor}" />
+                </Image.Behaviors>
+            </Image>
+
+            <!-- Material 3's native floating hint cannot be restyled, so the
+                 placeholder is a plain label behind the (transparent) entry. -->
+            <Label x:Name="PlaceholderLabel"
+                   Grid.Column="1"
+                   TextColor="{DynamicResource MutedColor}"
+                   FontSize="15"
+                   Margin="8,0,2,0"
+                   VerticalOptions="Center"
+                   InputTransparent="True"
+                   LineBreakMode="TailTruncation"
+                   MaxLines="1" />
+
+            <Entry x:Name="QueryEntry"
+                   Grid.Column="1"
+                   Text="{Binding Query, Source={x:Reference Root}, Mode=TwoWay}"
+                   TextColor="{DynamicResource TitleColor}"
+                   BackgroundColor="Transparent"
+                   FontSize="15"
+                   HeightRequest="44"
+                   Margin="8,0,2,0"
+                   VerticalTextAlignment="Center"
+                   ClearButtonVisibility="Never"
+                   ReturnType="Search"
+                   Focused="OnEntryFocused" />
+
+            <ImageButton Grid.Column="2"
+                         Source="x_icon.png"
+                         Clicked="OnClearClicked"
+                         WidthRequest="36"
+                         HeightRequest="36"
+                         Margin="0,0,3,0"
+                         Padding="9"
+                         BackgroundColor="Transparent"
+                         BorderWidth="0"
+                         CornerRadius="18"
+                         VerticalOptions="Center">
+                <ImageButton.Behaviors>
+                    <toolkit:IconTintColorBehavior TintColor="{DynamicResource MutedColor}" />
+                </ImageButton.Behaviors>
+                <ImageButton.Triggers>
+                    <DataTrigger TargetType="ImageButton"
+                                 Binding="{Binding Text, Source={x:Reference QueryEntry}}"
+                                 Value="">
+                        <Setter Property="IsVisible" Value="False" />
+                    </DataTrigger>
+                    <DataTrigger TargetType="ImageButton"
+                                 Binding="{Binding Text, Source={x:Reference QueryEntry}}"
+                                 Value="{x:Null}">
+                        <Setter Property="IsVisible" Value="False" />
+                    </DataTrigger>
+                </ImageButton.Triggers>
+            </ImageButton>
+        </Grid>
+    </Border>
+</ContentView>

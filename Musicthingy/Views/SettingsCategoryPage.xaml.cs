@@ -13,7 +13,7 @@ public partial class SettingsCategoryPage : ContentPage
     private readonly TrackCacheService? _trackCacheService;
     private readonly MainViewModel? _mainViewModel;
 
-    public SettingsCategoryPage(SettingsManager settingsManager, SettingCategory category)
+    public SettingsCategoryPage(SettingsManager settingsManager, SettingCategory category, ISetting? focusSetting = null)
     {
         InitializeComponent();
         NavigationPage.SetHasNavigationBar(this, false);
@@ -28,6 +28,9 @@ public partial class SettingsCategoryPage : ContentPage
 
         TitleLabel.Text = category.ToString();
         SettingsList.ItemsSource = settingsManager.GetVisibleSettings().Where(s => s.Category == category).ToList();
+
+        if (focusSetting != null)
+            _ = ScrollToSettingAsync(focusSetting);
 
         if (category == SettingCategory.Storage)
         {
@@ -282,6 +285,23 @@ public partial class SettingsCategoryPage : ContentPage
     }
 
     private async void OnBackClicked(object sender, EventArgs e) => await Navigation.PopModalAsync();
+
+    private async Task ScrollToSettingAsync(ISetting setting)
+    {
+        // Give the CollectionView one layout pass before scrolling.
+        await Task.Delay(250);
+        MainThread.BeginInvokeOnMainThread(() =>
+        {
+            try
+            {
+                SettingsList.ScrollTo(setting, position: ScrollToPosition.Center, animate: false);
+            }
+            catch
+            {
+                // The row may not be realised yet; the category is still open.
+            }
+        });
+    }
 
     protected override void OnNavigatedFrom(NavigatedFromEventArgs args)
     {

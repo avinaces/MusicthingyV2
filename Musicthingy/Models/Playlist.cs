@@ -153,6 +153,23 @@ public partial class Playlist : ObservableObject
         }
     }
 
+    /// <summary>
+    /// Returns the icon only if it is already available, without starting a
+    /// generation pass. Search rows use this so a keystroke never queues icon
+    /// work for results that may never be shown.
+    /// </summary>
+    [JsonIgnore]
+    public ImageSource? CachedIconImageSource
+    {
+        get
+        {
+            if (_iconImageSource != null) return _iconImageSource;
+
+            string cacheKey = string.IsNullOrEmpty(IconUrl) ? $"NAME_{Name}" : IconUrl;
+            return _sharedPlaylistIconCache.TryGetValue(cacheKey, out ImageSource? cached) ? cached : null;
+        }
+    }
+
     private void GenerateIconAsync(string cacheKey)
     {
         IconType = PlaylistIconType.YouTube; // Temp override, delete later

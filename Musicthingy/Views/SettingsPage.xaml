@@ -3,15 +3,13 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
              xmlns:toolkit="http://schemas.microsoft.com/dotnet/2022/maui/toolkit"
              xmlns:helpers="clr-namespace:Musicthingy.Helpers"
+             xmlns:views="clr-namespace:Musicthingy.Views"
              x:Class="Musicthingy.Views.SettingsPage"
              BackgroundColor="{DynamicResource BgColor}">
 
     <Grid RowDefinitions="Auto, *">
-        <Grid Grid.Row="0" HeightRequest="56" BackgroundColor="{DynamicResource BgColor}" ZIndex="10">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="56" />
-                <ColumnDefinition Width="*" />
-            </Grid.ColumnDefinitions>
+        <Grid Grid.Row="0" HeightRequest="56" BackgroundColor="{DynamicResource BgColor}" ZIndex="10"
+              Padding="8,0" ColumnDefinitions="44, *" ColumnSpacing="4">
 
             <ImageButton Grid.Column="0" Source="arrow_left_icon.png" Clicked="OnBackClicked" WidthRequest="40" HeightRequest="40" VerticalOptions="Center" HorizontalOptions="Center" BackgroundColor="Transparent" Padding="8">
                 <ImageButton.Behaviors>
@@ -19,7 +17,7 @@
                 </ImageButton.Behaviors>
             </ImageButton>
 
-            <Label Grid.Column="1" Text="Settings" TextColor="{DynamicResource TitleColor}" FontSize="20" FontAttributes="Bold" VerticalOptions="Center" />
+            <views:SearchBarView x:Name="SettingsSearchBar" Grid.Column="1" VerticalOptions="Center" />
         </Grid>
 
         <CollectionView Grid.Row="1" x:Name="CategoriesList" SelectionMode="None">
@@ -44,5 +42,8 @@
                 </DataTemplate>
             </CollectionView.ItemTemplate>
         </CollectionView>
+
+        <!-- Settings search results. The top margin keeps the header/search bar usable. -->
+        <views:SearchResultsView x:Name="SettingsSearchResults" Grid.RowSpan="2" ZIndex="60" Margin="0,56,0,0" />
     </Grid>
 </ContentPage>

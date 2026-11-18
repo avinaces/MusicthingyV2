@@ -319,6 +319,9 @@ public partial class MainViewModel
             UpdateFilterTags();
             RefreshDisplayedItems(forceReset: true);
         }
+
+        // Cached Tracks changes do not go through RequestSaveLibrary.
+        RefreshSearchIndex();
     }
 
     partial void OnSelectedPlaylistChanged(Playlist? value)

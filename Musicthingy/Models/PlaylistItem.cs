@@ -127,6 +127,23 @@ public partial class PlaylistItem : ObservableObject
         }
     }
 
+    /// <summary>
+    /// Returns the icon only if it is already available, without starting a
+    /// generation pass. Search rows use this so a keystroke never queues icon
+    /// work for results that may never be shown.
+    /// </summary>
+    [JsonIgnore]
+    public ImageSource? CachedItemIconSource
+    {
+        get
+        {
+            if (_itemIconSource != null) return _itemIconSource;
+
+            string cacheKey = string.IsNullOrEmpty(IconUrl) ? $"TITLE_{Title}" : IconUrl;
+            return _sharedItemIconCache.TryGetValue(cacheKey, out ImageSource? cached) ? cached : null;
+        }
+    }
+
     [JsonIgnore]
     public string DisplayDuration
     {

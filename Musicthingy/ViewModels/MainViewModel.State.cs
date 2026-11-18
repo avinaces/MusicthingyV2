@@ -23,6 +23,8 @@ public partial class MainViewModel
 
     public void RequestSaveLibrary()
     {
+        RefreshSearchIndex();
+
         if (_isLibraryLoadFailed) return;
 
         _saveLibraryCts?.Cancel();
@@ -98,6 +100,7 @@ public partial class MainViewModel
                             }
                             RestorePlaybackState();
                             InitializeSystemPlaylists();
+                            RefreshSearchIndex();
                         }
                         finally
                         {
@@ -125,7 +128,11 @@ public partial class MainViewModel
             return;
         }
 
-        MainThread.BeginInvokeOnMainThread(() => SettingsManager.IsRestoringState = false);
+        MainThread.BeginInvokeOnMainThread(() =>
+        {
+            SettingsManager.IsRestoringState = false;
+            RefreshSearchIndex();
+        });
     }
 
     private void RestorePlaybackState()

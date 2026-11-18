@@ -1,5 +1,6 @@
 ﻿using CommunityToolkit.Maui;
 using MPowerKit.VirtualizeListView;
+using Musicthingy.Search;
 using Musicthingy.Services;
 using Musicthingy.ViewModels;
 
@@ -21,6 +22,10 @@ namespace Musicthingy
 			// Use reflection-based automatic registration for app settings
 			builder.Services.AddAppSettings();
 			builder.Services.AddSingleton<ColorExtractionService>();
+
+			// Search pipeline: providers + index + coordinator. Add a provider
+			// (for example web search) in SearchServiceCollectionExtensions.
+			builder.Services.AddSearch();
 
 			// v9.3: the "youtube" named client sits on the resolver's cookie-
 			// free InnerTubeHandler (UseCookies=false — Set-Cookie harvesting

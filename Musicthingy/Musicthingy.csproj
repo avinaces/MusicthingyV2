@@ -23,7 +23,7 @@
 
 		<ApplicationTitle>Musicthingy</ApplicationTitle>
 		<ApplicationId>com.EnchantedSwords.Musicthingy</ApplicationId>
-		<ApplicationDisplayVersion>1.0</ApplicationDisplayVersion>
+		<ApplicationDisplayVersion>0.1.2</ApplicationDisplayVersion>
 		<ApplicationVersion>1</ApplicationVersion>
 
 		<WindowsPackageType>None</WindowsPackageType>

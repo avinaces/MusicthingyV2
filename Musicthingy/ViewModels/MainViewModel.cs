@@ -4,6 +4,7 @@ using CommunityToolkit.Mvvm.Messaging;
 using Microsoft.Maui.Graphics;
 using Musicthingy.Helpers;
 using Musicthingy.Models;
+using Musicthingy.Search;
 using Musicthingy.Services;
 using System.Collections.ObjectModel;
 using System.Collections.Specialized;
@@ -29,6 +30,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
     private readonly ColorExtractionService _colorExtractionService;
     private readonly SettingsManager _settingsManager;
     private readonly TrackCacheService _trackCacheService;
+    private readonly SearchService _searchService;
 
     [ObservableProperty] public partial bool IsLoadingMedia { get; set; }
     [ObservableProperty] public partial double MediaDownloadProgress { get; set; }
@@ -343,7 +345,8 @@ public partial class MainViewModel : ObservableObject, IDisposable
         IMediaProbingService mediaProbingService,
         ColorExtractionService colorExtractionService,
         SettingsManager settingsManager,
-        TrackCacheService trackCacheService)
+        TrackCacheService trackCacheService,
+        SearchService searchService)
     {
         _themeManager = themeManager;
         _youtubeResolver = youtubeResolver;
@@ -352,6 +355,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
         _colorExtractionService = colorExtractionService;
         _settingsManager = settingsManager;
         _trackCacheService = trackCacheService;
+        _searchService = searchService;
 
 
         _cleanupOldInstances?.Invoke();
@@ -414,6 +418,8 @@ public partial class MainViewModel : ObservableObject, IDisposable
 
     partial void OnSelectedPlaylistChanged(Playlist? oldValue, Playlist? newValue)
     {
+        RefreshSearchIndex();
+
         if (!SettingsManager.IsRestoringState)
         {
             Preferences.Default.Set("SelectedPlaylistName", newValue?.Name ?? string.Empty);
@@ -595,7 +601,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
     [RelayCommand]
     private async Task OpenSettings()
     {
-        var settingsPage = new Views.SettingsPage(_settingsManager);
+        var settingsPage = new Views.SettingsPage(_settingsManager, _searchService);
 
         if (Application.Current is { } app && app.Windows.Count > 0)
         {
