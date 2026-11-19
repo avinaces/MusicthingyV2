@@ -413,6 +413,11 @@ public partial class MobilePlayerPaneView : ContentView
         // fade out the scrim, and remove the sheet from the visual stack.
         editSheet.CloseAction = async (result) =>
         {
+            // Saving may have replaced the lyrics of the track that is
+            // playing; re-parse them so the pane updates immediately.
+            if (result is true && this.BindingContext is Musicthingy.ViewModels.MainViewModel viewModel)
+                viewModel.RefreshLyricsView();
+
             if (Services.SheetManager.Host != null)
             {
                 await Services.SheetManager.Host.HideAsync(editSheet);

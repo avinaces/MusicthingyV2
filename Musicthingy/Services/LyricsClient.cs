@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Globalization;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
@@ -20,18 +21,43 @@ public static class LyricsClient
     // title, which is specific enough to be meaningful).
     private const int MinSubstringTitleLength = 6;
 
-    // Noise in brackets: "(Official Video)", "[Lyrics]", "(Remastered 2011)",
-    // "(Live)". The bracket body is matched with [^\)\]] so one bracket can
-    // never swallow the next one - "Song (feat. X) (Official Video)" used to
-    // lose "(feat. X)" as well.
-    private static readonly Regex BracketNoiseRegex = new(
-        @"[\(\[][^\)\]]*?(?:official|soundtrack|ost|lyric|video|audio|music|theme|remaster(?:ed)?|live|acoustic|instrumental|demo)\b[^\)\]]*[\)\]]",
+    // Upload noise: never part of the song title - "(Official Video)", "[4K]",
+    // "(Audio)", "(From "Frozen"/Soundtrack Version)". The bracket body is
+    // matched with [^\)\]] so one bracket can never swallow the next:
+    // "Song (feat. X) (Official Video)" must keep "(feat. X)".
+    //
+    // Recording-level qualifiers (live, acoustic, remix, instrumental, demo ...)
+    // are deliberately NOT in this list. They select a DIFFERENT recording, so
+    // they survive cleaning and are compared in the candidate scoring instead:
+    // the old regex stripped them, which let a live/instrumental upload match
+    // the studio entry with no version penalty at all.
+    private static readonly Regex UploadNoiseRegex = new(
+        @"[\(\[][^\)\]]*?(?:official|soundtrack|ost|original\s+motion\s+picture|lyric|video|visuali[sz]er|audio|4k|8k|\bhd\b|\bhq\b|\bmv\b|music\s+video|color\s+coded|topic)[^\)\]]*[\)\]]",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
-    // Descriptor tail after a dash: "Bohemian Rhapsody - Remastered 2011".
-    // Dropping the tail (not the head!) keeps the song name.
+    private static readonly Regex VersionQualifierRegex = new(
+        @"\b(?:live|acoustic|unplugged|instrumental|karaoke|demo|remix|re-?\s?mix|sped\s*up|slowed(?:\s*\+\s*reverb)?|nightcore|radio\s+edit|tv\s+size|extended|orchestral|8d)\b",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+    private static readonly Regex VersionQualifierBracketRegex = new(
+        @"[\(\[][^\)\]]*?\b(?:live|acoustic|unplugged|instrumental|karaoke|demo|remix|re-?\s?mix|sped\s*up|slowed|nightcore|radio\s+edit|tv\s+size|extended|orchestral|8d)\b[^\)\]]*[\)\]]",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+    private static readonly Regex VersionQualifierSuffixRegex = new(
+        @"\s*[-–—]\s*(?:live|acoustic|unplugged|instrumental|karaoke|demo|remix|re-?\s?mix|sped\s*up|slowed|nightcore|radio\s+edit|tv\s+size|extended|orchestral|8d)\b.*$",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+    // Mastering/label tails do not change the recording, so they are safe to
+    // drop before a lookup: "Bohemian Rhapsody - Remastered 2011".
     private static readonly Regex DescriptorSuffixRegex = new(
-        @"\s+-\s+(?:remaster(?:ed)?(?:\s*\d{4})?|live(?:\s+at\s+.*)?|radio\s+edit|edit|version|mix|acoustic|instrumental|demo|mono|stereo)\b.*$",
+        @"\s+-\s+(?:remaster(?:ed)?(?:\s*\d{4})?|\d{4}\s+remaster(?:ed)?|mono|stereo|explicit|clean)\b.*$",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+    // The tail on its own, for deciding whether "A - B" is a descriptor after
+    // the song name ("Song - Remastered 2011") or the song after an artist
+    // ("Rick Astley - Never Gonna Give You Up").
+    private static readonly Regex VersionLabelRegex = new(
+        @"^(?:remaster(?:ed)?(?:\s*\d{4})?|\d{4}\s+remaster(?:ed)?|mono|stereo|explicit|clean)\b",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
     static LyricsClient()
@@ -42,15 +68,26 @@ public static class LyricsClient
     /// <summary>
     /// Master fetching algorithm combining YT Music metadata inference, LRCLIB 4-tier fallback, and YT Native fallback.
     /// </summary>
+    /// <param name="duration">
+    /// Length of the recording, when known. LRCLIB filters exact matches to a
+    /// ±2 s window, so passing it stops a remaster/edit from answering for the
+    /// track; it also scores search candidates. Null when unknown.
+    /// </param>
     /// <param name="cancellationToken">Cancels the search (e.g. the user started another one).</param>
-    public static async Task<string?> FetchLyricsAsync(string url, string title, string artist, bool preferTimed = true, CancellationToken cancellationToken = default)
+    public static async Task<string?> FetchLyricsAsync(
+        string url,
+        string title,
+        string artist,
+        bool preferTimed = true,
+        TimeSpan? duration = null,
+        CancellationToken cancellationToken = default)
     {
         using var budget = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         budget.CancelAfter(OverallTimeout);
 
         try
         {
-            return await FetchLyricsCoreAsync(url, title, artist, preferTimed, budget.Token);
+            return await FetchLyricsCoreAsync(url, title, artist, preferTimed, duration, budget.Token);
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
@@ -61,13 +98,15 @@ public static class LyricsClient
         }
     }
 
-    private static async Task<string?> FetchLyricsCoreAsync(string url, string title, string artist, bool preferTimed, CancellationToken ct)
+    private static async Task<string?> FetchLyricsCoreAsync(
+        string url, string title, string artist, bool preferTimed, TimeSpan? duration, CancellationToken ct)
     {
         url ??= string.Empty;
         title ??= string.Empty;
         artist ??= string.Empty;
 
         string videoId = "";
+        string? album = null;
 
         // 1. Clean Metadata Extraction via YouTube Music API
         if (!string.IsNullOrEmpty(url) && (url.Contains("youtube.com") || url.Contains("youtu.be")))
@@ -90,6 +129,36 @@ public static class LyricsClient
                                 title = tEl.GetString() ?? title;
                             if (string.IsNullOrWhiteSpace(artist) && details.TryGetProperty("author", out var aEl))
                                 artist = (aEl.GetString() ?? "").Replace(" - Topic", "");
+
+                            // The video length is the only duration we get for
+                            // a stream we have not started yet; the caller's
+                            // value (from a local file) wins when it has one.
+                            if ((duration is not { } knownDuration || knownDuration <= TimeSpan.Zero) &&
+                                details.TryGetProperty("lengthSeconds", out var lengthEl) &&
+                                lengthEl.ValueKind == JsonValueKind.String &&
+                                double.TryParse(lengthEl.GetString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out double seconds) &&
+                                seconds > 0)
+                            {
+                                duration = TimeSpan.FromSeconds(seconds);
+                            }
+
+                            // Auto-generated "Artist - Topic" uploads carry
+                            // structured credits in the description:
+                            //   Provided to YouTube by <label>
+                            //   <Song> · <Artist>
+                            //   <Album>
+                            //   ℗ <year> <label>
+                            // That is canonical metadata, so it beats the
+                            // video title (which is full of "(Official Video)"
+                            // noise) and the "Artist - Topic" channel name.
+                            if (details.TryGetProperty("shortDescription", out var descriptionEl) &&
+                                descriptionEl.ValueKind == JsonValueKind.String &&
+                                ParseTopicDescription(descriptionEl.GetString()) is { } topic)
+                            {
+                                title = topic.Title;
+                                artist = topic.Artist;
+                                album = topic.Album;
+                            }
                         }
                     }
                     else
@@ -104,12 +173,23 @@ public static class LyricsClient
             }
         }
 
-        string cleanedTitle = CleanTrackTitle(title, artist);
+        // Strip upload noise first, then split "Artist - Song". The split also
+        // runs when the artist is unknown (YouTube uploads usually say
+        // "Artist - Song"), which is what makes the LRCLIB artist-dependent
+        // tiers usable for playlist tracks that only carry a song title.
+        var (cleanedTitle, effectiveArtist) = CleanTrackMetadata(title, artist);
+        string baseTitle = StripVersionQualifiers(cleanedTitle);
+        string[] versionTags = ExtractVersionTags(cleanedTitle);
+
+        Log($"lrclib query: title='{cleanedTitle}' base='{baseTitle}' artist='{effectiveArtist}' " +
+            $"album='{album}' duration={(duration.HasValue ? $"{duration.Value.TotalSeconds:F0}s" : "?")}" +
+            $"{(versionTags.Length > 0 ? $" tags=[{string.Join(',', versionTags)}]" : "")}");
 
         // 2. Try LRCLIB (4-Tier Fallback Strategy)
         try
         {
-            string? lrcResult = await SearchLrcLibAsync(title, cleanedTitle, artist, preferTimed, ct);
+            string? lrcResult = await SearchLrcLibAsync(
+                cleanedTitle, baseTitle, effectiveArtist, versionTags, duration, preferTimed, ct);
             if (!string.IsNullOrWhiteSpace(lrcResult)) return lrcResult;
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
@@ -183,7 +263,14 @@ public static class LyricsClient
         return null;
     }
 
-    private static async Task<string?> SearchLrcLibAsync(string title, string cleanedTitle, string artist, bool preferTimed, CancellationToken ct)
+    private static async Task<string?> SearchLrcLibAsync(
+        string cleanedTitle,
+        string baseTitle,
+        string artist,
+        string[] versionTags,
+        TimeSpan? duration,
+        bool preferTimed,
+        CancellationToken ct)
     {
         string targetProp = preferTimed ? "syncedLyrics" : "plainLyrics";
         string fallbackProp = preferTimed ? "plainLyrics" : "syncedLyrics";
@@ -199,46 +286,78 @@ public static class LyricsClient
         // when the artist is unknown instead of burning two round-trips.
         if (!string.IsNullOrWhiteSpace(artist))
         {
-            var tier1 = await RequestExactLrcLibAsync(title, artist, targetProp, fallbackProp, ct);
+            // Tier 1 keeps recording qualifiers ("Song (Live)") when the title
+            // has them: that entry is the right one for that recording.
+            var tier1 = await RequestExactTierAsync(cleanedTitle, artist, duration, targetProp, fallbackProp, ct);
             if (tier1.Preferred != null) return tier1.Preferred;
             fallbackLyrics ??= tier1.Fallback;
 
-            if (!string.Equals(cleanedTitle, title, StringComparison.OrdinalIgnoreCase))
+            if (!string.Equals(baseTitle, cleanedTitle, StringComparison.OrdinalIgnoreCase))
             {
-                var tier2 = await RequestExactLrcLibAsync(cleanedTitle, artist, targetProp, fallbackProp, ct);
+                var tier2 = await RequestExactTierAsync(baseTitle, artist, duration, targetProp, fallbackProp, ct);
                 if (tier2.Preferred != null) return tier2.Preferred;
                 fallbackLyrics ??= tier2.Fallback;
             }
         }
 
-        // TIER 3: Fuzzy Search (Cleaned Title + Artist) - same artist required,
-        // otherwise the first same-titled song by ANY artist won.
-        string? tier3 = await RequestLrcLibSearchAsync(
-            $"{cleanedTitle} {artist}", cleanedTitle, artist, targetProp, requireArtistMatch: true, ct);
-        if (tier3 != null) return tier3;
+        // TIER 3: fuzzy search, same artist required. Skipped when the artist
+        // is unknown: with an empty artist this is the EXACT same query as
+        // Tier 4 (ArtistMatches returns true for ""), so it could only add a
+        // duplicate round-trip.
+        if (!string.IsNullOrWhiteSpace(artist))
+        {
+            var tier3 = await RequestLrcLibSearchAsync(
+                $"{baseTitle} {artist}", baseTitle, artist, versionTags, duration,
+                targetProp, fallbackProp, requireArtistMatch: true, ct);
+            if (tier3.Preferred != null) return tier3.Preferred;
+            fallbackLyrics ??= tier3.Fallback;
+        }
 
-        // TIER 4: Fuzzy Search (Cleaned Title ONLY) - recall over precision.
-        string? tier4 = await RequestLrcLibSearchAsync(
-            cleanedTitle, cleanedTitle, artist, targetProp, requireArtistMatch: false, ct);
-        if (tier4 != null) return tier4;
+        // TIER 4: fuzzy search, cleaned title only - recall over precision, the
+        // scoring step still picks the best candidate.
+        var tier4 = await RequestLrcLibSearchAsync(
+            baseTitle, baseTitle, artist, versionTags, duration,
+            targetProp, fallbackProp, requireArtistMatch: false, ct);
+        if (tier4.Preferred != null) return tier4.Preferred;
+        fallbackLyrics ??= tier4.Fallback;
 
         return fallbackLyrics;
     }
 
+    /// <summary>
+    /// Exact lookup with the duration filter, retried without it when nothing
+    /// matched. A music video's length includes its intro/outro, so the strict
+    /// ±2 s window can reject the studio entry that is still the right song.
+    /// </summary>
+    private static async Task<(string? Preferred, string? Fallback)> RequestExactTierAsync(
+        string trackName, string artist, TimeSpan? duration, string targetProp, string fallbackProp, CancellationToken ct)
+    {
+        var strict = await RequestExactLrcLibAsync(trackName, artist, duration, targetProp, fallbackProp, ct);
+        if (strict.Preferred != null || duration == null)
+            return strict;
+
+        var lenient = await RequestExactLrcLibAsync(trackName, artist, null, targetProp, fallbackProp, ct);
+        return (lenient.Preferred, strict.Fallback ?? lenient.Fallback);
+    }
+
     private static async Task<(string? Preferred, string? Fallback)> RequestExactLrcLibAsync(
-        string trackName, string artist, string targetProp, string fallbackProp, CancellationToken ct)
+        string trackName, string artist, TimeSpan? duration, string targetProp, string fallbackProp, CancellationToken ct)
     {
         try
         {
-            using var response = await SharedClient.GetAsync(
-                $"https://lrclib.net/api/get?track_name={Uri.EscapeDataString(trackName)}&artist_name={Uri.EscapeDataString(artist)}",
-                ct);
+            string requestUrl =
+                $"https://lrclib.net/api/get?track_name={Uri.EscapeDataString(trackName)}&artist_name={Uri.EscapeDataString(artist)}";
+            string? seconds = DurationParameter(duration);
+            if (seconds != null)
+                requestUrl += $"&duration={seconds}";
+
+            using var response = await SharedClient.GetAsync(requestUrl, ct);
 
             if (!response.IsSuccessStatusCode)
             {
                 // 404 is the normal "no exact match"; 429 and 5xx are worth a log.
                 if ((int)response.StatusCode != 404)
-                    Log($"lrclib get '{trackName}' -> HTTP {(int)response.StatusCode}");
+                    Log($"lrclib get '{trackName}' {(seconds != null ? $"({seconds}s) " : "")}-> HTTP {(int)response.StatusCode}");
                 return (null, null);
             }
 
@@ -257,8 +376,25 @@ public static class LyricsClient
         }
     }
 
-    private static async Task<string?> RequestLrcLibSearchAsync(
-        string query, string cleanedTitle, string artist, string targetProp, bool requireArtistMatch, CancellationToken ct)
+    /// <summary>Durations are whole seconds, invariant, or null when unknown.</summary>
+    private static string? DurationParameter(TimeSpan? duration)
+    {
+        if (duration is not { } value || value <= TimeSpan.Zero)
+            return null;
+
+        return ((int)Math.Round(value.TotalSeconds)).ToString(CultureInfo.InvariantCulture);
+    }
+
+    private static async Task<(string? Preferred, string? Fallback)> RequestLrcLibSearchAsync(
+        string query,
+        string baseTitle,
+        string artist,
+        string[] versionTags,
+        TimeSpan? duration,
+        string targetProp,
+        string fallbackProp,
+        bool requireArtistMatch,
+        CancellationToken ct)
     {
         try
         {
@@ -268,44 +404,179 @@ public static class LyricsClient
             if (!response.IsSuccessStatusCode)
             {
                 Log($"lrclib search '{query}' -> HTTP {(int)response.StatusCode}");
-                return null;
+                return (null, null);
             }
 
-            return ParseLrclibSearch(await response.Content.ReadAsStringAsync(ct), cleanedTitle, artist, targetProp, requireArtistMatch);
+            return ParseLrclibSearch(
+                await response.Content.ReadAsStringAsync(ct),
+                baseTitle, artist, versionTags, duration, targetProp, fallbackProp, requireArtistMatch);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             Log($"lrclib search '{query}' failed: {ex.Message}");
-            return null;
+            return (null, null);
         }
     }
 
-    private static string CleanTrackTitle(string title, string artist)
+    /// <summary>
+    /// Separates upload noise from the actual "artist + song", returning both so
+    /// the artist-dependent LRCLIB tiers work even when the caller only has a
+    /// video title.
+    /// </summary>
+    private static (string Title, string Artist) CleanTrackMetadata(string rawTitle, string artist)
     {
-        if (string.IsNullOrWhiteSpace(title)) return "";
-        string cleaned = title;
+        if (string.IsNullOrWhiteSpace(rawTitle))
+            return ("", artist?.Trim() ?? "");
 
-        cleaned = BracketNoiseRegex.Replace(cleaned, "");
+        string cleaned = UploadNoiseRegex.Replace(rawTitle, "");
+        cleaned = Regex.Replace(cleaned, @"\s{2,}", " ").Trim();
 
-        // "Artist - Song": drop the artist prefix only when we actually know
-        // the artist. The old code always took the LAST dash segment, which
-        // turned "Bohemian Rhapsody - Remastered 2011" into "Remastered 2011".
+        string effectiveArtist = artist?.Trim() ?? "";
+
+        // "Artist - Song", the usual YouTube layout. With a known artist the
+        // prefix is dropped only when it IS that artist (the old code always
+        // took the last dash segment, which turned "Bohemian Rhapsody -
+        // Remastered 2011" into "Remastered 2011"). With no artist, the left
+        // side becomes the artist when it reads like a name and the right side
+        // is not just a version label.
         int dash = cleaned.IndexOf(" - ", StringComparison.Ordinal);
-        if (dash > 0 && !string.IsNullOrWhiteSpace(artist) &&
-            cleaned[..dash].Trim().Equals(artist.Trim(), StringComparison.OrdinalIgnoreCase))
+        if (dash > 0)
         {
-            cleaned = cleaned[(dash + 3)..];
+            string left = cleaned[..dash].Trim();
+            string right = cleaned[(dash + 3)..].Trim();
+
+            if (effectiveArtist.Length > 0 && left.Equals(effectiveArtist, StringComparison.OrdinalIgnoreCase))
+            {
+                cleaned = right;
+            }
+            else if (effectiveArtist.Length == 0 && right.Length > 0 &&
+                     !IsVersionLabel(right) && LooksLikeArtistName(left))
+            {
+                effectiveArtist = left;
+                cleaned = right;
+            }
         }
 
-        // Strip a descriptor tail ("- Remastered 2011", "- Live at Wembley")
-        // from what is left, keeping the song name.
+        // Strip a mastering tail ("- Remastered 2011") from what is left,
+        // keeping the song name.
         cleaned = DescriptorSuffixRegex.Replace(cleaned, "");
 
         cleaned = Regex.Replace(cleaned, @"^(track\s*\d+|\d+)[\s\.\-\:]+", "", RegexOptions.IgnoreCase);
         if (cleaned.Contains(" | ")) cleaned = cleaned.Split(" | ").First();
 
-        return cleaned.Trim();
+        return (cleaned.Trim(), effectiveArtist);
     }
+
+    /// <summary>
+    /// True for a dash tail naming a version ("Live at Wembley", "Remastered 2011").
+    /// </summary>
+    private static bool IsVersionLabel(string text) =>
+        VersionQualifierRegex.IsMatch(text) || VersionLabelRegex.IsMatch(text);
+
+    /// <summary>
+    /// Credits of an auto-generated "Artist - Topic" upload, read from the
+    /// description YouTube builds for it:
+    /// <code>
+    /// Provided to YouTube by Universal Music Group
+    ///
+    /// Yesterday · The Beatles
+    ///
+    /// 1 (Remastered)
+    ///
+    /// ℗ 2015 Calderstone Productions Limited
+    /// </code>
+    /// Returns null for a normal creator-written description, so nothing is
+    /// invented when the upload is not an art track.
+    /// </summary>
+    private static (string Title, string Artist, string? Album)? ParseTopicDescription(string? description)
+    {
+        if (string.IsNullOrWhiteSpace(description))
+            return null;
+
+        var lines = description
+            .Split('\n', StringSplitOptions.RemoveEmptyEntries)
+            .Select(line => line.Trim())
+            .Where(line => line.Length > 0)
+            .ToArray();
+
+        if (lines.Length < 2 ||
+            !lines[0].StartsWith("Provided to YouTube by", StringComparison.OrdinalIgnoreCase))
+            return null;
+
+        // The credits line is "<Song> · <Artist>"; the album follows on the
+        // next line and the label/licence is after that.
+        for (int i = 1; i < lines.Length; i++)
+        {
+            const string Separator = " · ";
+            int split = lines[i].IndexOf(Separator, StringComparison.Ordinal);
+            if (split <= 0)
+                continue;
+
+            string topicTitle = lines[i][..split].Trim();
+            string topicArtist = lines[i][(split + Separator.Length)..].Trim();
+            if (topicTitle.Length == 0 || topicArtist.Length == 0)
+                continue;
+
+            string? topicAlbum = null;
+            if (i + 1 < lines.Length)
+            {
+                string candidate = lines[i + 1];
+                if (!candidate.StartsWith('℗') &&
+                    !candidate.StartsWith("Released on", StringComparison.OrdinalIgnoreCase) &&
+                    !candidate.StartsWith("Auto-generated", StringComparison.OrdinalIgnoreCase))
+                {
+                    topicAlbum = candidate;
+                }
+            }
+
+            return (topicTitle, topicArtist, topicAlbum);
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// A dash head that reads like an artist name rather than the first half of
+    /// a song title: short, no version qualifier, not a bare number.
+    /// </summary>
+    private static bool LooksLikeArtistName(string text)
+    {
+        if (text.Length is < 2 or > 60) return false;
+        if (VersionQualifierRegex.IsMatch(text)) return false;
+
+        return !Regex.IsMatch(text, @"^\d+$");
+    }
+
+    /// <summary>
+    /// The cleaned title with recording qualifiers removed ("Song (Live)" ->
+    /// "Song"). Used as the LATER, less precise lookup: the tagged title is
+    /// tried first, so a live/remix entry still wins when one exists.
+    /// </summary>
+    private static string StripVersionQualifiers(string cleanedTitle)
+    {
+        string stripped = VersionQualifierBracketRegex.Replace(cleanedTitle, "");
+        stripped = VersionQualifierSuffixRegex.Replace(stripped, "");
+        stripped = Regex.Replace(stripped, @"\s{2,}", " ").Trim();
+
+        return stripped.Length > 0 ? stripped : cleanedTitle;
+    }
+
+    /// <summary>
+    /// Normalized recording qualifiers ("live", "remix", "instrumental" ...).
+    /// </summary>
+    private static string[] ExtractVersionTags(string text)
+    {
+        if (string.IsNullOrWhiteSpace(text)) return [];
+
+        return VersionQualifierRegex.Matches(text)
+            .Select(match => NormalizeTag(match.Value))
+            .Where(tag => tag.Length > 0)
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+    }
+
+    private static string NormalizeTag(string tag) =>
+        Regex.Replace(tag.ToLowerInvariant(), @"[^a-z0-9]", "");
 
     private static bool TitleMatches(string resultTitle, string cleanTitle)
     {
@@ -356,42 +627,123 @@ public static class LyricsClient
         return string.IsNullOrWhiteSpace(value) ? null : value;
     }
 
-    private static string? ParseLrclibSearch(string jsonStr, string cleanedTitle, string artist, string targetProp, bool requireArtistMatch)
+    /// <summary>
+    /// Picks the best candidate instead of the first title match, and returns
+    /// BOTH lyrics kinds so a plain-only entry found by search is not lost when
+    /// synced lyrics were preferred (previously only the exact tiers kept it).
+    /// </summary>
+    private static (string? Preferred, string? Fallback) ParseLrclibSearch(
+        string jsonStr,
+        string baseTitle,
+        string artist,
+        string[] versionTags,
+        TimeSpan? duration,
+        string targetProp,
+        string fallbackProp,
+        bool requireArtistMatch)
     {
         using var doc = JsonDocument.Parse(jsonStr);
         if (doc.RootElement.ValueKind != JsonValueKind.Array)
-            return null;
+            return (null, null);
 
-        string? titleOnlyMatch = null;
+        (string? Preferred, string? Fallback) best = (null, null);
+        int bestScore = 0;
 
         foreach (var result in doc.RootElement.EnumerateArray())
         {
             if (result.ValueKind != JsonValueKind.Object)
                 continue;
 
-            string? lrc = ReadLyricsProperty(result, targetProp);
-            if (lrc == null)
+            string? preferred = ReadLyricsProperty(result, targetProp);
+            string? fallback = ReadLyricsProperty(result, fallbackProp);
+            if (preferred == null && fallback == null)
                 continue;
 
-            string foundTitle = result.TryGetProperty("trackName", out var tn) && tn.ValueKind == JsonValueKind.String
-                ? tn.GetString() ?? ""
-                : "";
-
-            if (!TitleMatches(foundTitle, cleanedTitle))
+            string foundTitle = ReadString(result, "trackName");
+            if (!TitleMatches(foundTitle, baseTitle))
                 continue;
 
-            string foundArtist = result.TryGetProperty("artistName", out var an) && an.ValueKind == JsonValueKind.String
-                ? an.GetString() ?? ""
-                : "";
+            string foundArtist = ReadString(result, "artistName");
+            bool artistMatches = ArtistMatches(foundArtist, artist);
+            if (requireArtistMatch && !artistMatches)
+                continue;
 
-            if (ArtistMatches(foundArtist, artist))
-                return lrc;
+            int score = ScoreCandidate(result, foundTitle, baseTitle, artistMatches,
+                artistIsKnown: !string.IsNullOrWhiteSpace(artist), versionTags, duration);
+            if (score <= bestScore)
+                continue;
 
-            titleOnlyMatch ??= lrc;
+            bestScore = score;
+            best = (preferred, fallback);
         }
 
-        return requireArtistMatch ? null : titleOnlyMatch;
+        return best;
     }
+
+    /// <summary>
+    /// Weighted confidence for one search candidate: title, artist, recording
+    /// qualifier parity, instrumental flag, then duration proximity.
+    /// </summary>
+    /// <remarks>
+    /// Duration is a strong signal but deliberately NOT a hard reject beyond a
+    /// few seconds: a music video's length includes its intro, so the studio
+    /// entry is usually 10-30 s off and still the only correct lyrics.
+    /// </remarks>
+    private static int ScoreCandidate(
+        JsonElement result,
+        string foundTitle,
+        string baseTitle,
+        bool artistMatches,
+        bool artistIsKnown,
+        string[] versionTags,
+        TimeSpan? duration)
+    {
+        int score = string.Equals(NormalizeForMatch(foundTitle), NormalizeForMatch(baseTitle), StringComparison.Ordinal)
+            ? 100
+            : 60; // word-boundary substring match, already checked by TitleMatches
+
+        if (artistIsKnown)
+            score += artistMatches ? 40 : -60;
+
+        // Recording qualifier parity: a live/remix/instrumental entry must not
+        // pass for the studio recording, and vice versa.
+        string[] candidateTags = ExtractVersionTags(foundTitle);
+        foreach (string tag in versionTags)
+        {
+            if (!candidateTags.Contains(tag, StringComparer.Ordinal))
+                score -= 35;
+        }
+
+        foreach (string tag in candidateTags)
+        {
+            if (!versionTags.Contains(tag, StringComparer.Ordinal))
+                score -= 20;
+        }
+
+        bool candidateInstrumental =
+            result.TryGetProperty("instrumental", out JsonElement instrumentalEl) &&
+            instrumentalEl.ValueKind == JsonValueKind.True;
+        if (candidateInstrumental && !versionTags.Contains("instrumental", StringComparer.Ordinal))
+            score -= 60;
+
+        if (duration is { } wanted && wanted > TimeSpan.Zero &&
+            result.TryGetProperty("duration", out JsonElement durationEl) &&
+            durationEl.ValueKind == JsonValueKind.Number &&
+            durationEl.TryGetDouble(out double candidateSeconds))
+        {
+            double delta = Math.Abs(candidateSeconds - wanted.TotalSeconds);
+            if (delta <= 2) score += 25;
+            else if (delta <= 5) score += 10;
+            else if (delta > 12) score -= 25;
+        }
+
+        return score;
+    }
+
+    private static string ReadString(JsonElement element, string propertyName) =>
+        element.TryGetProperty(propertyName, out JsonElement value) && value.ValueKind == JsonValueKind.String
+            ? value.GetString() ?? ""
+            : "";
 
     // Static lyrics: the "description" object holds an array of text runs.
     private static string? ExtractDescriptionText(JsonElement element)

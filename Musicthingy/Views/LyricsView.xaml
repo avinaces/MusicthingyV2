@@ -81,7 +81,7 @@
                 <!-- Static (plain text) Lyrics - same look, no highlight/follow features -->
                 <ScrollView VerticalOptions="Fill" IsVisible="{Binding HasStaticLyrics}">
                         <VerticalStackLayout>
-                                <Label Text="{Binding CurrentTrack.Lyrics}"
+                                <Label Text="{Binding StaticLyricsText}"
                                            TextColor="{DynamicResource MutedColor}"
                                            FontAttributes="Bold"
                                            FontSize="22"

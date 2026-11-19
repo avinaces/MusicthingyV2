@@ -3,6 +3,9 @@ using CommunityToolkit.Mvvm.Input;
 using Musicthingy.Models;
 using Musicthingy.Services;
 using System.Collections.ObjectModel;
+using System.Diagnostics;
+using System.Globalization;
+using System.Text;
 using System.Text.RegularExpressions;
 
 namespace Musicthingy.ViewModels;
@@ -13,6 +16,11 @@ public partial class MainViewModel
     [ObservableProperty] public partial bool HasNoLyrics { get; set; }
     [ObservableProperty] public partial bool HasTimedLyrics { get; set; }
     [ObservableProperty] public partial bool HasStaticLyrics { get; set; }
+
+    // Source for the static lyrics label. Normally the track's raw lyrics, but
+    // a file that failed the timed sanity checks is shown here with its LRC
+    // tags stripped instead of as "[00:12.00] line" noise.
+    [ObservableProperty] public partial string? StaticLyricsText { get; set; }
 
     public ObservableCollection<TimedLyric> ActiveTimedLyrics { get; } = new();
 
@@ -39,6 +47,30 @@ public partial class MainViewModel
         "ترجمة", "romaniz", "romaji", "subtitle", "singer", "performed", "written",
     };
 
+    // LRC global shift tag: "[offset:+500]" means every line appears 500 ms
+    // later, "[offset:-200]" 200 ms earlier. Ignoring it (the old behaviour)
+    // left whole files half a second out of sync. A bare number is positive.
+    private static readonly Regex OffsetTagRegex = new(
+        @"(?im)^[ \t]*\[offset:[ \t]*(?<ms>[+-]?\d{1,6})[ \t]*\]",
+        RegexOptions.Compiled);
+
+    // A lyrics file that claims a timestamp past this is corrupt (or the tag
+    // was misread) - a single stray line at 10h would otherwise be kept and
+    // flag the whole file as "timed" while nothing ever highlights.
+    private static readonly TimeSpan MaxLyricTimestamp = TimeSpan.FromHours(4);
+
+    // LRC metadata tags ("[ar:]", "[ti:]", "[al:]", "[by:]" ...). Not lyrics,
+    // and TimestampRegex ignores most of them - this catches the ones a file
+    // might leave behind when it is shown as static text.
+    private static readonly Regex LrcMetadataTagRegex = new(
+        @"^\[(?:ar|al|ti|by|re|ve|length|offset|tool|id|la|au|sign|hash):[^\]]*\]$",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+    // Fewer timed lines than this is not a sync track: it is one stray tag in
+    // an otherwise plain text file ("[Chorus]"), which used to switch the
+    // whole view to timed mode with a single line and no follow at all.
+    private const int MinTimedLyricLines = 2;
+
     // Timestamps this close belong to the same "line slot" - that is where
     // bilingual files put the original and its translation.
     private const double InterleavedTranslationWindowMs = 100;
@@ -57,10 +89,17 @@ public partial class MainViewModel
         HasNoLyrics = string.IsNullOrWhiteSpace(rawLyrics);
         HasTimedLyrics = false;
         HasStaticLyrics = false;
+        // The static view binds this rather than CurrentTrack.Lyrics because a
+        // file that fails the timed sanity checks is shown here WITHOUT its
+        // "[mm:ss]" tags.
+        StaticLyricsText = rawLyrics;
 
         if (HasNoLyrics || rawLyrics == null) return;
 
         var lines = rawLyrics.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
+
+        // The file-wide shift applies to every timestamp in it.
+        TimeSpan offset = TimeSpan.FromMilliseconds(ReadOffsetMilliseconds(rawLyrics));
 
         bool hasTimed = false;
         var lyricMap = new Dictionary<TimeSpan, string>();
@@ -79,7 +118,16 @@ public partial class MainViewModel
 
             foreach (Match match in matches)
             {
-                TimeSpan time = ParseTimestamp(match);
+                TimeSpan time = ParseTimestamp(match) + offset;
+
+                // A negative offset can push the first lines before the start
+                // of the audio; they belong at 0 or cannot be shown at all.
+                if (time < TimeSpan.Zero) time = TimeSpan.Zero;
+                if (time > MaxLyricTimestamp)
+                {
+                    Debug.WriteLine($"[Lyrics] dropped timestamp past {MaxLyricTimestamp.TotalHours:F0}h: {time}");
+                    continue;
+                }
 
                 // Filter out fake "metadata" disguising as lyrics in the
                 // intro. Only lines that are actually dropped count as
@@ -93,6 +141,12 @@ public partial class MainViewModel
                     hasTimed = true;
             }
         }
+
+        // "hasTimed" only says SOME line carried text; a one-line file is not
+        // a usable sync track. Count the real lines before switching modes.
+        int timedLineCount = lyricMap.Count(kvp => !string.IsNullOrWhiteSpace(kvp.Value));
+        if (timedLineCount < MinTimedLyricLines)
+            hasTimed = false;
 
         if (hasTimed)
         {
@@ -115,7 +169,75 @@ public partial class MainViewModel
         else
         {
             HasStaticLyrics = true;
+            // Only files that actually carried timestamps need their tags
+            // stripped; plain lyrics keep their blank lines between stanzas.
+            StaticLyricsText = lyricMap.Count > 0 ? BuildStaticText(rawLyrics) : rawLyrics;
         }
+    }
+
+    /// <summary>
+    /// The "[offset:]" value in milliseconds, 0 when the file has none.
+    /// </summary>
+    private static double ReadOffsetMilliseconds(string rawLyrics)
+    {
+        var match = OffsetTagRegex.Match(rawLyrics);
+        if (!match.Success)
+            return 0;
+
+        return int.TryParse(match.Groups["ms"].Value, NumberStyles.Integer, CultureInfo.InvariantCulture, out int ms)
+            ? ms
+            : 0;
+    }
+
+    /// <summary>
+    /// Plain text of a file that carried timestamps but is shown statically:
+    /// the line text is kept, the tags and "[ar:...]"-style metadata are
+    /// stripped, and a single blank line is preserved where the file had one
+    /// (that is the stanza break).
+    /// </summary>
+    private static string BuildStaticText(string rawLyrics)
+    {
+        var builder = new StringBuilder();
+        bool lastLineWasBlank = true; // suppress leading blank lines
+
+        foreach (string rawLine in rawLyrics.Split('\n'))
+        {
+            string line = rawLine.TrimEnd('\r').Trim();
+            if (line.Length == 0)
+            {
+                if (!lastLineWasBlank)
+                {
+                    builder.AppendLine();
+                    lastLineWasBlank = true;
+                }
+                continue;
+            }
+
+            if (LrcMetadataTagRegex.IsMatch(line))
+                continue;
+
+            var matches = TimestampRegex.Matches(line);
+            if (matches.Count > 0)
+            {
+                Match last = matches[matches.Count - 1];
+                line = line[(last.Index + last.Length)..].Trim();
+                if (line.Length == 0)
+                {
+                    // A bare "[00:30.00]" is a break in the song, not a line.
+                    if (!lastLineWasBlank)
+                    {
+                        builder.AppendLine();
+                        lastLineWasBlank = true;
+                    }
+                    continue;
+                }
+            }
+
+            builder.AppendLine(line);
+            lastLineWasBlank = false;
+        }
+
+        return builder.Length > 0 ? builder.ToString().Trim() : rawLyrics;
     }
 
     /// <summary>
@@ -222,6 +344,21 @@ public partial class MainViewModel
             active.IsActive = true;
     }
 
+    /// <summary>
+    /// Parses the current track's lyrics again. The view model only does that
+    /// on a track change, so after the Edit Track sheet replaced the text the
+    /// pane kept showing the old lines (or none) until another track started.
+    /// </summary>
+    public void RefreshLyricsView()
+    {
+        ParseLyrics(CurrentTrack?.Lyrics);
+
+        // A track may be paused mid-song; without this the highlight stays
+        // blank until the next playback tick.
+        if (HasTimedLyrics)
+            SyncActiveLyric(CurrentPosition);
+    }
+
     [RelayCommand]
     private async Task FindLyricsAsync()
     {
@@ -249,7 +386,13 @@ public partial class MainViewModel
             string? newLyrics = await LyricsClient.FetchLyricsAsync(
                 targetTrack.Url ?? string.Empty,
                 targetTrack.Title ?? string.Empty,
-                targetTrack.Artist ?? string.Empty,
+                // ExternalArtist, NOT PlaylistItem.Artist: that property falls
+                // back to the playlist name ("Favorites", "Workout"), which
+                // was sent to LRCLIB as the artist, stopped LyricsClient from
+                // reading the real author from YouTube metadata, and disabled
+                // the "Artist - Song" title split.
+                targetTrack.ExternalArtist ?? string.Empty,
+                duration: targetTrack.Duration > TimeSpan.Zero ? targetTrack.Duration : null,
                 cancellationToken: cts.Token);
 
             if (generation != _lyricsFetchGeneration)

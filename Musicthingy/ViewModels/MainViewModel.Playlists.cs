@@ -539,6 +539,11 @@ public partial class MainViewModel
 
         if (result)
         {
+            // The sheet writes straight into the track object, and nothing
+            // re-parses its lyrics on a track that is already playing.
+            if (ReferenceEquals(track, CurrentTrack))
+                RefreshLyricsView();
+
             UpdateFilterTags();
             RefreshDisplayedItems();
             RequestSaveLibrary();

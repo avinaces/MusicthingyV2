@@ -492,8 +492,11 @@ public partial class MainViewModel
 
         if (newValue == null)
         {
-            ActiveTimedLyrics.Clear();
-            HasNoLyrics = true;
+            // Clears the timed list plus HasNoLyrics / HasTimedLyrics /
+            // HasStaticLyrics / StaticLyricsText in one place - the old code
+            // left HasStaticLyrics true after the queue ended, so the static
+            // pane stayed visible with the previous track's text.
+            ParseLyrics(null);
 
             _currentResolvedMedia = null;
             _currentResolvedMediaTrackUrl = null;
