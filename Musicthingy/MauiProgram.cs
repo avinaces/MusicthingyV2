@@ -44,6 +44,7 @@ namespace Musicthingy
 				new YouTubeResolverService(sp.GetRequiredService<IHttpClientFactory>()));
 
 			builder.Services.AddSingleton<Services.TrackCacheService>();
+			builder.Services.AddSingleton<Services.UpdateService>();
 
 
 #if WINDOWS

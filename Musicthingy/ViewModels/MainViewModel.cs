@@ -31,6 +31,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
     private readonly SettingsManager _settingsManager;
     private readonly TrackCacheService _trackCacheService;
     private readonly SearchService _searchService;
+    private readonly UpdateService _updateService;
 
     [ObservableProperty] public partial bool IsLoadingMedia { get; set; }
     [ObservableProperty] public partial double MediaDownloadProgress { get; set; }
@@ -346,7 +347,8 @@ public partial class MainViewModel : ObservableObject, IDisposable
         ColorExtractionService colorExtractionService,
         SettingsManager settingsManager,
         TrackCacheService trackCacheService,
-        SearchService searchService)
+        SearchService searchService,
+        UpdateService updateService)
     {
         _themeManager = themeManager;
         _youtubeResolver = youtubeResolver;
@@ -356,6 +358,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
         _settingsManager = settingsManager;
         _trackCacheService = trackCacheService;
         _searchService = searchService;
+        _updateService = updateService;
 
 
         _cleanupOldInstances?.Invoke();
@@ -366,6 +369,10 @@ public partial class MainViewModel : ObservableObject, IDisposable
         InitializePlaybackService();
 
         Task.Run(LoadStateAsync);
+
+        // Release check runs in the background and never blocks the launch; the
+        // prompt itself waits for the restored session (MainViewModel.Update.cs).
+        CheckForUpdatesInBackground();
 
         WeakReferenceMessenger.Default.Register<MediaControlMessage>(this, (r, m) => OnMediaControlMessage(m));
 
