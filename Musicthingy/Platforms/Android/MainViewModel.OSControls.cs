@@ -376,8 +376,11 @@ public partial class MainViewModel
         private readonly MainViewModel _vm;
         public CustomMediaSessionCallback(MainViewModel vm) { _vm = vm; }
 
-        public override void OnPlay() => MainThread.BeginInvokeOnMainThread(() => _vm.TogglePlayCommand.Execute(null));
-        public override void OnPause() => MainThread.BeginInvokeOnMainThread(() => _vm.TogglePlayCommand.Execute(null));
+        // Explicit play/pause (not TogglePlay): a headset's PAUSE command must
+        // never UNPAUSE when the OS and app states have drifted apart, and
+        // OnPlay must never pause an already-playing stream.
+        public override void OnPlay() => MainThread.BeginInvokeOnMainThread(() => _vm.PlayCommand.Execute(null));
+        public override void OnPause() => MainThread.BeginInvokeOnMainThread(() => _vm.PauseCommand.Execute(null));
         public override void OnSkipToNext() => MainThread.BeginInvokeOnMainThread(() => _vm.PlayNextCommand.Execute(null));
         public override void OnSkipToPrevious() => MainThread.BeginInvokeOnMainThread(() => _vm.PlayPreviousCommand.Execute(null));
 

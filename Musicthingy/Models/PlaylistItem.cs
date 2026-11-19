@@ -46,9 +46,29 @@ public partial class PlaylistItem : ObservableObject
     [JsonIgnore]
     public bool IsResolutionAttempted { get; set; }
 
+    /// <summary>
+    /// Artist for a track opened from outside the library (Intent.ActionView).
+    /// Normal tracks have no value here - <see cref="Artist"/> falls back to the
+    /// playlist name, which is how the UI has always labelled the "artist".
+    /// Not persisted: external tracks live only in the playback queue.
+    /// </summary>
+    [JsonIgnore]
+    public string? ExternalArtist { get; set; }
+
+    /// <summary>
+    /// True while this track's URL is covered by a temporary permission grant
+    /// from the intent that opened it (ACTION_VIEW content:// URI). Playback
+    /// must not ask for storage permission in that case - the grant already
+    /// allows reading this one file, and READ_MEDIA_AUDIO would not.
+    /// </summary>
+    [JsonIgnore]
+    public bool HasTemporaryReadGrant { get; set; }
+
     // Helper to combine Playlist tags and Item tags
     [JsonIgnore]
-    public string? Artist => SourcePlaylist?.Name ?? Playlist?.Name;
+    public string? Artist => !string.IsNullOrWhiteSpace(ExternalArtist)
+        ? ExternalArtist
+        : (SourcePlaylist?.Name ?? Playlist?.Name);
 
     private List<string> AllDisplayTags =>
         ((SourcePlaylist ?? Playlist)?.Tags ?? Enumerable.Empty<string>())

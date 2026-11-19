@@ -367,19 +367,38 @@ public partial class MainViewModel : ObservableObject, IDisposable
 
         Task.Run(LoadStateAsync);
 
-        WeakReferenceMessenger.Default.Register<MediaControlMessage>(this, (r, m) =>
-        {
-            if (m.Action == "Next" && PlayNextCommand.CanExecute(null))
-                PlayNextCommand.Execute(null);
-            else if (m.Action == "Previous" && PlayPreviousCommand.CanExecute(null))
-                PlayPreviousCommand.Execute(null);
-            else if (m.Action == "PlayPause" && TogglePlayCommand.CanExecute(null))
-                TogglePlayCommand.Execute(null);
-            else if (m.Action == "ScrollToCurrentTrack")
-                ScrollToCurrentTrack();
-            else if (m.Action == "PlayVideo" && !string.IsNullOrEmpty(m.VideoId))
-                _ = PlayVideoByIdAsync(m.VideoId, m.StartSeconds);
-        });
+        WeakReferenceMessenger.Default.Register<MediaControlMessage>(this, (r, m) => OnMediaControlMessage(m));
+
+#if ANDROID
+        // A VIEW / PLAY_VIDEO intent delivered before this registration was
+        // buffered by MainActivity - drain it now so a cold start from another
+        // app still plays. (Runs on the UI thread; the handler starts async work.)
+        if (global::Musicthingy.MainActivity.ConsumePendingLaunchMessage() is { } pending)
+            OnMediaControlMessage(pending);
+#endif
+    }
+
+    /// <summary>
+    /// Single entry point for OS/notification/other-app media commands.
+    /// Sets <see cref="MediaControlMessage.Consumed"/> so MainActivity knows the
+    /// message was handled and does not need to buffer it for a later start.
+    /// </summary>
+    private void OnMediaControlMessage(MediaControlMessage message)
+    {
+        message.Consumed = true;
+
+        if (message.Action == "Next" && PlayNextCommand.CanExecute(null))
+            PlayNextCommand.Execute(null);
+        else if (message.Action == "Previous" && PlayPreviousCommand.CanExecute(null))
+            PlayPreviousCommand.Execute(null);
+        else if (message.Action == "PlayPause" && TogglePlayCommand.CanExecute(null))
+            TogglePlayCommand.Execute(null);
+        else if (message.Action == "ScrollToCurrentTrack")
+            ScrollToCurrentTrack();
+        else if (message.Action == "PlayVideo" && !string.IsNullOrEmpty(message.VideoId))
+            _ = PlayVideoByIdAsync(message.VideoId, message.StartSeconds);
+        else if (message.Action == "PlayUri" && !string.IsNullOrEmpty(message.Uri))
+            _ = PlayExternalUriAsync(message);
     }
 
     // Partial declaration bridging to the platform-specific files

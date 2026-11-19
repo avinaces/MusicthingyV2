@@ -311,6 +311,47 @@ public partial class MainViewModel
         }).ConfigureAwait(false);
     }
 
+    /// <summary>
+    /// Plays an audio file or stream opened from another app
+    /// (Intent.ActionView - "Open with Musicthingy").
+    /// </summary>
+    /// <remarks>
+    /// The URI is played DIRECTLY: ExoPlayer's DefaultDataSource understands
+    /// content://, file:// and plain paths, so nothing needs copying just to
+    /// play. The intent's temporary read grant covers this URI for the lifetime
+    /// of the task, which is exactly as long as a non-persisted track lives.
+    /// The queue is replaced (like the debug PlayVideo path) so next/previous
+    /// cannot jump into the user's real playlist while an external file plays.
+    /// </remarks>
+    private async Task PlayExternalUriAsync(MediaControlMessage message)
+    {
+        if (string.IsNullOrWhiteSpace(message.Uri)) return;
+
+        // Startup restores the previous track a moment after the intent is
+        // delivered and would otherwise replace the opened file.
+        for (int i = 0; i < 50 && SettingsManager.IsRestoringState; i++)
+            await Task.Delay(200).ConfigureAwait(false);
+
+        PlaylistItem item = new()
+        {
+            Title = string.IsNullOrWhiteSpace(message.Title) ? "Audio Track" : message.Title,
+            Url = message.Uri,
+            Duration = message.DurationMs > 0 ? TimeSpan.FromMilliseconds(message.DurationMs) : TimeSpan.Zero,
+            IconUrl = message.ArtworkPath ?? string.Empty,
+            ExternalArtist = message.Artist,
+            HasTemporaryReadGrant = true,
+        };
+
+        System.Diagnostics.Debug.WriteLine($"[External] PlayUri {message.Uri} ({message.Title} / {message.Artist})");
+
+        await MainThread.InvokeOnMainThreadAsync(() =>
+        {
+            PlaybackQueue.Clear();
+            PlaybackQueue.Add(item);
+            CurrentTrack = item;
+        }).ConfigureAwait(false);
+    }
+
     [RelayCommand]
     public void Play()
     {
@@ -431,7 +472,11 @@ public partial class MainViewModel
         _lastTrackSkipped = null;
         _hasIncrementedViewForCurrentTrack = false; // Reset view tracker on track change
 
-        if (!SettingsManager.IsRestoringState && newValue != null)
+        // External (ACTION_VIEW) tracks are not part of any playlist and their
+        // content:// grant dies with the task, so they must not overwrite the
+        // saved "last played" restore target - otherwise the next cold start
+        // restores nothing.
+        if (!SettingsManager.IsRestoringState && newValue != null && !newValue.HasTemporaryReadGrant)
         {
             var currentRef = new QueueItemRef
             {

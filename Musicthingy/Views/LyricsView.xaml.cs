@@ -293,6 +293,11 @@ public partial class LyricsView : ContentView
     public void PrepareForAnimation()
     {
         NoLyricsPrompt.IsVisible = true;
+
+        // The pane is about to grow into view. Restore the wrapped-row
+        // measurement budget that a collapsed control (zero width, nothing
+        // measurable) may have burned through while it was hidden.
+        _splitRetriesLeft = 20;
     }
 
     /// <summary>

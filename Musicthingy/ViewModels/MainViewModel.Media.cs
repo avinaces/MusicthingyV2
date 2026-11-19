@@ -204,7 +204,11 @@ public partial class MainViewModel
         // ==========================================
         // LOCAL FILE PERMISSION CHECK
         // ==========================================
-        if (!string.IsNullOrEmpty(newValue.Url) &&
+        // Skipped for a file opened via ACTION_VIEW: the intent carries a
+        // temporary read grant for that one URI, which READ_MEDIA_AUDIO would
+        // neither grant nor be needed for.
+        if (!newValue.HasTemporaryReadGrant &&
+           !string.IsNullOrEmpty(newValue.Url) &&
            (newValue.Url.StartsWith("/") || newValue.Url.StartsWith("file://") || newValue.Url.StartsWith("content://")))
         {
             var status = await Permissions.CheckStatusAsync<Helpers.LocalFilesPermission>();
@@ -572,7 +576,9 @@ public partial class MainViewModel
             widgetIconUrl = !string.IsNullOrEmpty(pl?.IconUrl) ? pl.IconUrl : track.IconUrl ?? string.Empty;
         }
 
-        _ = UpdateOSMediaWidgetsAsync(track.Title, pl?.Name ?? "Musicthingy", widgetIconUrl);
+        // track.Artist already prefers an external track's own artist over the
+        // playlist name, so an "Open with" file shows the real artist.
+        _ = UpdateOSMediaWidgetsAsync(track.Title, track.Artist ?? "Musicthingy", widgetIconUrl);
     }
 
     private async Task ResolveSingleTrackDurationAsync(PlaylistItem track, CancellationToken cancellationToken)

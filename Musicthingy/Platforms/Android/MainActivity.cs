@@ -4,17 +4,66 @@ using Android.Content.PM;
 using Android.OS;
 using Android.Views;
 using CommunityToolkit.Mvvm.Messaging;
+using Musicthingy.Helpers;
 using Musicthingy.Models;
 
 namespace Musicthingy;
 
-[Activity(Theme = "@style/Maui.SplashTheme", MainLauncher = true, LaunchMode = LaunchMode.SingleTop, ConfigurationChanges = ConfigChanges.ScreenSize | ConfigChanges.Orientation | ConfigChanges.UiMode | ConfigChanges.ScreenLayout | ConfigChanges.SmallestScreenSize | ConfigChanges.Density)]
+// Registered as a MUSIC PLAYER:
+//  - CategoryAppMusic on MAIN makes the app a candidate for "music apps" and
+//    for the default-handler picker.
+//  - The two ACTION_VIEW filters make it an "Open with" target for audio files
+//    (content:// from the file manager / SAF / downloads) and for audio
+//    STREAMS (http/https), so a browser link can hand the URL straight over.
+//  - SingleTask instead of SingleTop: an intent delivered while the app is
+//    running must come back to THIS instance. SingleTop lets the calling app
+//    (a file manager) host a second MainActivity inside its own task, which
+//    breaks MAUI's single-window host (a second MauiApp / Activity instance).
+//    The notification's PendingIntent (SingleTop | ClearTop) still lands in
+//    OnNewIntent under SingleTask.
+//  - Exported: required for other apps to be able to launch us.
+[Activity(
+    Theme = "@style/Maui.SplashTheme",
+    MainLauncher = true,
+    Exported = true,
+    LaunchMode = LaunchMode.SingleTask,
+    ConfigurationChanges = ConfigChanges.ScreenSize | ConfigChanges.Orientation | ConfigChanges.UiMode | ConfigChanges.ScreenLayout | ConfigChanges.SmallestScreenSize | ConfigChanges.Density)]
+[IntentFilter(
+    new[] { Intent.ActionMain },
+    Categories = new[] { Intent.CategoryAppMusic, Intent.CategoryDefault })]
+[IntentFilter(
+    new[] { Intent.ActionView },
+    Categories = new[] { Intent.CategoryDefault, Intent.CategoryBrowsable },
+    DataSchemes = new[] { "content", "file" },
+    DataMimeTypes = new[] { "audio/*", "application/ogg", "application/x-ogg", "application/itunes" })]
+[IntentFilter(
+    new[] { Intent.ActionView },
+    Categories = new[] { Intent.CategoryDefault, Intent.CategoryBrowsable },
+    DataSchemes = new[] { "http", "https" },
+    DataMimeTypes = new[] { "audio/*", "application/ogg", "application/x-ogg", "application/itunes" })]
 public class MainActivity : MauiAppCompatActivity
 {
     // True while the activity is not visible (app in background or screen off).
     // Used by the playback progress timer to skip work that only matters when
     // the user can actually see it (slider, lyrics highlight).
     public static volatile bool IsInBackground;
+
+    // An intent that arrived before MainViewModel subscribed to the messenger
+    // (cold start from another app). Kept here until the ViewModel drains it.
+    private static MediaControlMessage? _pendingLaunchMessage;
+
+    /// <summary>
+    /// Called by MainViewModel right after it subscribes to the messenger, so a
+    /// cold-start VIEW / PLAY_VIDEO intent is never lost. (Delivering it a
+    /// moment later is normal: MAUI creates the page/ViewModel after
+    /// OnCreate's base call, which is where the intent is handled.)
+    /// </summary>
+    public static MediaControlMessage? ConsumePendingLaunchMessage()
+    {
+        MediaControlMessage? pending = _pendingLaunchMessage;
+        _pendingLaunchMessage = null;
+        return pending;
+    }
 
     protected override void OnPause()
     {
@@ -55,14 +104,44 @@ public class MainActivity : MauiAppCompatActivity
         HandleIntent(intent);
     }
 
+    /// <summary>
+    /// Delivers the message now if the ViewModel is listening, otherwise parks
+    /// it for <see cref="ConsumePendingLaunchMessage"/>. A message counts as
+    /// handled when the receiver sets <see cref="MediaControlMessage.Consumed"/>.
+    /// </summary>
+    private static void DispatchOrQueue(MediaControlMessage message)
+    {
+        WeakReferenceMessenger.Default.Send(message);
+        if (!message.Consumed)
+            _pendingLaunchMessage = message;
+    }
+
     private void HandleIntent(Intent? intent)
     {
         Android.Util.Log.Info("Musicthingy", $"[DebugApi] HandleIntent action={intent?.Action ?? "(null)"}");
+
+        // "Open with Musicthingy" / a browser handing over an audio stream.
+        if (intent?.Action == Intent.ActionView && intent.Data is Android.Net.Uri uri)
+        {
+            var (title, artist, durationMs, artworkPath) = ReadAudioMetadata(uri);
+            Android.Util.Log.Info("Musicthingy", $"[External] ACTION_VIEW {uri} title={title ?? "(none)"} artist={artist ?? "(none)"}");
+            DispatchOrQueue(new MediaControlMessage
+            {
+                Action = "PlayUri",
+                Uri = uri.ToString(),
+                Title = title,
+                Artist = artist,
+                DurationMs = durationMs,
+                ArtworkPath = artworkPath
+            });
+            return;
+        }
+
         // When clicked from the notification, ask the ViewModel to center the
         // track list on the currently playing track (manual scroll-to-track).
         if (intent?.Action == "MUSIC_ACTION_OPEN_APP")
         {
-            WeakReferenceMessenger.Default.Send(new MediaControlMessage { Action = "ScrollToCurrentTrack" });
+            DispatchOrQueue(new MediaControlMessage { Action = "ScrollToCurrentTrack" });
         }
         // Debug API for driving playback over adb (see
         // MainViewModel.PlayVideoByIdAsync):
@@ -120,7 +199,7 @@ public class MainActivity : MauiAppCompatActivity
                 intent.GetBooleanExtra("sabrSkipSession", false);
 
             Android.Util.Log.Info("Musicthingy", $"[DebugApi] intent MUSIC_ACTION_PLAY_VIDEO {videoId} start={startSeconds} mode={mode ?? "auto"} binding={binding ?? "video"} identity={identity ?? "auto"} clients={clients ?? "all"} cache={(noCache ? "bypass" : "normal")} dump={dump ?? "none"} sabrNoRn={Musicthingy.Services.Sabr.SabrStreamSession.OmitRequestNumberForTest} sabrUrlPot={Musicthingy.Services.Sabr.SabrStreamSession.SendUrlPoTokenForTest}");
-            WeakReferenceMessenger.Default.Send(new MediaControlMessage
+            DispatchOrQueue(new MediaControlMessage
             {
                 Action = "PlayVideo",
                 VideoId = videoId,
@@ -158,5 +237,81 @@ public class MainActivity : MauiAppCompatActivity
                 }
             });
         }
+    }
+
+    /// <summary>
+    /// Reads title / artist / duration / embedded artwork for an opened audio
+    /// URI. Every step is best effort - a file manager can hand over a URI that
+    /// the retriever cannot open, and playback must still be attempted.
+    /// </summary>
+    private (string? Title, string? Artist, long DurationMs, string? ArtworkPath) ReadAudioMetadata(Android.Net.Uri uri)
+    {
+        string? title = null;
+        string? artist = null;
+        long durationMs = 0;
+        string? artworkPath = null;
+
+        bool isContent = string.Equals(uri.Scheme, Android.Content.ContentResolver.SchemeContent, StringComparison.OrdinalIgnoreCase);
+        bool isLocal = isContent || string.Equals(uri.Scheme, "file", StringComparison.OrdinalIgnoreCase);
+
+        // Only local URIs are probed. MediaMetadataRetriever.SetDataSource
+        // OPENS the source, so an http(s) stream would be downloaded on the UI
+        // thread (this runs from OnCreate/OnNewIntent) - an ANR for a large file.
+        if (isLocal)
+        {
+            try
+            {
+                using var retriever = new Android.Media.MediaMetadataRetriever();
+                retriever.SetDataSource(this, uri);
+
+                title = retriever.ExtractMetadata(Android.Media.MetadataKey.Title);
+                artist = retriever.ExtractMetadata(Android.Media.MetadataKey.Artist)
+                         ?? retriever.ExtractMetadata(Android.Media.MetadataKey.Albumartist);
+
+                if (long.TryParse(retriever.ExtractMetadata(Android.Media.MetadataKey.Duration), out long duration))
+                    durationMs = duration;
+
+                byte[]? artBytes = retriever.GetEmbeddedPicture();
+                if (artBytes is { Length: > 0 })
+                {
+                    // Unique per URI: PlaylistItem's icon cache is keyed by this
+                    // path, so a shared name would show the PREVIOUS file's artwork.
+                    string artName = $"external_intent_art_{MediaUrlHelper.GetSafeHashId(uri.ToString())[..16]}.jpg";
+                    artworkPath = Path.Combine(Microsoft.Maui.Storage.FileSystem.CacheDirectory, artName);
+                    File.WriteAllBytes(artworkPath, artBytes);
+                }
+            }
+            catch (Exception ex)
+            {
+                Android.Util.Log.Info("Musicthingy", $"[External] metadata read failed: {ex.Message}");
+            }
+        }
+
+        // Fall back to the display name the document provider reports.
+        if (string.IsNullOrWhiteSpace(title) && isContent)
+        {
+            try
+            {
+                using var cursor = ContentResolver?.Query(
+                    uri,
+                    new[] { Android.Provider.IOpenableColumns.DisplayName },
+                    null, null, null);
+                if (cursor != null && cursor.MoveToFirst())
+                {
+                    int column = cursor.GetColumnIndex(Android.Provider.IOpenableColumns.DisplayName);
+                    if (column >= 0)
+                        title = Path.GetFileNameWithoutExtension(cursor.GetString(column));
+                }
+            }
+            catch { }
+        }
+
+        if (string.IsNullOrWhiteSpace(title))
+            title = Path.GetFileNameWithoutExtension(uri.LastPathSegment);
+
+        if (string.IsNullOrWhiteSpace(title))
+            title = uri.Host ?? "Audio Track";
+
+        return (title, artist, durationMs, artworkPath);
     }
 }

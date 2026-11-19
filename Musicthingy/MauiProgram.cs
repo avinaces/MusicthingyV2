@@ -44,13 +44,6 @@ namespace Musicthingy
 				new YouTubeResolverService(sp.GetRequiredService<IHttpClientFactory>()));
 
 			builder.Services.AddSingleton<Services.TrackCacheService>();
-#if ANDROID
-			builder.ConfigureEffects(effects =>
-			{
-				effects.Add<Musicthingy.Effects.LyricsBlurEffect,
-				Musicthingy.Platforms.Android.LyricsBlurPlatformEffect>();
-			});
-#endif
 
 
 #if WINDOWS
