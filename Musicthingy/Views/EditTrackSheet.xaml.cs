@@ -25,7 +25,11 @@ public partial class EditTrackSheet : ContentView, IBottomSheet
 
         // Assign the isolated forms to each tab
         GeneralTab.BindingContext = new EditTrackForm(track);
-        LyricsTab.BindingContext = new EditLyricsForm(track.Lyrics ?? "", track.Title, track.Artist ?? "", track.Url);
+        // ExternalArtist, not Artist: PlaylistItem.Artist falls back to the
+        // playlist name, which the user saw in the sheet and which produced
+        // LRCLIB queries like "Song Favorites".
+        LyricsTab.BindingContext = new EditLyricsForm(
+            track.Lyrics ?? "", track.Title, track.ExternalArtist ?? "", track.Url, track.Duration);
         TagsTab.BindingContext = new EditTagsForm(track.Tags.ToList(), allTags);
 
         // Pre-select the requested tab

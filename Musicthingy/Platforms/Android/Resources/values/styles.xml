@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<resources xmlns:tools="http://schemas.android.com/tools">
+    <!-- Dark-from-the-first-frame splash. Inherits MAUI's generated splash theme
+         (so the splash drawable and the post-splash theme keep working) and adds
+         only the dark-mode guarantees:
+         - white status / navigation bar icons (they default to BLACK on Android
+           8/9 and whenever the system is in light mode, making the clock and nav
+           buttons invisible on our #111214 background);
+         - forceDarkAllowed=false so OEM "force dark for third-party apps"
+           (MIUI/HyperOS, ColorOS, Funtouch) cannot invert an already dark UI. -->
+    <style name="Musicthingy.SplashTheme" parent="Maui.SplashTheme">
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:windowLightNavigationBar" tools:targetApi="o_mr1">false</item>
+        <item name="android:forceDarkAllowed" tools:targetApi="q">false</item>
+    </style>
+</resources>

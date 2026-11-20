@@ -115,11 +115,13 @@ public partial class LyricsView : ContentView
     // - keeping it made the whole list sit visibly too low/high ("offset").
     private double _lastBiasHeight;
 
-    // Last color/opacity applied to each row label - styling re-runs whenever
-    // the active line or the follow state changes, so redundant native
+    // Last color/opacity/blur applied to each row label - styling re-runs
+    // whenever the active line or the follow state changes, so redundant native
     // property sets are skipped (labels are recreated on every track change,
-    // so the cache is cleared there).
-    private readonly Dictionary<Label, (Color Color, double Opacity)> _lastAppliedStyles = new();
+    // so the cache is cleared there). The blur is part of the entry: a row
+    // whose color happens to land on the same value at a different DISTANCE
+    // must still get its new blur.
+    private readonly Dictionary<Label, (Color Color, double Opacity, double Blur)> _lastAppliedStyles = new();
 
     // Per-wrapped-row splitting: attached state on each line block recording
     // the label width (dp) at which its row structure was last computed.
@@ -782,7 +784,15 @@ public partial class LyricsView : ContentView
                         }
                         else
                         {
-                            dLines = indexGap; // no real geometry yet - line distance
+                            // No usable geometry yet (first pass after a rebuild,
+                            // hidden 0s anchor as the active line): count ROWS,
+                            // not blocks. Counting blocks treated a line that
+                            // wraps into three visual rows as one row, so in
+                            // songs with long lines the neighbours of the
+                            // highlight were under-faded and stayed sharp until
+                            // the next layout pass - the intermittent "not
+                            // blurred enough".
+                            dLines = EstimateRowDistance(i, activeIndex);
                         }
 
                         if (dLines < 1)
@@ -804,45 +814,85 @@ public partial class LyricsView : ContentView
                     }
                 }
 
-                // Skip redundant native updates.
+                // Skip redundant native updates (color, opacity AND blur).
                 if (_lastAppliedStyles.TryGetValue(row, out var last) &&
-                    last.Color == targetColor && Math.Abs(last.Opacity - targetOpacity) < 0.005)
+                    last.Color == targetColor &&
+                    Math.Abs(last.Opacity - targetOpacity) < 0.005 &&
+                    Math.Abs(last.Blur - blur) < 0.01)
                 {
-                    SetBlur(row, blur); // LyricsBlurPlatform no-ops unchanged values
                     continue;
                 }
 
                 row.TextColor = targetColor;
                 row.Opacity = targetOpacity;
                 SetBlur(row, blur);
-                _lastAppliedStyles[row] = (targetColor, targetOpacity);
+                _lastAppliedStyles[row] = (targetColor, targetOpacity, blur);
             }
         }
     }
 
     /// <summary>
-    /// Pitch of ONE lyric line (block height + its vertical margins),
-    /// averaged over the first few laid-out SINGLE-ROW lines. Wrapped blocks
-    /// are skipped so long lines cannot inflate the average. This pitch is
-    /// the unit the illumination falloff is measured in ("the 6th line").
+    /// Distance in line pitches between two lyric blocks, counting every
+    /// WRAPPED ROW (each row is its own Label after EnsureRowSplit) instead of
+    /// one per block. Used only when the layout has no usable geometry yet;
+    /// the hidden 0s anchor block contributes nothing because it takes no
+    /// space in the stack.
+    /// </summary>
+    private double EstimateRowDistance(int fromIndex, int toIndex)
+    {
+        if (fromIndex == toIndex)
+            return 0;
+
+        int lo = Math.Min(fromIndex, toIndex);
+        int hi = Math.Max(fromIndex, toIndex);
+        var children = LyricsItemsHost.Children;
+
+        static double RowsOf(IView? child) =>
+            child is VerticalStackLayout b && b.IsVisible ? Math.Max(1, b.Children.Count) : 0;
+
+        double between = 0;
+        for (int i = lo + 1; i < hi; i++)
+            between += RowsOf(children[i]);
+
+        // Half of each endpoint: the distance is center to center.
+        return Math.Max(1, between + (RowsOf(children[lo]) + RowsOf(children[hi])) / 2.0);
+    }
+
+    /// <summary>
+    /// Pitch of ONE lyric line (block height + its vertical margins), taken as
+    /// the MEDIAN over the first few laid-out SINGLE-ROW lines. Wrapped blocks
+    /// are skipped so long lines cannot inflate it, and the median (rather than
+    /// a mean) keeps one half-measured / oddly sized block from skewing every
+    /// distance in the song. This pitch is the unit the illumination falloff is
+    /// measured in ("the 6th line").
     /// </summary>
     private double GetLinePitch()
     {
-        double sum = 0;
-        int n = 0;
+        List<double> samples = new(8);
         var children = LyricsItemsHost.Children;
-        for (int i = 0; i < children.Count && n < 8; i++)
+        for (int i = 0; i < children.Count && samples.Count < 8; i++)
         {
             if (children[i] is VerticalStackLayout block && block.IsVisible &&
                 block.Height > 0 && block.Children.Count == 1 && block.Children[0] is Label)
             {
-                sum += block.Height + block.Margin.VerticalThickness;
-                n++;
+                samples.Add(block.Height + block.Margin.VerticalThickness);
             }
         }
 
-        double pitch = n > 0 ? sum / n : EstimatedLineHeight;
-        return pitch > 0 ? pitch : EstimatedLineHeight;
+        if (samples.Count == 0)
+            return EstimatedLineHeight;
+
+        samples.Sort();
+        double pitch = samples.Count % 2 == 1
+            ? samples[samples.Count / 2]
+            : (samples[samples.Count / 2 - 1] + samples[samples.Count / 2]) / 2.0;
+
+        // Guard against a degenerate sample set (labels measured as collapsed):
+        // a pitch that is not a plausible line height would turn the whole
+        // depth ladder into noise. The bounds are deliberately wide - a large
+        // system font scale legitimately produces a much taller line, and the
+        // median already rejects single odd blocks.
+        return pitch >= 12 && pitch <= 200 ? pitch : EstimatedLineHeight;
     }
 
     /// <summary>

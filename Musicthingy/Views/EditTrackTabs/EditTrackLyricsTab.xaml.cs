@@ -30,12 +30,17 @@ public partial class EditLyricsForm : ObservableObject
     [ObservableProperty] public partial bool IsAdvancedOpen { get; set; }
     [ObservableProperty] public partial bool IsSearching { get; set; }
 
-    public EditLyricsForm(string initialLyrics, string defaultTitle, string defaultArtist, string trackUrl = "")
+    // Recording length, when the track has one - passed to LRCLIB so the
+    // duration filter can reject a remaster/edit that answers for the song.
+    public TimeSpan? Duration { get; init; }
+
+    public EditLyricsForm(string initialLyrics, string defaultTitle, string defaultArtist, string trackUrl = "", TimeSpan? duration = null)
     {
         LyricsText = initialLyrics ?? string.Empty;
         SearchTitle = defaultTitle ?? string.Empty;
         SearchArtist = defaultArtist ?? string.Empty;
         TrackUrl = trackUrl ?? string.Empty;
+        Duration = duration is { } d && d > TimeSpan.Zero ? d : null;
     }
 
     [RelayCommand]
@@ -50,7 +55,8 @@ public partial class EditLyricsForm : ObservableObject
         try
         {
             bool wantTimed = SearchType == "Timed Lyrics (LRC)";
-            string? foundLyrics = await LyricsClient.FetchLyricsAsync(TrackUrl, SearchTitle, SearchArtist, wantTimed);
+            string? foundLyrics = await LyricsClient.FetchLyricsAsync(
+                TrackUrl, SearchTitle, SearchArtist, wantTimed, Duration);
 
             if (!string.IsNullOrWhiteSpace(foundLyrics))
             {

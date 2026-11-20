@@ -1,8 +1,10 @@
 ﻿using Android.App;
 using Android.Content;
 using Android.Content.PM;
+using Android.Content.Res;
 using Android.OS;
 using Android.Views;
+using AndroidX.Core.View;
 using CommunityToolkit.Mvvm.Messaging;
 using Musicthingy.Helpers;
 using Musicthingy.Models;
@@ -23,7 +25,7 @@ namespace Musicthingy;
 //    OnNewIntent under SingleTask.
 //  - Exported: required for other apps to be able to launch us.
 [Activity(
-    Theme = "@style/Maui.SplashTheme",
+    Theme = "@style/Musicthingy.SplashTheme",
     MainLauncher = true,
     Exported = true,
     LaunchMode = LaunchMode.SingleTask,
@@ -75,6 +77,45 @@ public class MainActivity : MauiAppCompatActivity
     {
         base.OnResume();
         IsInBackground = false;
+
+        // Coming back from the background (or from an OEM lock screen) can leave
+        // the bar icons in the system's light-mode state - reassert them.
+        ForceDarkSystemBars();
+    }
+
+    /// <summary>
+    /// A UI-mode change (system theme switch, or an OEM overlay) can flip the
+    /// status/navigation bar icons back to dark. UiMode is in the Activity's
+    /// ConfigurationChanges, so this is called instead of a recreate.
+    /// </summary>
+    public override void OnConfigurationChanged(Configuration newConfig)
+    {
+        base.OnConfigurationChanged(newConfig);
+        ForceDarkSystemBars();
+    }
+
+    /// <summary>
+    /// Keeps the status-bar and navigation-bar icons WHITE (light) for the
+    /// app's always-dark UI. On Android 8/9 - and on newer phones while the
+    /// system is in light mode - those icons default to BLACK and would be
+    /// invisible on the #111214 background. The app theme already sets the
+    /// matching attributes; this re-asserts them at runtime because MAUI and
+    /// OEM overlays can re-apply the system appearance after the theme is
+    /// inflated.
+    /// </summary>
+    private void ForceDarkSystemBars()
+    {
+        if (Window == null)
+            return;
+
+        WindowInsetsControllerCompat? controller =
+            WindowCompat.GetInsetsController(Window, Window.DecorView);
+        if (controller == null)
+            return;
+
+        // false = light (white) icons, which is what a dark background needs.
+        controller.AppearanceLightStatusBars = false;
+        controller.AppearanceLightNavigationBars = false;
     }
 
     // Catches Bluetooth headset clicks and keyboard media keys globally
@@ -86,6 +127,7 @@ public class MainActivity : MauiAppCompatActivity
     protected override void OnCreate(Bundle? savedInstanceState)
     {
         base.OnCreate(savedInstanceState);
+        ForceDarkSystemBars();
         Android.Util.Log.Info("Musicthingy", "[DebugApi] build v9.5-cipherretry loaded");
         HandleIntent(Intent);
 
