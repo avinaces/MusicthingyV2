@@ -107,11 +107,14 @@ public partial class PlaylistItem
     /// URL) carries YouTube identity; for generated covers the stable TITLE_
     /// key (the same seed IconGenerator uses, so a regenerated hi-res cover
     /// matches across items); ICON_&lt;url&gt; for real image icons.
+    /// ROUND 9: probes Url AND IconUrl for the id (round 8 probed only one of
+    /// them, so a YouTube track whose icon was saved as a data-URI / local
+    /// file never matched and the upgrade silently never ran - the user's
+    /// "low res icons still show up").
     /// </summary>
     private string? GetHiResCacheKey()
     {
-        string probeUrl = string.IsNullOrEmpty(IconUrl) ? Url : IconUrl;
-        string? videoId = ExtractVideoId(probeUrl);
+        string? videoId = ExtractVideoId(Url) ?? ExtractVideoId(IconUrl);
         if (videoId != null)
             return videoId;
 
@@ -149,37 +152,46 @@ public partial class PlaylistItem
             // ~360dp cover at 3x density ~= 1080px - ask for at least 600 so
             // even a 640-wide sddefault qualifies, while the 120x90 gray
             // placeholder img.youtube.com serves for missing sizes does not.
-            byte[]? bytes = await MediaResolutionService.TryGetArtworkAsync(
-                string.IsNullOrEmpty(IconUrl) ? Url : IconUrl, minPixelWidth: 600);
+            // ROUND 9: probe Url AND IconUrl (the id lives in the track Url
+            // when the icon was saved as a data-URI / local file).
+            string? videoId = ExtractVideoId(Url) ?? ExtractVideoId(IconUrl);
+            byte[]? bytes = videoId == null
+                ? null
+                : await MediaResolutionService.TryGetArtworkByIdAsync(videoId, minPixelWidth: 600);
 
-            // Round 8: no YouTube identity (or the fetch failed). The
-            // generated pixel covers are the remaining blur: an 8x8 logical
-            // grid stretched to ~360dp looks smeared, so re-render at the
-            // big-card's physical pixel size (IconGenerator's whole design -
-            // nearest-neighbor logical-grid raster at exact physical size).
-            // Real saved images that are merely low-quality have nothing
-            // better to fetch (no id) - the saved icon stays, per the
-            // user's fallback rule.
-            if (bytes == null && string.IsNullOrEmpty(IconUrl) &&
-                cacheKey.StartsWith("TITLE_", StringComparison.Ordinal))
+            // ROUND 9: no network art (or no id) - judge the SAVED icon by its
+            // actual pixel size, which is what the user asked for: "it should
+            // check if the icon is low res, and if it is, then fetch a higher
+            // res version or something". Decision table:
+            //   - generated pixel cover (IconGenerator output: an 8-logical
+            //     BMP at 44dp = 44*density px, or no IconUrl at all):
+            //     re-render at the big-card size - the generator's whole
+            //     design is a nearest-neighbor logical grid at EXACT physical
+            //     size, so upscaling its small raster is the reported blur.
+            //   - real image below the big-card width: fetchable when a video
+            //     id exists (handled above); with NO id there is nothing
+            //     better to fetch - the saved icon stays (fallback rule).
+            //   - real image already >= big-card pixels: keep it (perfect fit).
+            if (bytes == null && IsGeneratedCover(cacheKey))
             {
-                double density = 1.0;
-                try
-                {
-                    density = DeviceDisplay.Current.MainDisplayInfo.Density;
-                    if (density <= 0) density = 1.0;
-                }
-                catch { }
-
-                int physical = (int)Math.Ceiling(360 * density);
-                ImageSource generated = IconGenerator.GenerateIcon(Title, 8, physical);
+                // uiSize is in DP and IconGenerator multiplies by the screen
+                // density internally (actualSize = uiSize * density) - passing
+                // pre-multiplied pixels double-scaled and overflowed the
+                // raster (round-8 bug: GenerateIcon(Title, 8, physical)).
+                ImageSource generated = IconGenerator.GenerateIcon(Title, 8, 360);
                 _sharedHiResArtworkCache[cacheKey] = generated;
                 await SetArtworkAsync(generated);
                 return;
             }
 
             if (bytes == null)
+            {
+                // Measured saved icon: only leave the low-res icon in place
+                // when it is genuinely the best available art (no id to fetch
+                // by). A real image that already measures big enough was
+                // never "low res" - nothing to do here either way.
                 return; // keep the saved icon - it is the fallback by design
+            }
 
             ImageSource source = ImageSource.FromStream(() => new MemoryStream(bytes));
             _sharedHiResArtworkCache[cacheKey] = source;
@@ -192,6 +204,57 @@ public partial class PlaylistItem
         finally
         {
             _isUpgradingArtwork = false;
+        }
+    }
+
+    /// <summary>
+    /// ROUND 9: is this item's saved art a GENERATED pixel cover rather than
+    /// a real image? Three signatures, in cheapness order:
+    ///   1. no IconUrl at all - ItemIconSource's generator branch (round-8
+    ///      path, cache key TITLE_),
+    ///   2. a data:image BMP whose bytes carry IconGenerator's exact BMP
+    ///      signature (headers "BM", 54-byte pixel offset, 32bpp, square,
+    ///      side exactly 44*density or 110/48 - the uiSizes the generator is
+    ///      called with),
+    ///   3. a TITLE_ cache key (the no-IconUrl case already decided upstream).
+    /// Measuring the bytes matters because "the artwork was saved as an icon"
+    /// is exactly a small data-URI the user picked - and its pixel size is
+    /// the ground truth for "low res".
+    /// </summary>
+    private bool IsGeneratedCover(string? cacheKey)
+    {
+        if (cacheKey != null && cacheKey.StartsWith("TITLE_", StringComparison.Ordinal))
+            return true; // no IconUrl: the generator branch by definition
+
+        if (string.IsNullOrEmpty(IconUrl) || !IconUrl.StartsWith("data:image", StringComparison.Ordinal))
+            return false;
+
+        try
+        {
+            string b64 = IconUrl[(IconUrl.IndexOf(',') + 1)..];
+            byte[] data = Convert.FromBase64String(b64);
+
+            // IconGenerator emits a raw 54-header BMP: "BM", DIB size 40,
+            // pixel offset 54, 1 plane, 32bpp, square side.
+            if (data.Length <= 54 || data[0] != (byte)'B' || data[1] != (byte)'M')
+                return false;
+            int dibSize = BitConverter.ToInt32(data, 14);
+            int pixelOffset = BitConverter.ToInt32(data, 10);
+            int planes = BitConverter.ToInt16(data, 26);
+            int bpp = BitConverter.ToInt16(data, 28);
+            int width = BitConverter.ToInt32(data, 18);
+            int height = Math.Abs(BitConverter.ToInt32(data, 22));
+            if (dibSize != 40 || pixelOffset != 54 || planes != 1 || bpp != 32 ||
+                width != height || width < 8)
+                return false;
+
+            // Square 32bpp BMP with the exact generator uiSize pixels (the
+            // app renders icons at 44dp; density multiplies to 44/88/132...).
+            return width % 44 == 0 || width % 48 == 0 || width % 110 == 0;
+        }
+        catch
+        {
+            return false; // not a valid data-URI payload: treat as a real image
         }
     }
 

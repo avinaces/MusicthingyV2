@@ -68,22 +68,11 @@ public partial class LyricsView : ContentView
     // - a coarse 40dp quantum added up to ~20dp of dead padding per spacer.
     private const double SpacerQuantum = 8;
 
-    // During the resize animation the exact padding is invisible, so use a
-    // COARSE quantum: the spacer values then change ~4x less often and the
-    // lyric host is not re-measured on nearly every frame. FinalizeVisibility
-    // / OnSizeChanged snap back to the exact quantum afterwards, so no dead
-    // padding is left behind.
-    private const double AnimationSpacerQuantum = 32;
-
     // Auto-follow resume rules (per spec)
     private const double AutoFollowResumeDelaySeconds = 1.5;
     private const double AutoFollowResumeForcedSeconds = 4.0; // idle after which following resumes from ANY position
     private const double MiddleZoneRatio = 0.25;   // "general area of the middle" = middle 50% of the viewport
     private const double FeedbackToleranceDp = 8;  // measured centering error below this is left alone
-
-    // Deepest blur radius (dp) of the depth ladder - also used for rows
-    // outside the styling window so the blur never snaps back to sharp.
-    private const double MaxBlurDp = 14.0;
 
     private bool _isFollowing = true;
     private DateTime _lastUserScrollAt = DateTime.MinValue;
@@ -103,25 +92,16 @@ public partial class LyricsView : ContentView
     // estimate, nav inset, native text layout) without modeling it.
     private double _centerBiasDp;
 
-    // Sequence id of the measured-centering pass. Every new centering request
-    // and every user scroll bumps it, so a feedback pass that was still
-    // measuring can never apply a stale corrective scroll (which used to yank
-    // the list back to a line that was no longer active, or undo a scroll the
-    // user had just started).
-    private int _centerFeedbackId;
-
     // Height at which _centerBiasDp was (re)learned. The residual differs per
     // geometry (Medium vs Full screen), so the bias is dropped on size changes
     // - keeping it made the whole list sit visibly too low/high ("offset").
     private double _lastBiasHeight;
 
-    // Last color/opacity/blur applied to each row label - styling re-runs
-    // whenever the active line or the follow state changes, so redundant native
+    // Last color/opacity applied to each row label - styling re-runs whenever
+    // the active line or the follow state changes, so redundant native
     // property sets are skipped (labels are recreated on every track change,
-    // so the cache is cleared there). The blur is part of the entry: a row
-    // whose color happens to land on the same value at a different DISTANCE
-    // must still get its new blur.
-    private readonly Dictionary<Label, (Color Color, double Opacity, double Blur)> _lastAppliedStyles = new();
+    // so the cache is cleared there).
+    private readonly Dictionary<Label, (Color Color, double Opacity)> _lastAppliedStyles = new();
 
     // Per-wrapped-row splitting: attached state on each line block recording
     // the label width (dp) at which its row structure was last computed.
@@ -267,8 +247,7 @@ public partial class LyricsView : ContentView
 
         // Scroll, then MEASURE the line's real on-screen position, snap it to
         // the true center and learn the residual bias for next time.
-        int feedbackId = ++_centerFeedbackId;
-        _ = CenterWithFeedbackAsync(targetBlock, targetOffset, animate, allowLearn: !clamped, feedbackId);
+        _ = CenterWithFeedbackAsync(targetBlock, targetOffset, animate, allowLearn: !clamped);
     }
 
     /// <summary>
@@ -295,11 +274,6 @@ public partial class LyricsView : ContentView
     public void PrepareForAnimation()
     {
         NoLyricsPrompt.IsVisible = true;
-
-        // The pane is about to grow into view. Restore the wrapped-row
-        // measurement budget that a collapsed control (zero width, nothing
-        // measurable) may have burned through while it was hidden.
-        _splitRetriesLeft = 20;
     }
 
     /// <summary>
@@ -308,21 +282,33 @@ public partial class LyricsView : ContentView
     public void FinalizeVisibility()
     {
         NoLyricsPrompt.IsVisible = NoLyricsPrompt.Opacity > 0.01;
-
-        // The animation used the coarse spacer quantum; snap to the exact
-        // values now that the geometry has settled.
-        UpdateSpacers();
     }
 
     /// <summary>
     /// Fades the "no lyrics" prompt in as the player approaches full screen and
     /// keeps the half-viewport paddings in sync while the geometry changes.
+    /// ROUND 9 stutter fix: this runs per animation frame from the pane's
+    /// resize loop. Two changes so a frame of this method costs ~nothing
+    /// unless something actually changed:
+    ///   - the prompt opacity write is guarded (an unguarded setter on a
+    ///     Label invalidates its layout every frame - the reported stutter
+    ///     with NO lyrics, where the prompt is the ONLY thing this path
+    ///     touches), and
+    ///   - the collection hook check is skipped entirely during the
+    ///     animation: ItemsSource cannot be rebound mid-pan; OnSizeChanged
+    ///     and the track-change rebuild both re-run it when it matters.
+    /// The spacer sync keeps its existing quantized guards (writes only on
+    /// real change) - the tree walk it needs for that is the remaining
+    /// per-frame cost, and the pane's round-9 call site now gates this whole
+    /// method to the Medium->Full stretch where it has work to do.
     /// </summary>
     public void UpdateForFullScreenProgress(double progressToFull)
     {
-        NoLyricsPrompt.Opacity = Math.Clamp(progressToFull * 2, 0, 1);
-        EnsureItemsHooked();
-        UpdateSpacers(coarse: true);
+        double targetOpacity = Math.Clamp(progressToFull * 2, 0, 1);
+        if (Math.Abs(NoLyricsPrompt.Opacity - targetOpacity) > 0.01)
+            NoLyricsPrompt.Opacity = targetOpacity;
+
+        UpdateSpacers();
     }
 
     // ========================= Centering & geometry =========================
@@ -356,7 +342,7 @@ public partial class LyricsView : ContentView
 
         // Navigation buttons / gesture pill overlay the bottom of the screen on
         // Android (edge-to-edge) - that strip is not usable for centering either.
-        return hidden + LyricsPlatformInsets.GetBottomInsetDp(root);
+        return hidden + LyricsPlatformInsets.GetBottomInsetDp(root.Height);
     }
 
     /// <summary>Center of the target line block in ScrollView content coordinates.</summary>
@@ -398,16 +384,15 @@ public partial class LyricsView : ContentView
     /// is what used to round the inset up and make the bottom look 1-2 lines
     /// too long.
     /// </summary>
-    private void UpdateSpacers(bool coarse = false)
+    private void UpdateSpacers()
     {
         if (TimedLyricsScrollView.Height <= 0)
             return;
 
-        double quantum = coarse ? AnimationSpacerQuantum : SpacerQuantum;
         double hidden = ComputeHiddenBottom();
         double visible = Math.Max(0, TimedLyricsScrollView.Height - hidden);
-        double half = Math.Max(0, Math.Round((visible / 2) / quantum) * quantum);
-        double hiddenQ = Math.Max(0, Math.Round(hidden / quantum) * quantum);
+        double half = Math.Max(0, Math.Round((visible / 2) / SpacerQuantum) * SpacerQuantum);
+        double hiddenQ = Math.Max(0, Math.Round(hidden / SpacerQuantum) * SpacerQuantum);
 
         if (Math.Abs(TopSpacer.HeightRequest - half) > 0.5)
             TopSpacer.HeightRequest = half;
@@ -475,8 +460,6 @@ public partial class LyricsView : ContentView
         {
             // User took over: stop following and drop the depth styling
             _isFollowing = false;
-            // Any centering pass still in flight must not snap the list back.
-            _centerFeedbackId++;
             System.Diagnostics.Debug.WriteLine("[LyricsView] auto-follow OFF (user scrolled)");
             ApplyDistanceStyles();
         }
@@ -487,10 +470,7 @@ public partial class LyricsView : ContentView
         // Window must cover the whole animation (MAUI's animated scroll runs
         // ~500ms) plus stray trailing Scrolled events, so none of them are
         // mistaken for user interaction. Unlike a counter it can never leak.
-        // Kept as short as the animation allows: every millisecond here is a
-        // millisecond in which a real user scroll is swallowed, and in songs
-        // with fast lines that felt like the list refusing to be grabbed.
-        _programmaticScrollUntil = DateTime.UtcNow + TimeSpan.FromMilliseconds(animate ? 700 : 200);
+        _programmaticScrollUntil = DateTime.UtcNow + TimeSpan.FromMilliseconds(animate ? 900 : 200);
         try
         {
             await TimedLyricsScrollView.ScrollToAsync(0, offset, animate);
@@ -502,7 +482,7 @@ public partial class LyricsView : ContentView
         finally
         {
             // Keep ignoring events for a short buffer after the scroll settles.
-            var settleBuffer = DateTime.UtcNow + TimeSpan.FromMilliseconds(120);
+            var settleBuffer = DateTime.UtcNow + TimeSpan.FromMilliseconds(300);
             if (settleBuffer > _programmaticScrollUntil)
                 _programmaticScrollUntil = settleBuffer;
         }
@@ -519,7 +499,7 @@ public partial class LyricsView : ContentView
     /// correction, subsequent lyric switches land dead-center with no jump.
     /// This absorbs ANY constant geometry error instead of modeling it.
     /// </summary>
-    private async System.Threading.Tasks.Task CenterWithFeedbackAsync(VerticalStackLayout targetBlock, double targetOffset, bool animate, bool allowLearn, int feedbackId)
+    private async System.Threading.Tasks.Task CenterWithFeedbackAsync(VerticalStackLayout targetBlock, double targetOffset, bool animate, bool allowLearn)
     {
         await ProgrammaticScrollAsync(targetOffset + _centerBiasDp, animate);
 
@@ -527,12 +507,6 @@ public partial class LyricsView : ContentView
         // try/catch, so it cannot throw; if the animated task never completes
         // the time-window guard still keeps everything else safe.)
         await System.Threading.Tasks.Task.Delay(animate ? 80 : 16);
-
-        // A newer centering request, or the user taking over the scroll, makes
-        // this pass obsolete BEFORE it measures anything - never move the list
-        // on behalf of a line that is no longer active.
-        if (feedbackId != _centerFeedbackId || !_isFollowing)
-            return;
 
         // The collapsed 0s anchor line (IsVisible=False via the XAML
         // DataTrigger) has no meaningful native geometry - Android reports
@@ -558,17 +532,15 @@ public partial class LyricsView : ContentView
         if (Math.Abs(delta) <= FeedbackToleranceDp)
             return;
 
-        if (!allowLearn || !stillActive)
-            return; // line cannot reach the center, or it is no longer active
+        if (!allowLearn)
+            return; // the line cannot reach the center (song start/end): the scroll
+                    // already clamped, so a corrective pass is a guaranteed no-op
 
-        _centerBiasDp = Math.Clamp(_centerBiasDp + delta, -200, 200);
+        if (stillActive)
+            _centerBiasDp = Math.Clamp(_centerBiasDp + delta, -200, 200);
 
         // Instant corrective scroll: moving the content down by delta moves
-        // the line up by delta, onto the exact center. Only while this pass is
-        // STILL the newest one - otherwise it would fight the next transition.
-        if (feedbackId != _centerFeedbackId || !_isFollowing)
-            return;
-
+        // the line up by delta, onto the exact center.
         await ProgrammaticScrollAsync(TimedLyricsScrollView.ScrollY + delta, animate: false);
     }
 
@@ -624,19 +596,8 @@ public partial class LyricsView : ContentView
             decor.GetLocationOnScreen(dloc);
             double windowBottom = (dloc[1] + decor.Height) / density;
 
-            double inset = LyricsPlatformInsets.GetBottomInsetDp(TimedLyricsScrollView);
-
-            // The visible strip ends at the EARLIER of the window bottom (minus
-            // the nav bar) and the ScrollView's own bottom edge. Assuming the
-            // ScrollView always reaches the screen bottom pulled the "ideal"
-            // center downward whenever a mini player / transport bar sat below
-            // it, so the learned bias chased a line that was never centered.
-            double svBottom = (loc[1] + svView.Height) / density;
-            double visibleBottom = Math.Min(svBottom, windowBottom - inset);
-            if (visibleBottom <= svTop)
-                return null;
-
-            return svTop + (visibleBottom - svTop) / 2.0;
+            double inset = LyricsPlatformInsets.GetBottomInsetDp(decor.Height / density);
+            return svTop + (windowBottom - inset - svTop) / 2.0;
         }
         catch
         {
@@ -758,14 +719,10 @@ public partial class LyricsView : ContentView
                     int indexGap = Math.Abs(i - activeIndex);
                     if (indexGap > StyleWindowLines)
                     {
-                        // Outside the window: uniform floor look, with the
-                        // DEEPEST blur while following. Blur must not snap back
-                        // to 0 here - on a tall screen (>window height) or at
-                        // the clamped start of a song that rendered sharp rows
-                        // below heavily blurred ones.
+                        // Outside the window: uniform floor look, no blur
+                        // (cheap cached path - keeps native work bounded).
                         targetColor = floorColor;
                         targetOpacity = opacityFloor;
-                        blur = _isFollowing ? MaxBlurDp : 0;
                     }
                     else
                     {
@@ -784,15 +741,7 @@ public partial class LyricsView : ContentView
                         }
                         else
                         {
-                            // No usable geometry yet (first pass after a rebuild,
-                            // hidden 0s anchor as the active line): count ROWS,
-                            // not blocks. Counting blocks treated a line that
-                            // wraps into three visual rows as one row, so in
-                            // songs with long lines the neighbours of the
-                            // highlight were under-faded and stayed sharp until
-                            // the next layout pass - the intermittent "not
-                            // blurred enough".
-                            dLines = EstimateRowDistance(i, activeIndex);
+                            dLines = indexGap; // no real geometry yet - line distance
                         }
 
                         if (dLines < 1)
@@ -814,85 +763,45 @@ public partial class LyricsView : ContentView
                     }
                 }
 
-                // Skip redundant native updates (color, opacity AND blur).
+                // Skip redundant native updates.
                 if (_lastAppliedStyles.TryGetValue(row, out var last) &&
-                    last.Color == targetColor &&
-                    Math.Abs(last.Opacity - targetOpacity) < 0.005 &&
-                    Math.Abs(last.Blur - blur) < 0.01)
+                    last.Color == targetColor && Math.Abs(last.Opacity - targetOpacity) < 0.005)
                 {
+                    SetBlur(row, blur); // LyricsBlurPlatform no-ops unchanged values
                     continue;
                 }
 
                 row.TextColor = targetColor;
                 row.Opacity = targetOpacity;
                 SetBlur(row, blur);
-                _lastAppliedStyles[row] = (targetColor, targetOpacity, blur);
+                _lastAppliedStyles[row] = (targetColor, targetOpacity);
             }
         }
     }
 
     /// <summary>
-    /// Distance in line pitches between two lyric blocks, counting every
-    /// WRAPPED ROW (each row is its own Label after EnsureRowSplit) instead of
-    /// one per block. Used only when the layout has no usable geometry yet;
-    /// the hidden 0s anchor block contributes nothing because it takes no
-    /// space in the stack.
-    /// </summary>
-    private double EstimateRowDistance(int fromIndex, int toIndex)
-    {
-        if (fromIndex == toIndex)
-            return 0;
-
-        int lo = Math.Min(fromIndex, toIndex);
-        int hi = Math.Max(fromIndex, toIndex);
-        var children = LyricsItemsHost.Children;
-
-        static double RowsOf(IView? child) =>
-            child is VerticalStackLayout b && b.IsVisible ? Math.Max(1, b.Children.Count) : 0;
-
-        double between = 0;
-        for (int i = lo + 1; i < hi; i++)
-            between += RowsOf(children[i]);
-
-        // Half of each endpoint: the distance is center to center.
-        return Math.Max(1, between + (RowsOf(children[lo]) + RowsOf(children[hi])) / 2.0);
-    }
-
-    /// <summary>
-    /// Pitch of ONE lyric line (block height + its vertical margins), taken as
-    /// the MEDIAN over the first few laid-out SINGLE-ROW lines. Wrapped blocks
-    /// are skipped so long lines cannot inflate it, and the median (rather than
-    /// a mean) keeps one half-measured / oddly sized block from skewing every
-    /// distance in the song. This pitch is the unit the illumination falloff is
-    /// measured in ("the 6th line").
+    /// Pitch of ONE lyric line (block height + its vertical margins),
+    /// averaged over the first few laid-out SINGLE-ROW lines. Wrapped blocks
+    /// are skipped so long lines cannot inflate the average. This pitch is
+    /// the unit the illumination falloff is measured in ("the 6th line").
     /// </summary>
     private double GetLinePitch()
     {
-        List<double> samples = new(8);
+        double sum = 0;
+        int n = 0;
         var children = LyricsItemsHost.Children;
-        for (int i = 0; i < children.Count && samples.Count < 8; i++)
+        for (int i = 0; i < children.Count && n < 8; i++)
         {
             if (children[i] is VerticalStackLayout block && block.IsVisible &&
                 block.Height > 0 && block.Children.Count == 1 && block.Children[0] is Label)
             {
-                samples.Add(block.Height + block.Margin.VerticalThickness);
+                sum += block.Height + block.Margin.VerticalThickness;
+                n++;
             }
         }
 
-        if (samples.Count == 0)
-            return EstimatedLineHeight;
-
-        samples.Sort();
-        double pitch = samples.Count % 2 == 1
-            ? samples[samples.Count / 2]
-            : (samples[samples.Count / 2 - 1] + samples[samples.Count / 2]) / 2.0;
-
-        // Guard against a degenerate sample set (labels measured as collapsed):
-        // a pitch that is not a plausible line height would turn the whole
-        // depth ladder into noise. The bounds are deliberately wide - a large
-        // system font scale legitimately produces a much taller line, and the
-        // median already rejects single odd blocks.
-        return pitch >= 12 && pitch <= 200 ? pitch : EstimatedLineHeight;
+        double pitch = n > 0 ? sum / n : EstimatedLineHeight;
+        return pitch > 0 ? pitch : EstimatedLineHeight;
     }
 
     /// <summary>
@@ -908,10 +817,10 @@ public partial class LyricsView : ContentView
         if (dLines <= 1)
             return 0.3;
         if (dLines >= 5)
-            return MaxBlurDp;
+            return 14.0;
 
         double[] tierAt = { 1, 2, 3, 4, 5 };
-        double[] blurAt = { 0.3, 2.0, 5.0, 11.0, MaxBlurDp };
+        double[] blurAt = { 0.3, 2.0, 5.0, 11.0, 14.0 };
         for (int i = 1; i < tierAt.Length; i++)
         {
             if (dLines <= tierAt[i])
@@ -920,7 +829,7 @@ public partial class LyricsView : ContentView
                 return blurAt[i - 1] + (blurAt[i] - blurAt[i - 1]) * f;
             }
         }
-        return MaxBlurDp;
+        return 14.0;
     }
 
     // ======================== Per-wrapped-row splitting ======================
@@ -985,20 +894,7 @@ public partial class LyricsView : ContentView
             block.SetValue(SplitWidthProperty, labelWidth);
 
             if (segments.Count <= 1)
-            {
-                // The line fits on ONE row at this width. If it was split at a
-                // narrower width (rotation / resize) the stale truncated row
-                // labels must be merged back into the single full line -
-                // otherwise the block stayed broken across several rows
-                // forever. Rebuild from lyric.Text, not from the first segment
-                // (which is all the existing label still holds).
-                if (block.Children.Count > 1)
-                {
-                    ReplaceBlockRows(block, new List<string> { lyric.Text }, measureLabel, lyric);
-                    anySplit = true;
-                }
-                continue;
-            }
+                continue; // fits on a single row - keep the template label
 
             // Replace the single template label with one label per visual row.
             ReplaceBlockRows(block, segments, measureLabel, lyric);
@@ -1061,21 +957,26 @@ public partial class LyricsView : ContentView
             // TextView exposes its text paint as Paint (typed TextPaint in the
             // Android binding) - copy it so StaticLayout measurement uses the
             // exact same typeface, size and styling as the real rendering.
-            // Both are native (Java) objects: dispose them explicitly, or up to
-            // 80 peers per pass would linger until finalization.
-            using var paint = new global::Android.Text.TextPaint(tv.Paint);
+            var paint = new global::Android.Text.TextPaint(tv.Paint);
 
-            // Same paint, width and break strategy as the real TextView - the
-            // measured line breaks match what the user sees. (StaticLayout is
-            // an IDisposable Java peer as well.)
-            using global::Android.Text.StaticLayout layout = OperatingSystem.IsAndroidVersionAtLeast(23)
-                ? global::Android.Text.StaticLayout.Builder.Obtain(text, 0, text.Length, paint, availablePx)
+            global::Android.Text.StaticLayout layout;
+            if (OperatingSystem.IsAndroidVersionAtLeast(23))
+            {
+                // Same paint, width and break strategy as the real TextView -
+                // the measured line breaks match what the user sees.
+                layout = global::Android.Text.StaticLayout.Builder.Obtain(text, 0, text.Length, paint, availablePx)
                     .SetBreakStrategy(tv.BreakStrategy)
                     .SetHyphenationFrequency(tv.HyphenationFrequency)
                     .SetIncludePad(false)
-                    .Build()
-                : new global::Android.Text.StaticLayout(text, paint, availablePx,
+                    .Build();
+            }
+            else
+            {
+#pragma warning disable CS0618 // legacy constructor for very old API levels
+                layout = new global::Android.Text.StaticLayout(text, paint, availablePx,
                     global::Android.Text.Layout.Alignment.AlignCenter, 1f, 0f, false);
+#pragma warning restore CS0618
+            }
 
             int lines = layout.LineCount;
             var segments = new List<string>(lines);
@@ -1267,9 +1168,6 @@ public partial class LyricsView : ContentView
         _isFollowing = true;
         _lastUserScrollAt = DateTime.MinValue;
         _splitRetriesLeft = 20; // fresh content - fresh measurement budget
-        // A centering pass belonging to the previous track must not move the
-        // list of the new one.
-        _centerFeedbackId++;
         System.Diagnostics.Debug.WriteLine("[LyricsView] auto-follow ON (track changed)");
         // Deferred + coalesced: no synchronous full styling pass on the UI
         // thread while the track switch is still settling.
@@ -1300,18 +1198,6 @@ public partial class LyricsView : ContentView
         });
     }
 
-    /// <summary>
-    /// True when the bound lyric collection is known and empty - i.e. there is
-    /// nothing the start-scroll polling could ever scroll to.
-    /// </summary>
-    private bool HasNoLyricItems()
-    {
-        if (BindableLayout.GetItemsSource(LyricsItemsHost) is System.Collections.ICollection items)
-            return items.Count == 0;
-
-        return LyricsItemsHost.Children.Count == 0;
-    }
-
     private bool PendingStartScrollTick()
     {
         if (!_pendingStartScroll)
@@ -1323,15 +1209,6 @@ public partial class LyricsView : ContentView
         }
         if (TimedLyricsScrollView.Height <= 0)
             return true; // control not measured yet - keep waiting
-
-        // Nothing to scroll to: the lyric list is empty (a track without timed
-        // lyrics, or the queue ended). Polling for ~2s against an empty list
-        // only burned layout passes on an invisible control.
-        if (HasNoLyricItems())
-        {
-            _pendingStartScroll = false;
-            return false;
-        }
 
         var active = FindActiveLyric();
         _pendingStartScroll = false;
@@ -1350,21 +1227,6 @@ public partial class LyricsView : ContentView
         ApplyDistanceStyles();
     }
 
-    protected override void OnHandlerChanging(HandlerChangingEventArgs args)
-    {
-        base.OnHandlerChanging(args);
-
-        // The ViewModel (and its ActiveTimedLyrics collection) outlives this
-        // view when the pane is torn down. Drop the subscription so a surviving
-        // collection does not keep an unloaded view alive, and re-hook it if the
-        // view is reattached later.
-        if (args.NewHandler == null && _hookedCollection != null)
-        {
-            _hookedCollection.CollectionChanged -= OnLyricsCollectionChanged;
-            _hookedCollection = null;
-        }
-    }
-
     protected override void OnBindingContextChanged()
     {
         base.OnBindingContextChanged();
@@ -1380,68 +1242,39 @@ public partial class LyricsView : ContentView
 /// </summary>
 internal static class LyricsPlatformInsets
 {
-    // The view must reach the display's bottom edge to be drawn UNDER the
-    // navigation bar; anything this far short means the bars are reserved
-    // outside the window and there is nothing to subtract.
-    private const double EdgeToEdgeToleranceDp = 2;
-
-    public static double GetBottomInsetDp(VisualElement? root)
+    public static double GetBottomInsetDp(double rootHeightDp)
     {
 #if ANDROID
         try
         {
-            if (root?.Handler?.PlatformView is not global::Android.Views.View rootView)
+            if (rootHeightDp <= 0)
                 return 0;
 
-            var decor = Microsoft.Maui.ApplicationModel.Platform.CurrentActivity?.Window?.DecorView;
-            if (decor is null)
-                return 0;
-
-            double density = rootView.Resources?.DisplayMetrics?.Density ?? 0;
-            if (density <= 0)
-                return 0;
-
-            // REAL display size, system bars included. The nav-bar area is only
-            // covered by our own content when the view's bottom edge reaches the
-            // display's bottom edge. Comparing EDGES (not heights) is what makes
-            // this correct on devices with a display cutout, where the page is
-            // shorter than the screen at the TOP yet still extends under the
-            // bottom bar. (The old height comparison bailed out there and the
-            // lyrics were centered ~a nav bar too low.)
-            int screenBottomPx = GetDisplayHeightPx(decor);
-            if (screenBottomPx <= 0)
-                return 0;
-
-            int[] loc = new int[2];
-            rootView.GetLocationOnScreen(loc);
-            int viewBottomPx = loc[1] + rootView.Height;
-
-            if (viewBottomPx < screenBottomPx - (int)(EdgeToEdgeToleranceDp * density))
-                return 0; // bars are reserved outside the window - nothing to subtract
-
-            var insets = decor.RootWindowInsets;
+            var activity = Microsoft.Maui.ApplicationModel.Platform.CurrentActivity;
+            var insets = activity?.Window?.DecorView?.RootWindowInsets;
             if (insets is null)
                 return 0;
 
             int bottomPx = 0;
             if (OperatingSystem.IsAndroidVersionAtLeast(30))
             {
-                // GetInsets (NOT GetInsetsIgnoringVisibility): it reports 0
-                // while the bars are actually hidden, which is exactly right in
-                // immersive mode - the window extends under the bar area, but no
-                // bar overlays it, so nothing may be subtracted.
-                var bars = insets.GetInsets(global::Android.Views.WindowInsets.Type.SystemBars());
-                if (bars != null)
-                    bottomPx = bars.Bottom;
-            }
-            else
-            {
-                // API 21-29: WindowInsetsCompat-style querying is not available
-                // here, but the edge check above already handled immersive mode.
-                bottomPx = insets.SystemWindowInsetBottom;
+                var bars = insets.GetInsetsIgnoringVisibility(Android.Views.WindowInsets.Type.SystemBars());
+                bottomPx = bars?.Bottom ?? 0;
             }
 
-            return bottomPx <= 0 ? 0 : bottomPx / density;
+            if (bottomPx <= 0)
+                return 0;
+
+            // Only subtract when the page really extends under the system bars
+            // (edge-to-edge). If the window is shorter than the screen, the bars
+            // are already reserved OUTSIDE of it and must not be subtracted.
+            var display = Microsoft.Maui.Devices.DeviceDisplay.MainDisplayInfo;
+            double density = display.Density <= 0 ? 1 : display.Density;
+            double screenHdp = display.Height / density;
+            if (rootHeightDp < screenHdp - 2)
+                return 0;
+
+            return bottomPx / density;
         }
         catch
         {
@@ -1451,29 +1284,4 @@ internal static class LyricsPlatformInsets
         return 0;
 #endif
     }
-
-#if ANDROID
-    /// <summary>
-    /// Height of the real display in pixels, system bars included.
-    /// </summary>
-    private static int GetDisplayHeightPx(global::Android.Views.View decor)
-    {
-        if (OperatingSystem.IsAndroidVersionAtLeast(30))
-        {
-            // CurrentWindowMetrics: the current (non-deprecated) way to ask for
-            // the window/display bounds.
-            var windowManager = decor.Context?.GetSystemService(global::Android.Content.Context.WindowService)
-                as global::Android.Views.IWindowManager;
-            var bounds = windowManager?.CurrentWindowMetrics?.Bounds;
-            if (bounds != null && bounds.Height() > 0)
-                return bounds.Height();
-        }
-
-        var realMetrics = new global::Android.Util.DisplayMetrics();
-#pragma warning disable CA1422 // GetRealMetrics is the only option below API 30
-        decor.Display?.GetRealMetrics(realMetrics);
-#pragma warning restore CA1422
-        return realMetrics.HeightPixels;
-    }
-#endif
 }

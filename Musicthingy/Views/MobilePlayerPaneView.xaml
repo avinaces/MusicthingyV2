@@ -234,46 +234,45 @@
                                                                 </ImageButton.Behaviors>
                                                         </ImageButton>
 
-                                                        <!-- Round 8 play-glyph centering: the glyph Image is
-                                                             a FIXED square (48x48, Aspect=Uniform, centered
-                                                             options) instead of an ImageButton stretched to
-                                                             the full 76dp container. Root cause of the
-                                                             off-center icon: play_icon.png/pause_icon.png are
-                                                             rasterized from 24x24-viewBox SVGs with NO
-                                                             BaseSize/Resize in the csproj, so the bitmap is
-                                                             24px@1x and Android nearest-neighbor-scales it
-                                                             to 32dp (76-2*22 padding); play and pause are
-                                                             DIFFERENT shapes (play's triangle sits right of
-                                                             center, pause is symmetric), so whenever the
-                                                             play/pause swap lands mid-layout - during the
-                                                             open animation or on a state notify before the
-                                                             container's measure - the odd-ratio scale pins
-                                                             the glyph high inside its still-stretched cell.
-                                                             A fixed square cell with Uniform aspect + a
-                                                             translucent tap Grid on top makes the centering
-                                                             purely geometry-driven: the glyph is laid out
-                                                             once at a known square size, centered by
-                                                             LayoutOptions, and never re-arranged when the
-                                                             IsPlaying notify re-swaps the Source. The tap
-                                                             surface (full 76dp) keeps the same hit target
-                                                             and ripple behavior as every other button. -->
-                                                        <Border Background="{DynamicResource PlayButtonColor}" StrokeThickness="0" WidthRequest="76" HeightRequest="76">
+                                                        <!-- Round 9 play-glyph centering (ROOT CAUSE,
+                                                             pixel-proven by the user's screenshot):
+                                                             .NET 10 MAUI Grid defaults to
+                                                             SafeAreaEdges="Container". The 76dp Play
+                                                             Border's inner Grids did NOT opt out, so
+                                                             while ExpandedContentZone flips IsVisible
+                                                             at the start of Mini->Medium (transport row
+                                                             starting low over the bottom safe-area
+                                                             strip), MAUI subtracted 48dp of bottom
+                                                             safe-area padding INSIDE the 76dp Grid -
+                                                             the arranged area collapsed to the top 28dp
+                                                             slice (76-48) and clipped the glyph there.
+                                                             The side ImageButtons are no inner-Grid
+                                                             wrappers, which is why ONLY the play/pause
+                                                             glyph was hit. Round 8's "fixed 48x48
+                                                             square cell" treated the symptom; the
+                                                             actual fix is opting EVERY inner layout of
+                                                             the button out of Container insets (and
+                                                             every other unnamed child layout in this
+                                                             pane that lacked the attribute - see the
+                                                             full round-9 audit below). Glyph itself is
+                                                             32dp (76dp button, M3 icon-in-FAB ratio,
+                                                             matching the 24dp glyphs inside the 56dp
+                                                             skip buttons); tap surface unchanged. -->
+                                                        <Border Background="{DynamicResource PlayButtonColor}" StrokeThickness="0" WidthRequest="76" HeightRequest="76" SafeAreaEdges="None">
                                                                 <Border.StrokeShape>
                                                                         <RoundRectangle CornerRadius="26" />
                                                                 </Border.StrokeShape>
 
-                                                                <Grid>
-                                                                        <Grid WidthRequest="48" HeightRequest="48" HorizontalOptions="Center" VerticalOptions="Center">
-                                        <Image x:Name="PlayPauseGlyph"
-        Source="{Binding PlayPauseIcon}"
-        Aspect="AspectFit"
-        WidthRequest="32" HeightRequest="32"
-        HorizontalOptions="Center" VerticalOptions="Center">
-                                            <Image.Behaviors>
-                                                                                                <toolkit:IconTintColorBehavior BindingContext="{Binding BindingContext, Source={x:Reference PlayPauseGlyph}}" TintColor="{Binding PlayPauseIconColor}" />
-                                                                                        </Image.Behaviors>
-                                                                                </Image>
-                                                                        </Grid>
+                                                                <Grid SafeAreaEdges="None">
+                                                                        <Image x:Name="PlayPauseGlyph"
+                                                                                Source="{Binding PlayPauseIcon}"
+                                                                                Aspect="AspectFit"
+                                                                                WidthRequest="32" HeightRequest="32"
+                                                                                HorizontalOptions="Center" VerticalOptions="Center">
+                                                                                <Image.Behaviors>
+                                                                                        <toolkit:IconTintColorBehavior BindingContext="{Binding BindingContext, Source={x:Reference PlayPauseGlyph}}" TintColor="{Binding PlayPauseIconColor}" />
+                                                                                </Image.Behaviors>
+                                                                        </Image>
 
                                                                         <!-- Tap surface over the whole container (the
                                                                              glyph itself is inert); also keeps the
@@ -282,7 +281,13 @@
                                                                                 <Grid.GestureRecognizers>
                                                                                         <TapGestureRecognizer Tapped="OnPlayPauseTapped" />
                                                                                 </Grid.GestureRecognizers>
-                                                                                <Grid BackgroundColor="{DynamicResource PlayButtonColor}" IsVisible="{Binding IsLoadingMedia}" InputTransparent="False">
+                                                                                <Grid BackgroundColor="{DynamicResource PlayButtonColor}" IsVisible="{Binding IsLoadingMedia}" InputTransparent="False" SafeAreaEdges="None">
+                                                                                        <!-- Round 9: resource key fixed - the
+                                                                                             theme key is PlayButtonIconColor
+                                                                                             (PlayPauseIconColor is only the VM's
+                                                                                             PROPERTY name; the DynamicResource
+                                                                                             previously resolved nothing, leaving the
+                                                                                             spinner color unset). -->
                                                                                         <ActivityIndicator IsRunning="{Binding IsLoadingMedia}" Color="{DynamicResource PlayButtonIconColor}" WidthRequest="24" HeightRequest="24" HorizontalOptions="Center" VerticalOptions="Center" />
                                                                                 </Grid>
                                                                         </Grid>
@@ -330,7 +335,10 @@
                                                                         <Grid.GestureRecognizers>
                                                                                 <TapGestureRecognizer Tapped="OnQueueClicked" />
                                                                         </Grid.GestureRecognizers>
-                                                                        <HorizontalStackLayout HorizontalOptions="Center" VerticalOptions="Center" Spacing="8">
+                                                                        <!-- Round 9: opt out of Container insets -
+                                                                             the 48dp pill Grid is also a Grid that
+                                                                             defaults to Container. -->
+                                                                        <HorizontalStackLayout HorizontalOptions="Center" VerticalOptions="Center" Spacing="8" SafeAreaEdges="None">
                                                                                 <Image Source="list_music_icon.png" WidthRequest="20" HeightRequest="20">
                                                                                         <Image.Behaviors>
                                                                                                 <toolkit:IconTintColorBehavior TintColor="{Binding Source={x:Reference QueueLabel}, Path=TextColor}" />
@@ -349,7 +357,9 @@
                                                                         <Grid.GestureRecognizers>
                                                                                 <TapGestureRecognizer Tapped="OnLyricsToggleClicked" />
                                                                         </Grid.GestureRecognizers>
-                                                                        <HorizontalStackLayout HorizontalOptions="Center" VerticalOptions="Center" Spacing="8">
+                                                                        <!-- Round 9: opt out of Container insets -
+                                                                             same as the Queue pill's row. -->
+                                                                        <HorizontalStackLayout HorizontalOptions="Center" VerticalOptions="Center" Spacing="8" SafeAreaEdges="None">
                                                                                 <Image Source="text_align_start_icon.png" WidthRequest="20" HeightRequest="20">
                                                                                         <Image.Behaviors>
                                                                                                 <toolkit:IconTintColorBehavior TintColor="{Binding Source={x:Reference LyricsLabel}, Path=TextColor}" />
@@ -444,14 +454,19 @@
 
                                                 <!-- Mini Controls -->
                                                 <HorizontalStackLayout x:Name="MiniControls" Spacing="4" HorizontalOptions="End" SafeAreaEdges="None">
-                                                        <Grid WidthRequest="40" HeightRequest="40">
+                                                        <!-- Round 9: inner Grid + loading Border opt out of
+                                                             Container insets (the mini header sits ABOVE the
+                                                             gesture strip, but during the grow animation the
+                                                             cell transiently overlaps the bottom inset strip
+                                                             and a Container-default Grid would collapse). -->
+                                                        <Grid WidthRequest="40" HeightRequest="40" SafeAreaEdges="None">
                                                                 <ImageButton Source="{Binding PlayPauseIcon}" Command="{Binding TogglePlayCommand}" BackgroundColor="Transparent" Padding="8" CornerRadius="20">
                                                                         <ImageButton.Behaviors>
                                                                                 <toolkit:IconTintColorBehavior TintColor="{DynamicResource TitleColor}" />
                                                                         </ImageButton.Behaviors>
                                                                 </ImageButton>
 
-                                                                <Border Background="{DynamicResource SurfaceScrimPanel}" StrokeThickness="0" IsVisible="{Binding IsLoadingMedia}">
+                                                                <Border Background="{DynamicResource SurfaceScrimPanel}" StrokeThickness="0" IsVisible="{Binding IsLoadingMedia}" SafeAreaEdges="None">
                                                                         <Border.StrokeShape>
                                                                                 <RoundRectangle CornerRadius="20" />
                                                                         </Border.StrokeShape>
@@ -487,13 +502,13 @@
                                 <Grid x:Name="PrevTrackPage"
                                       ColumnDefinitions="Auto, *, Auto" ColumnSpacing="12"
                                       Margin="16,14,16,14" IsVisible="False" InputTransparent="True" SafeAreaEdges="None">
-                                        <Border Grid.Column="0" WidthRequest="44" HeightRequest="44" StrokeThickness="0" VerticalOptions="Center">
+                                        <Border Grid.Column="0" WidthRequest="44" HeightRequest="44" StrokeThickness="0" VerticalOptions="Center" SafeAreaEdges="None">
                                                 <Border.StrokeShape>
                                                         <RoundRectangle CornerRadius="7" />
                                                 </Border.StrokeShape>
                                                 <Image x:Name="PrevTrackImage" Aspect="AspectFill" />
                                         </Border>
-                                        <VerticalStackLayout Grid.Column="1" VerticalOptions="Center" Spacing="2">
+                                        <VerticalStackLayout Grid.Column="1" VerticalOptions="Center" Spacing="2" SafeAreaEdges="None">
                                                 <views:AutoMarqueeLabel x:Name="PrevTrackTitle" TextColor="{DynamicResource TitleColor}" FontSize="16" FontAttributes="Bold" />
                                                 <views:AutoMarqueeLabel x:Name="PrevTrackArtist" TextColor="{DynamicResource MutedColor}" FontSize="13" />
                                         </VerticalStackLayout>
@@ -503,13 +518,13 @@
                                 <Grid x:Name="NextTrackPage"
                                       ColumnDefinitions="Auto, *, Auto" ColumnSpacing="12"
                                       Margin="16,14,16,14" IsVisible="False" InputTransparent="True" SafeAreaEdges="None">
-                                        <Border Grid.Column="0" WidthRequest="44" HeightRequest="44" StrokeThickness="0" VerticalOptions="Center">
+                                        <Border Grid.Column="0" WidthRequest="44" HeightRequest="44" StrokeThickness="0" VerticalOptions="Center" SafeAreaEdges="None">
                                                 <Border.StrokeShape>
                                                         <RoundRectangle CornerRadius="7" />
                                                 </Border.StrokeShape>
                                                 <Image x:Name="NextTrackImage" Aspect="AspectFill" />
                                         </Border>
-                                        <VerticalStackLayout Grid.Column="1" VerticalOptions="Center" Spacing="2">
+                                        <VerticalStackLayout Grid.Column="1" VerticalOptions="Center" Spacing="2" SafeAreaEdges="None">
                                                 <views:AutoMarqueeLabel x:Name="NextTrackTitle" TextColor="{DynamicResource TitleColor}" FontSize="16" FontAttributes="Bold" />
                                                 <views:AutoMarqueeLabel x:Name="NextTrackArtist" TextColor="{DynamicResource MutedColor}" FontSize="13" />
                                         </VerticalStackLayout>

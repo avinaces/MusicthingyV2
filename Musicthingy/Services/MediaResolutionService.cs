@@ -45,6 +45,20 @@ public static class MediaResolutionService
             return null;
         }
 
+        return await TryGetArtworkByIdAsync(videoId, minPixelWidth);
+    }
+
+    /// <summary>
+    /// ROUND 9: the chain by video id directly. The pane's partial extracts
+    /// the id from EITHER the track Url or the saved IconUrl (the id can hide
+    /// in whichever one is not a data-URI), so the fetch side takes the id
+    /// and stops re-deriving it from a single URL.
+    /// </summary>
+    public static async Task<byte[]?> TryGetArtworkByIdAsync(string videoId, int minPixelWidth)
+    {
+        if (string.IsNullOrWhiteSpace(videoId))
+            return null;
+
         string[] candidates =
         {
             $"https://img.youtube.com/vi/{videoId}/maxresdefault.jpg", // 1280x720 (best)

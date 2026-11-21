@@ -147,8 +147,31 @@ public partial class MobilePlayerPaneView : ContentView
         // Mini self-heal: if the pane is resting at mini while the inset
         // values settle, re-apply the state height + margin so the card sits
         // exactly 72dp tall above the gesture strip (see UpdateSafeAreaPadding).
+        //
+        // ROUND 9 - rotation hard reset: a WIDTH change means the device (or
+        // window) rotated. Rotation is the one input the pane's incremental
+        // machinery cannot absorb: the PlayerResize Commit is mid-flight
+        // writing old-geometry heights, pan gesture state was captured
+        // against the old screen, the swipe carousel's pages sit at the old
+        // width, and the close-drag's TranslationY survives with no writer
+        // left to clear it (the user's report: title slowly drifting off
+        // screen after rotating, never returning, pane broken until app
+        // restart - the dead animation/marquee callbacks kept writing
+        // translations into a geometry they were built for). Instead of
+        // letting all that run to completion, a width change aborts
+        // everything and rebuilds the pane's state ABSOLUTELY from the
+        // current target state. Every one of these writes is idempotent, so
+        // the reset is also safe to run more than once.
+        double lastKnownWidth = -1;
         this.SizeChanged += (_, __) =>
         {
+            double currentWidth = this.Width;
+            bool rotated = lastKnownWidth > 0 && Math.Abs(currentWidth - lastKnownWidth) > 1;
+
+            if (rotated)
+                RebuildForRotation();
+            lastKnownWidth = currentWidth;
+
             if (_targetState == PlayerState.Mini && _currentGesture == GestureIntent.None && !_isAnimating)
             {
                 PlayerRoot.HeightRequest = MiniHeight;
@@ -678,7 +701,17 @@ public partial class MobilePlayerPaneView : ContentView
             : 72 + (30 * progressToMedium) - (42 * progressToFull);
         ExpandedContentZone.TranslationY = headerShift;
 
-        if (_isLyricsMode && fullHeight > MediumHeight)
+        // ROUND 9 stutter fix: UpdateForFullScreenProgress used to run on
+        // EVERY frame of the resize while lyrics mode was on - even while the
+        // pane was still climbing Mini->Medium (progressToFull == 0 the whole
+        // time, where it had nothing to do), and even when the track had NO
+        // lyrics at all (the "no lyrics" prompt is the only thing that path
+        // touches then). Its UpdateSpacers walks the visual tree to the root
+        // AND queries platform insets each call - at 60fps that is the
+        // perceivable stutter while opening/closing the player in lyrics
+        // mode. Gated to the stretch where it has work (progressToFull > 0),
+        // the pane's own per-frame writes above are pure transforms/opacity.
+        if (_isLyricsMode && fullHeight > MediumHeight && progressToFull > 0)
             LyricsZone.UpdateForFullScreenProgress(progressToFull);
 
         // Bottom actions belong to the full player; fade them in only near the
@@ -1163,6 +1196,64 @@ public partial class MobilePlayerPaneView : ContentView
         PrevTrackPage.TranslationX = -w;
         NextTrackPage.IsVisible = false;
         PrevTrackPage.IsVisible = false;
+    }
+
+    /// <summary>
+    /// ROUND 9: absolute state reconstruction after a rotation (width change).
+    /// The pane's animations and gesture state were all captured against the
+    /// OLD geometry; letting them run to completion leaves stale translations
+    /// (the reported "title slowly drifting off-screen, never returning")
+    /// because their callbacks keep writing into a coordinate space that no
+    /// longer exists. This aborts every animated writer, resets every
+    /// transient transform the pane owns, and snaps the pane to its CURRENT
+    /// target state with a fresh layout pass - no animation, no incremental
+    /// drift. Called only from the SizeChanged rotation branch, on the UI
+    /// thread, where SizeChanged already runs.
+    /// </summary>
+    private void RebuildForRotation()
+    {
+        // 1. Kill every animated writer of pane geometry.
+        this.AbortAnimation("PlayerResize");             // open/close snap in flight
+        PlayerRoot.AbortAnimation("TranslateTo");        // close-drag settle / close flight
+        this.AbortAnimation("PlayerClose");
+        HeaderContentGrid.AbortAnimation("TranslateTo");  // carousel settle on the header
+        NextTrackPage.AbortAnimation("TranslateTo");     // ...and its neighbor pages
+        PrevTrackPage.AbortAnimation("TranslateTo");
+
+        // 2. Drop any in-progress gesture: a pan captured against the old
+        //    screen must not keep writing heights/translations once the
+        //    geometry has changed underneath it. (Rotation mid-gesture is
+        //    exactly the "title drifted and never returned" scenario.)
+        //    Start() (not a Reset()) zeroes the velocity EMA + samples.
+        _currentGesture = GestureIntent.None;
+        _velocityTracker.Start();
+
+        // 3. Reset every transient transform to its neutral value.
+        PlayerRoot.TranslationY = 0;     // close-drag translation
+        PlayerRoot.Scale = 1;            // parallax/scale experiments
+        ResetSwipeGeometry();             // header + both carousel pages (uses new width)
+
+        // 4. Snap the pane ABSOLUTELY to its current target state: fresh
+        //    height, fresh safe-area padding, full layout pass, visibility
+        //    finalized. No animation - the pane simply IS at its state.
+        double targetHeight = _targetState switch
+        {
+            PlayerState.FullScreen => FullScreenHeight,
+            PlayerState.Medium => MediumHeight,
+            _ => MiniHeight
+        };
+        PlayerRoot.HeightRequest = targetHeight;
+        UpdateLayoutForHeight(targetHeight);
+        FinalizeVisibilityForState();
+
+        // 5. Lyrics mode: the lyric view's centering/spacers were computed
+        //    for the old viewport; a hard re-center (no animation) puts the
+        //    active line back in the middle of the NEW geometry. Guarded by
+        //    height>0 because the very first layout pass on the rotated
+        //    geometry may not have measured the ScrollView yet - the
+        //    LyricsView's own SizeChanged path re-runs this then.
+        if (_isLyricsMode)
+            LyricsZone.ScrollToActiveLyric(animate: false);
     }
 
     private void UpdateTrackSwipe(double totalX)
