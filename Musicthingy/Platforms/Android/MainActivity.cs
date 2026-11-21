@@ -87,11 +87,16 @@ public class MainActivity : MauiAppCompatActivity
     /// A UI-mode change (system theme switch, or an OEM overlay) can flip the
     /// status/navigation bar icons back to dark. UiMode is in the Activity's
     /// ConfigurationChanges, so this is called instead of a recreate.
+    /// Rotation / foldable posture changes also arrive here (ScreenSize and
+    /// SmallestScreenSize are in ConfigurationChanges too) and change the
+    /// safe-area insets, so the SafeAreaService cache is dropped to re-read
+    /// them on the next layout.
     /// </summary>
     public override void OnConfigurationChanged(Configuration newConfig)
     {
         base.OnConfigurationChanged(newConfig);
         ForceDarkSystemBars();
+        Services.SafeAreaService.Invalidate();
     }
 
     /// <summary>
@@ -128,6 +133,9 @@ public class MainActivity : MauiAppCompatActivity
     {
         base.OnCreate(savedInstanceState);
         ForceDarkSystemBars();
+        // OpenTune window policy: edge-to-edge with transparent system bars;
+        // MAUI layouts then apply SafeAreaService insets themselves.
+        Services.SafeAreaSetup.Apply(this);
         Android.Util.Log.Info("Musicthingy", "[DebugApi] build v9.5-cipherretry loaded");
         HandleIntent(Intent);
 

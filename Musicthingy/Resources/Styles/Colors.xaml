@@ -8,15 +8,19 @@
 
     <!-- 
         Neutral surface ramp
-        FIXED: Heavily desaturated. These are now sleek, dark charcoal grays 
-        with just a microscopic 2% tint, preventing "muddy" backgrounds 
-        on warm themes and allowing the accents to pop.
+        UPDATED: These carried only ~0.005 chroma, so the ThemeManager's hue
+        rotation had nothing to grip - every themed build collapsed back to
+        flat gray (compare OpenTune's warm #1B1110 / #2B2120 / #3A302F sheet).
+        Each base below keeps the ORIGINAL OKLCH Lightness value to the third
+        decimal (contrast is unchanged) but carries OpenTune-level chroma
+        (~0.016) on the same warm brown hue (~25deg), so the default theme
+        already reads warm and the ThemeManager can shift the whole family.
     -->
-    <Color x:Key="SurfaceCanvas">#111214</Color>
-    <Color x:Key="SurfaceInput">#131417</Color>
-    <Color x:Key="SurfacePanel">#18191C</Color>
-    <Color x:Key="SurfacePanelHover">#1D1F23</Color>
-    <Color x:Key="SurfaceRaised">#232529</Color>
+    <Color x:Key="SurfaceCanvas">#190F0E</Color>
+    <Color x:Key="SurfaceInput">#1B1110</Color>
+    <Color x:Key="SurfacePanel">#201615</Color>
+    <Color x:Key="SurfacePanelHover">#261C1B</Color>
+    <Color x:Key="SurfaceRaised">#2C2221</Color>
 
     <!-- Selected surfaces retain slightly more tint for visibility -->
     <Color x:Key="SurfaceSelected">#1B4C65</Color>
@@ -93,9 +97,9 @@
     <SolidColorBrush x:Key="Gray950Brush" Color="{StaticResource Gray950}"/>
 
     <!-- Legacy aliases -->
-    <Color x:Key="BgColor">#111214</Color>
-    <Color x:Key="CardColor">#18191C</Color>
-    <Color x:Key="CardHoverColor">#1D1F23</Color>
+    <Color x:Key="BgColor">#190F0E</Color>
+    <Color x:Key="CardColor">#201615</Color>
+    <Color x:Key="CardHoverColor">#261C1B</Color>
     <Color x:Key="AccentColor">#6EA0D6</Color>
     <Color x:Key="SelectedBgColor">#2B323B</Color>
     <Color x:Key="DangerColor">#74313A</Color>

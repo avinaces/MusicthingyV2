@@ -7,10 +7,17 @@
            8/9 and whenever the system is in light mode, making the clock and nav
            buttons invisible on our #111214 background);
          - forceDarkAllowed=false so OEM "force dark for third-party apps"
-           (MIUI/HyperOS, ColorOS, Funtouch) cannot invert an already dark UI. -->
+           (MIUI/HyperOS, ColorOS, Funtouch) cannot invert an already dark UI;
+         - transparent status / navigation bars (SafeAreaSetup also applies
+           edge-to-edge at runtime; these keep the very first frame from
+           painting a colored bar over the dark background). -->
     <style name="Musicthingy.SplashTheme" parent="Maui.SplashTheme">
         <item name="android:windowLightStatusBar">false</item>
         <item name="android:windowLightNavigationBar" tools:targetApi="o_mr1">false</item>
         <item name="android:forceDarkAllowed" tools:targetApi="q">false</item>
+        <item name="android:statusBarColor" tools:targetApi="lollipop">@android:color/transparent</item>
+        <item name="android:navigationBarColor" tools:targetApi="o_mr1">@android:color/transparent</item>
+        <item name="android:enforceNavigationBarContrast" tools:targetApi="q">false</item>
+        <item name="android:enforceStatusBarContrast" tools:targetApi="q">false</item>
     </style>
 </resources>

@@ -9,13 +9,27 @@
              xmlns:helpers="clr-namespace:Musicthingy.Helpers"
              x:Class="Musicthingy.Views.MobileMainPage"
              x:Name="RootPage"
-             BackgroundColor="{DynamicResource BgColor}">
+             BackgroundColor="{DynamicResource BgColor}"
+             SafeAreaEdges="None">
+
+    <!-- SafeAreaEdges="None" on the ContentPage AND the root Grid: the page
+         window is drawn edge-to-edge and NOTHING on this page is auto-padded
+         by MAUI. The inner content grid (nav row + list) instead opts back IN
+         with SafeAreaEdges="Container", so the normal page furniture still
+         clears the status/gesture strips - only the full-height player pane
+         (a sibling in the ROOT grid) is deliberately edge-to-edge and owns
+         its own strip clearance (continuous padding in its code-behind).
+         Before this, the root Grid defaulted to Container: it arranged the
+         pane inside the clipped strip-free box [TopInset .. screen - BottomInset]
+         while still reporting the full window height - so FullScreen
+         overhung both ends (header sliced at the top, pills sliced at the
+         bottom) and the pane's own inset math was wrong at the extremes. -->
 
     <!-- Define the reusable Toolbar Template -->
     <ContentPage.Resources>
         <ControlTemplate x:Key="SharedToolbarTemplate">
-            <Grid BackgroundColor="{DynamicResource BgColor}">
-                <Grid Margin="16,0" ColumnDefinitions="Auto, *">
+            <Grid BackgroundColor="{DynamicResource BgColor}" SafeAreaEdges="None">
+                <Grid Margin="16,0" ColumnDefinitions="Auto, *" SafeAreaEdges="None">
 
                     <!-- SORTING CONTROLS -->
                     <HorizontalStackLayout Grid.Column="0" Spacing="0" VerticalOptions="Center">
@@ -85,11 +99,20 @@
         </ControlTemplate>
     </ContentPage.Resources>
 
-    <Grid>
-        <Grid RowDefinitions="Auto, *">
-            <!-- Custom Navigation Bar -->
+    <!-- ROOT grid: SafeAreaEdges="None" so the full-height player pane (a
+         sibling, ZIndex 20) is arranged over the WHOLE window - the strips
+         included - instead of inside MAUI's padded safe box. Every other
+         child that must clear the strips opts back in with
+         SafeAreaEdges="Container" individually. -->
+    <Grid SafeAreaEdges="None">
+        <!-- Inner content grid: opts back into MAUI's automatic Container
+             padding, so the nav row clears the status strip and the
+             list/spacer clear the gesture strip exactly as before. -->
+        <Grid RowDefinitions="Auto, *" SafeAreaEdges="Container">
+            <!-- Custom Navigation Bar. The Container padding above keeps it
+                 clear of the status strip automatically - no manual insets. -->
             <Grid Grid.Row="0" HeightRequest="56" BackgroundColor="{DynamicResource BgColor}" ZIndex="10"
-                  Padding="8,0" ColumnDefinitions="44, *, 44" ColumnSpacing="4">
+                  Padding="8,0" ColumnDefinitions="44, *, 44" ColumnSpacing="4" SafeAreaEdges="None">
 
                 <ContentView Grid.Column="0" VerticalOptions="Fill" HorizontalOptions="Fill">
                     <ContentView.GestureRecognizers>
@@ -108,8 +131,9 @@
                 </ImageButton>
             </Grid>
 
-            <!-- Detail Grid (Tracks + Bottom Player) -->
-            <Grid Grid.Row="1" RowDefinitions="*, Auto">
+            <!-- Detail Grid (Tracks + Bottom Player): the parent content grid's
+                 Container padding keeps it clear of the gesture-bar strip. -->
+            <Grid Grid.Row="1" RowDefinitions="*, Auto" SafeAreaEdges="None">
                 <Grid Grid.Row="0">
                     <mpowerkit:VirtualizeListView x:Name="TracksListView" 
                                                   ItemsSource="{Binding DisplayedItems}" 
@@ -303,19 +327,43 @@
                     </Grid>
                 </Grid>
 
-                <ContentView Grid.Row="1" HeightRequest="70" BackgroundColor="{DynamicResource BgColor}" IsVisible="{Binding IsMediaSelected}" />
-                <views:MobilePlayerPaneView Grid.Row="0" Grid.RowSpan="2" VerticalOptions="End" ZIndex="20"/>
+                <!-- Bottom spacer: matches the mini pane's total height
+                     (72dp header + gesture inset) so the list's last row
+                     scrolls fully clear of the mini player. Code-behind
+                     keeps the request in sync when insets change. -->
+                <ContentView x:Name="MiniPlayerSpacer" Grid.Row="1" HeightRequest="72" BackgroundColor="{DynamicResource BgColor}" IsVisible="{Binding IsMediaSelected}" />
             </Grid>
         </Grid>
 
+        <!-- Full-height player pane: lives in the ROOT grid (which is
+             SafeAreaEdges="None", see above) so its parent box is the WHOLE
+             window - FullScreen paints under both transparent system bars.
+             ZIndex 20 keeps it below the sidebar (50/51), search results
+             (60/61), modals (100) and the global sheet host (101); the list
+             keeps clearing the mini-player via the spacer row above. The
+             pane itself opts out of Container padding (SafeAreaEdges="None"
+             on its ContentView root) and owns its strip clearance through
+             continuous PaneContent padding in its code-behind. -->
+        <views:MobilePlayerPaneView VerticalOptions="End" ZIndex="20"/>
+
         <!-- Touch / Sidebar Overlays -->
-        <!-- Starts below the 56dp header so the hamburger button is tappable. -->
+        <!-- Starts below the 56dp header so the hamburger button is tappable.
+             The content grid's Container padding keeps the header below the
+             status strip; this zone lives in the ROOT grid (None), so its
+             56dp margin matches the header's offset inside that grid (the
+             inset that Container adds inside the content grid equals the
+             strip this margin clears). -->
         <ContentView x:Name="EdgeSwipeZone" WidthRequest="25" HorizontalOptions="Start" VerticalOptions="Fill" Margin="0,56,0,0" BackgroundColor="Transparent" ZIndex="49">
             <ContentView.GestureRecognizers>
                 <PanGestureRecognizer PanUpdated="OnEdgePanUpdated" />
             </ContentView.GestureRecognizers>
         </ContentView>
 
+        <!-- NO SafeAreaEdges here: the property does not exist on BoxView in
+             .NET 10 MAUI (only ContentPage / Layout / ScrollView / ContentView
+             / Border) and throws XamlParseException at parse time - the
+             "crashes unless a debugger is attached" round-6 bug. The scrim is
+             a full-window cover and inherits the root grid's None behavior. -->
         <BoxView x:Name="SidebarDarken" BackgroundColor="{DynamicResource SurfaceScrim}" Opacity="0" IsVisible="False" ZIndex="50">
             <BoxView.GestureRecognizers>
                 <TapGestureRecognizer Tapped="OnSidebarOverlayTapped" />
@@ -323,7 +371,7 @@
             </BoxView.GestureRecognizers>
         </BoxView>
 
-        <Grid x:Name="SidebarGrid" HorizontalOptions="Fill" TranslationX="-5000" BackgroundColor="{DynamicResource BgColor}" ZIndex="51">
+        <Grid x:Name="SidebarGrid" HorizontalOptions="Fill" TranslationX="-5000" BackgroundColor="{DynamicResource BgColor}" ZIndex="51" SafeAreaEdges="Container">
             <Grid.GestureRecognizers>
                 <PanGestureRecognizer PanUpdated="OnSidebarPanUpdated" />
             </Grid.GestureRecognizers>
@@ -467,12 +515,13 @@
         </Grid>
 
         <!-- Search results (above the sidebar, below the modal/sheet layers).
-             The top margin keeps the search bars and their buttons usable. -->
-        <views:SearchResultsView x:Name="MainSearchResults" ZIndex="60" Margin="0,56,0,0" />
-        <views:SearchResultsView x:Name="SidebarSearchResults" ZIndex="61" Margin="0,56,0,0" />
+             The top margin keeps the search bars and their buttons usable;
+             Container keeps them clear of the status strip. -->
+        <views:SearchResultsView x:Name="MainSearchResults" ZIndex="60" Margin="0,56,0,0" SafeAreaEdges="Container" />
+        <views:SearchResultsView x:Name="SidebarSearchResults" ZIndex="61" Margin="0,56,0,0" SafeAreaEdges="Container" />
 
         <!-- Modal Dialog -->
-        <Grid IsVisible="{Binding IsModalVisible}" ZIndex="100">
+        <Grid IsVisible="{Binding IsModalVisible}" ZIndex="100" SafeAreaEdges="Container">
             <BoxView BackgroundColor="{DynamicResource ModalSurfaceScrim}">
                 <BoxView.GestureRecognizers>
                     <TapGestureRecognizer Command="{Binding ModalBackgroundTappedCommand}" />
@@ -491,7 +540,7 @@
             </Border>
         </Grid>
 
-        <views:SlideUpSheetHost x:Name="GlobalSheetHost" ZIndex="101" />
+        <views:SlideUpSheetHost x:Name="GlobalSheetHost" ZIndex="101" SafeAreaEdges="Container" />
 
     </Grid>
 </ContentPage>

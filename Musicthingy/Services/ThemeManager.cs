@@ -103,6 +103,8 @@ public static class SystemThemeHelper
         if (Android.OS.Build.VERSION.SdkInt >= Android.OS.BuildVersionCodes.S)
         {
             var context = Android.App.Application.Context;
+            if (context?.Resources?.Configuration == null)
+                return null;
 
             // Detect if the system is in Dark Mode
             bool isDark = (context.Resources.Configuration.UiMode & Android.Content.Res.UiMode.NightMask) == Android.Content.Res.UiMode.NightYes;
@@ -127,6 +129,8 @@ public static class SystemThemeHelper
         if (Android.OS.Build.VERSION.SdkInt >= Android.OS.BuildVersionCodes.S)
         {
             var context = Android.App.Application.Context;
+            if (context?.Resources == null)
+                return null;
 
             // "SystemAccent1500" is the standard vibrant primary color
             int colorResId = Android.Resource.Color.SystemAccent1500;

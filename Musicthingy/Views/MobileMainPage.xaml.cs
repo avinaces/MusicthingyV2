@@ -118,9 +118,23 @@ public partial class MobileMainPage : ContentPage
 
     private void UpdateSearchHeights()
     {
+        // The inner content grid is SafeAreaEdges="Container", so MAUI keeps
+        // the list area clear of both strips itself - exactly as it did
+        // before the pane rework. The page-level None only exempts the ROOT
+        // grid's direct children (the pane + full-window overlays); the
+        // content grid opts back in, so NO manual inset arithmetic belongs
+        // here: subtracting again would double-count the strips (the
+        // round-6 "everything misaligned" complaint).
         double available = Height > 0 ? Height - 56 : 640;
         _mainSearchHost.SetAvailableHeight(available);
         _sidebarSearchHost.SetAvailableHeight(available);
+
+        // The mini pane is 72dp of card that now sits ABOVE the gesture strip
+        // (PlayerRoot margin model, see the pane) - the Container-padded
+        // content grid already reserves the strip, so the list spacer only
+        // needs the 72dp card itself.
+        if (Math.Abs(MiniPlayerSpacer.HeightRequest - 72) > 0.5)
+            MiniPlayerSpacer.HeightRequest = 72;
     }
 
     private void OnSearchHostPropertyChanged(object? sender, PropertyChangedEventArgs e)

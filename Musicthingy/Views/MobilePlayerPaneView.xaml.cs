@@ -1,6 +1,7 @@
 using CommunityToolkit.Mvvm.Messaging;
 using Microsoft.Maui.Controls;
 using Musicthingy.Models;
+using Musicthingy.Services;
 using System;
 using System.Collections.Specialized;
 using System.ComponentModel;
@@ -26,23 +27,98 @@ public partial class MobilePlayerPaneView : ContentView
     private int _animationToken;
 
     private const double MiniHeight = 72;
-    private const double MediumHeight = 280;
+    private const double MediumHeight = 296;
 
-    // Height the expanded zone is pushed down by the header when fully open.
-    // The zone is always laid out at (screen - shift) and clipped by the pane,
-    // so its content stays put while the pane grows.
+    // ====================== Safe-area model (v5) ======================
+    // The window is edge-to-edge (MobileMainPage's ContentPage + root Grid are
+    // SafeAreaEdges="None"), and - NEW in round 6 - EVERY Layout inside this
+    // pane is SafeAreaEdges="None" too: in .NET 10 MAUI, Grid/StackLayout
+    // default to Container, so the pane's inner Layouts were auto-padding
+    // the strips ON TOP of the code-behind's own padding (a double ~48dp
+    // lift that pushed "Now Playing" down and sheared the pills - the
+    // round-6 screenshots). Only the pane's CODE owns strip clearance now:
+    //
+    //  MARGIN + PADDING HANDOFF (no extruding card block):
+    //  - Mini & Medium: PlayerRoot.Margin.Bottom = EffectiveSafeBottom - the
+    //    card sits ABOVE the gesture/nav strip like a normal mini player, and
+    //    the mini progress bar at the pane's bottom edge IS the card's clean
+    //    bottom edge. The pane height itself stays the pure content height
+    //    (72 / 296), so nothing ever paints over the nav strip.
+    //  - FullScreen: the margin eases to 0 while PaneContent.Padding.Bottom
+    //    ramps up to EffectiveSafeBottom - the controls stay at a CONSTANT
+    //    screen height through the handoff (margin shrink = pad grow) and the
+    //    sheet paints edge-to-edge only once it truly IS full-screen.
+    //  - Top: PaneContent top padding ramps in over the last 25% of the
+    //    Medium->Full stretch, exactly as before (clears the status strip).
+    //
+    // "Effective" insets self-heal the degenerate case where Shell constrains
+    // the page back into the safe box: then the insets are already consumed
+    // by the host and the pane adds none of its own.
+    private double SafeTop => SafeAreaService.TopInset;
+    private double SafeBottom => SafeAreaService.BottomInset;
+
+    // Real window height in dp, from the display metrics (independent of
+    // whatever box the pane happens to be arranged in).
+    private double WindowHeightDp
+    {
+        get
+        {
+            var info = DeviceDisplay.MainDisplayInfo;
+            if (info.Height > 0 && info.Density > 0)
+                return info.Height / info.Density;
+            return FullScreenHeight;
+        }
+    }
+
+    // True when the pane's host really is edge-to-edge: the full-screen pane
+    // height must run past the strip-free window height by roughly the inset
+    // sum. If Shell constrains the page to the safe box instead, FullScreenHeight
+    // falls short of the window height and the insets are already consumed -
+    // adding them again would overflow both ends (the round-5 screenshots).
+    private bool IsEdgeToEdge
+    {
+        get
+        {
+            double insetSum = SafeTop + SafeBottom;
+            return insetSum > 0 && FullScreenHeight >= WindowHeightDp - (insetSum * 0.4);
+        }
+    }
+
+    private double EffectiveSafeTop => IsEdgeToEdge ? SafeTop : 0;
+    private double EffectiveSafeBottom => IsEdgeToEdge ? SafeBottom : 0;
+
+    // Height the expanded zone is pushed down by the header when fully open
+    // (lyrics mode: the compact header stays on top). The zone is always laid
+    // out at (screen - shift) and clipped by the pane, so its content stays
+    // put while the pane grows.
     private const double ExpandedHeaderShift = 102;
 
+    // Same, in artwork mode once the FullScreen "Now Playing" header replaces
+    // the compact one (it is shorter: 60, not 102).
+    private const double ExpandedHeaderShiftFull = 60;
+
     // Vertical space the expanded zone spends outside the media slot:
-    // Padding="16,10,16,16" (26), two 12px stack gaps (24), and the tags row's
-    // negative vertical margins (-14). Kept as constants so the slot math does
-    // not depend on a measured value that may not exist yet.
-    private const double ExpandedZoneFixedChrome = 26 + 24 - 14;
-    private const double FallbackTagsRowHeight = 28;
-    private const double FallbackControlsHeight = 194;
+    // Padding="16,10,16,16" (26 vertical), the 12px stack gap between the
+    // media slot and ExpandedControls, and the tags row's negative top margin
+    // (-10). TagsRow now lives INSIDE ExpandedControls (round 6), so its
+    // height is part of ExpandedControls' own measure, not the chrome.
+    private const double ExpandedZoneFixedChrome = 26 + 12 - 10;
+
+    // Fallbacks for the slot math before the first measure pass.
+    // ExpandedControls now also carries the tags row (28) above the slider.
+    private const double FallbackControlsHeight = 230;
+    private const double FallbackInfoHeight = 56;
 
     // Artwork / lyrics toggle inside the full player's media slot.
     private bool _isLyricsMode;
+
+    // Last safe-area padding applied to PaneContent (change guard only;
+    // see UpdateSafeAreaPadding).
+    private Thickness _safeAreaPadding;
+
+    // Last margin applied to PlayerRoot (change guard only; see
+    // UpdateSafeAreaPadding - the mini/medium bottom clearance).
+    private Thickness _playerRootMargin;
 
     public System.Windows.Input.ICommand OpenTagsCommand { get; }
 
@@ -53,6 +129,9 @@ public partial class MobilePlayerPaneView : ContentView
         InitializeComponent();
         SetupGestures();
 
+        // First layout pass at the pure mini content height (the gesture
+        // clearance lives in PlayerRoot.Margin, not the pane height).
+        PlayerRoot.HeightRequest = MiniHeight;
         UpdateLayoutForHeight(MiniHeight);
         ApplyMediaMode();
 
@@ -61,10 +140,39 @@ public partial class MobilePlayerPaneView : ContentView
         // Tapping a timed lyric line seeks the player to that timestamp
         LyricsZone.LyricTapped += OnLyricTapped;
 
+        // Safe-area insets are unreadable before the first layout pass; the
+        // pane-level SizeChanged fires right after it, before the user can
+        // open anything, so applying there is enough (and it also covers
+        // rotation: any later inset change is picked up by the same handler).
+        // Mini self-heal: if the pane is resting at mini while the inset
+        // values settle, re-apply the state height + margin so the card sits
+        // exactly 72dp tall above the gesture strip (see UpdateSafeAreaPadding).
+        this.SizeChanged += (_, __) =>
+        {
+            if (_targetState == PlayerState.Mini && _currentGesture == GestureIntent.None && !_isAnimating)
+            {
+                PlayerRoot.HeightRequest = MiniHeight;
+                UpdateLayoutForHeight(MiniHeight);
+            }
+            else
+            {
+                double h = PlayerRoot.Height > 0 ? PlayerRoot.Height : PlayerRoot.HeightRequest;
+                UpdateSafeAreaPadding(h,
+                    FullScreenHeight > MediumHeight
+                        ? Math.Clamp((h - MediumHeight) / (FullScreenHeight - MediumHeight), 0, 1)
+                        : 0);
+            }
+            UpdateArtworkSize(GetFullScreenSlotHeight());
+        };
+
         // The media slot is sized manually (see UpdateLayoutForHeight); once it
         // is measured, fit the square artwork to the smaller of its width/height.
-        MediaSlot.SizeChanged += (_, __) => UpdateArtworkSize(MediaSlot.HeightRequest);
-        ExpandedControls.SizeChanged += (_, __) => UpdateMediaSlotForCurrentHeight();
+        // The artwork itself is sized ONCE per slot width change - never per
+        // animation frame - and the open/close transition only fades/scales it.
+        MediaSlot.SizeChanged += (_, __) => UpdateArtworkSize(GetFullScreenSlotHeight());
+        this.SizeChanged += (_, __) => UpdateArtworkSize(GetFullScreenSlotHeight());
+        ExpandedControls.SizeChanged += (_, __) => UpdateLayoutForHeight(
+            PlayerRoot.Height > 0 ? PlayerRoot.Height : PlayerRoot.HeightRequest);
 
         // Bottom progress bar: keep the fill width in sync with playback.
         // Re-measure when the bar gets its real width, and re-hook whenever a
@@ -108,6 +216,56 @@ public partial class MobilePlayerPaneView : ContentView
         }
     }
 
+    /// <summary>
+    /// Safe-area clearance for the pane - the margin/padding HANDOFF model
+    /// (v5). Two coordinated writes, both smooth functions of
+    /// (height, insets), no boolean flips:
+    ///
+    /// 1. PlayerRoot.Margin.Bottom = EffectiveSafeBottom * (1 - progressToFull):
+    ///    while the pane is mini/medium the card floats ABOVE the gesture/nav
+    ///    strip like a normal mini player - nothing paints over the strip and
+    ///    the mini progress bar at the pane's bottom edge is the card's clean
+    ///    bottom (no CardColor slab extruding below the bar - the round-6
+    ///    screenshot). At full screen the margin eases to exactly 0.
+    ///
+    /// 2. PaneContent.Padding:
+    ///    - Bottom = EffectiveSafeBottom * progressToFull: grows exactly as
+    ///      the margin shrinks, so the bottom content (transport, pills) stays
+    ///      at a CONSTANT screen height through the whole handoff and rests
+    ///      SafeBottom above the true screen bottom once the sheet is
+    ///      full-bleed.
+    ///    - Top = EffectiveSafeTop ramped over the last 25% of the
+    ///      Medium->Full stretch (clears the status strip exactly when the
+    ///      pane top reaches it; the old boolean flip produced the
+    ///      final-frame snap + jitter).
+    ///
+    /// The Effective* indirection zeroes everything if the host is NOT
+    /// actually edge-to-edge (Shell constraining the page), so the pane never
+    /// double-pads clearance it already gets.
+    /// </summary>
+    private void UpdateSafeAreaPadding(double height, double progressToFull)
+    {
+        // 1. Margin handoff: mini/medium sit above the strip, full is flush.
+        double bottomMargin = EffectiveSafeBottom * (1.0 - progressToFull);
+        var targetMargin = new Thickness(0, 0, 0, bottomMargin);
+        if (_playerRootMargin != targetMargin)
+        {
+            _playerRootMargin = targetMargin;
+            PlayerRoot.Margin = targetMargin;
+        }
+
+        // 2. Content padding: the strip clearance that REPLACES the margin.
+        double topPad = EffectiveSafeTop * Math.Clamp((progressToFull - 0.75) / 0.25, 0, 1);
+        double bottomPad = EffectiveSafeBottom * progressToFull;
+
+        Thickness targetPad = new Thickness(0, topPad, 0, bottomPad);
+        if (_safeAreaPadding != targetPad)
+        {
+            _safeAreaPadding = targetPad;
+            PaneContent.Padding = targetPad;
+        }
+    }
+
     private void SetupGestures()
     {
         var pan = new PanGestureRecognizer();
@@ -125,14 +283,38 @@ public partial class MobilePlayerPaneView : ContentView
         HeaderDragZone.GestureRecognizers.Clear();
         HeaderDragZone.GestureRecognizers.Add(pan);
         HeaderDragZone.GestureRecognizers.Add(tap);
+
+        // Round 7: the big artwork card is ALSO a drag surface (the user asked
+        // to drag the pane closed from the big icon, not just the top strip).
+        // Same recognizers, same handlers: OnPanUpdated resolves the gesture
+        // by direction (down = collapse/close, up = expand) exactly as the
+        // header does, because it reads the PANE's height, not where the drag
+        // started. No tap recognizer here - a tap on the artwork does nothing
+        // (consumed by no one), and a genuine swipe still reaches this pan
+        // recognizer because the Image inside is not tap-consumable either.
+        var artPan = new PanGestureRecognizer();
+        artPan.PanUpdated += OnPanUpdated;
+        ArtworkCard.GestureRecognizers.Clear();
+        ArtworkCard.GestureRecognizers.Add(artPan);
+        _artworkPanRecognizer = artPan;
     }
 
-    private void OnPanUpdated(object? sender, PanUpdatedEventArgs e)
-    {
+    // The artwork card's own pan recognizer (SetupGestures): identifying the
+    // sender lets OnPanUpdated escalate a body-originated DOWN drag to a
+    // closing translation once the height is clamped at Mini (see the
+    // Resizing branch). Header-originated drags keep their old snap-only
+    // behavior, so nothing changes for existing muscle memory.
+    private PanGestureRecognizer? _artworkPanRecognizer;
+
+    private void OnPanUpdated(object? sender, PanUpdatedEventArgs e)    {
         switch (e.StatusType)
         {
             case GestureStatus.Started:
-                _startPanHeight = PlayerRoot.Height;
+                // Kill the snap animation BEFORE the finger takes over: without
+                // this, a still-running "PlayerResize" Commit and the pan both
+                // write PlayerRoot.HeightRequest every frame and visibly fight.
+                this.AbortAnimation("PlayerResize");
+                _startPanHeight = PlayerRoot.Height > 0 ? PlayerRoot.Height : PlayerRoot.HeightRequest;
                 _currentGesture = GestureIntent.None;
 
                 _velocityTracker.Start();
@@ -146,6 +328,9 @@ public partial class MobilePlayerPaneView : ContentView
                 {
                     if (Math.Abs(e.TotalX) > 15 || Math.Abs(e.TotalY) > 15)
                     {
+                        // Mini means the pane rests at the pure 72dp content
+                        // height (the strip clearance is the margin, not the
+                        // height); the +1 guards float rounding.
                         if (_startPanHeight <= MiniHeight + 1)
                         {
                             // MINI STATE: clear horizontal = track swipe carousel
@@ -179,8 +364,26 @@ public partial class MobilePlayerPaneView : ContentView
                     double newHeight = _startPanHeight - e.TotalY;
                     newHeight = Math.Clamp(newHeight, MiniHeight, FullScreenHeight);
 
-                    PlayerRoot.HeightRequest = newHeight;
-                    UpdateLayoutForHeight(newHeight);
+                    // Round 7: a body-originated drag (the big artwork card is
+                    // a pan surface now) that runs DOWN past the mini clamp
+                    // escalates to the same closing translation the mini
+                    // header's drag-to-close uses, so dragging from the big
+                    // artwork can close the pane outright, not just collapse
+                    // it to the mini bar. Translation starts only AFTER the
+                    // height hits the clamp (slack consumed first), so the
+                    // sheet edge follows the finger with no jump. Header
+                    // drags keep the old snap-only behavior (sender differs).
+                    double collapseSlack = _startPanHeight - MiniHeight;
+                    if (newHeight <= MiniHeight + 1 && e.TotalY > collapseSlack + 1 && ReferenceEquals(sender, _artworkPanRecognizer))
+                    {
+                        _currentGesture = GestureIntent.ClosingDown;
+                        PlayerRoot.TranslationY = e.TotalY - collapseSlack;
+                    }
+                    else
+                    {
+                        PlayerRoot.HeightRequest = newHeight;
+                        UpdateLayoutForHeight(newHeight);
+                    }
                 }
                 break;
 
@@ -244,6 +447,8 @@ public partial class MobilePlayerPaneView : ContentView
 
     private void AnimateToState(PlayerState state, double velocityY = 0)
     {
+        // Same rule as the pan start: never let two writers animate the height.
+        this.AbortAnimation("PlayerResize");
         _targetState = state;
         PrepareVisibilityForAnimation();
 
@@ -283,8 +488,11 @@ public partial class MobilePlayerPaneView : ContentView
         _isAnimating = true;
         uint length = 200;
 
-        if (velocity > 0.1) length = (uint)Math.Clamp((MiniHeight + 100 - PlayerRoot.TranslationY) / velocity, 100, 350);
-        await PlayerRoot.TranslateToAsync(0, MiniHeight + 100, length, Easing.CubicOut);
+        // Height + current bottom margin + 60 => the card clears the screen
+        // edge (the margin sits between the pane and the window bottom).
+        double offScreen = MiniHeight + _playerRootMargin.Bottom + 60;
+        if (velocity > 0.1) length = (uint)Math.Clamp((offScreen - PlayerRoot.TranslationY) / velocity, 100, 350);
+        await PlayerRoot.TranslateToAsync(0, offScreen, length, Easing.CubicOut);
 
         if (this.BindingContext is Musicthingy.ViewModels.MainViewModel vm)
         {
@@ -310,9 +518,15 @@ public partial class MobilePlayerPaneView : ContentView
         _isAnimating = true;
         MiniControls.IsVisible = true;
         ExpandedHeaderControls.IsVisible = true;
+        HeaderContentGrid.IsVisible = true;
+        FullScreenHeader.IsVisible = !_isLyricsMode;
         DragHandle.IsVisible = true;
         ExpandedContentZone.IsVisible = true;
-        LyricsZone.PrepareForAnimation();
+
+        // Lyrics-mode prep only when the lyrics view is (about to be) shown:
+        // its layout pass is heavy and pointless while the artwork is the mode.
+        if (_isLyricsMode)
+            LyricsZone.PrepareForAnimation();
 
         // Watchdog: ONLY the animations' finished callbacks clear _isAnimating,
         // and an interrupted MAUI animation can leave its finished callback
@@ -341,10 +555,14 @@ public partial class MobilePlayerPaneView : ContentView
         // Only safely update IsVisible when the animation has completely stopped
         MiniControls.IsVisible = MiniControls.Opacity > 0.01;
         ExpandedHeaderControls.IsVisible = ExpandedHeaderControls.Opacity > 0.01;
+        HeaderContentGrid.IsVisible = HeaderContentGrid.Opacity > 0.01;
+        HeaderContentGrid.InputTransparent = HeaderContentGrid.Opacity < 0.5;
+        FullScreenHeader.IsVisible = !_isLyricsMode && FullScreenHeader.Opacity > 0.01;
+        FullScreenHeader.InputTransparent = FullScreenHeader.Opacity < 0.5;
         DragHandle.IsVisible = DragHandle.Opacity > 0.01;
         ExpandedContentZone.IsVisible = PlayerRoot.HeightRequest > (MiniHeight + 5);
-
-        LyricsZone.FinalizeVisibility();
+        if (_isLyricsMode)
+            LyricsZone.FinalizeVisibility();
 
         // Re-sync lyrics to current position now that the animation has safely
         // completed (only when the lyric view is actually the visible mode).
@@ -365,61 +583,103 @@ public partial class MobilePlayerPaneView : ContentView
             progressToFull = Math.Clamp((height - MediumHeight) / (fullHeight - MediumHeight), 0, 1);
         }
 
-        // The zone is anchored (VerticalOptions=Start) to the TOP of the pane
-        // and pushed down by the header shift (TranslationY further below), so
-        // its height must be the pane height MINUS that shift - its bottom then
-        // lands exactly on the pane's bottom edge when fully expanded. The old
-        // full-height value made the zone overshoot past the screen bottom by
-        // the header height, pushing the lyric viewport - and its scrollbar -
-        // off screen and skewing every centering/spacer math below it.
-        // Uses the FULL-EXPANSION header height (72 + 30), not the animated
-        // one, so the zone's height stays constant during the Mini->Medium
-        // transition instead of forcing a full relayout every animation frame.
-        double zoneHeight = Math.Max(0, fullHeight - ExpandedHeaderShift);
+        // Margin/padding handoff (v5): mini/medium float above the gesture
+        // strip via PlayerRoot.Margin; full screen eases the margin to 0
+        // while PaneContent's bottom padding takes over - bottom content
+        // stays at a constant screen height through the whole transition.
+        UpdateSafeAreaPadding(height, progressToFull);
+
+        // Inner height = what the pane has INSIDE PaneContent's safe-area
+        // padding. Everything below sizes against THIS value, so the zone,
+        // slot and controls can never overhang the pane's padded bottom
+        // (the round-5 "pills sliced in half below y=2280" bug was the zone
+        // using the FULL pane height while the content sat inside the pad).
+        //
+        // The zone is anchored (VerticalOptions=Start) to the TOP of the
+        // pane and pushed down by the header shift (TranslationY further
+        // below), so its height must be the INNER height MINUS that shift -
+        // its bottom then lands exactly on the padded content's bottom edge
+        // when fully expanded. Uses the FULL-EXPANSION header height, not
+        // the animated one, so the zone's height stays constant during the
+        // Mini->Medium transition instead of forcing a full relayout every
+        // animation frame.
+        double fullInnerHeight = Math.Max(0, fullHeight - EffectiveSafeTop - EffectiveSafeBottom);
+        double zoneHeight = Math.Max(0, fullInnerHeight - (_isLyricsMode ? ExpandedHeaderShift : ExpandedHeaderShiftFull));
         if (ExpandedContentZone.HeightRequest < 0 || Math.Abs(ExpandedContentZone.HeightRequest - zoneHeight) > 1)
         {
             ExpandedContentZone.HeightRequest = zoneHeight;
         }
 
-        double imgSize = 44 + (24 * progressToMedium);
-        TrackImageBorder.WidthRequest = imgSize;
-        TrackImageBorder.HeightRequest = imgSize;
-
-        // The skip button is gone from the mini header (replaced by the swipe
-        // carousel) - only the play/pause button (40px) remains on the right.
-        HeaderRightControls.WidthRequest = 40;
+        // PERF: everything below is a pure GPU transform / opacity write.
+        // No WidthRequest / HeightRequest / Margin mutation happens per frame:
+        // each of those forces a full Measure+Arrange pass over this subtree
+        // (including the RoundRectangle clip re-path of the border), which was
+        // the source of the 60fps drag stutter. The header's medium-state
+        // growth (thumbnail 44 -> 66) is expressed as Scale + TranslationX/Y
+        // on the fixed mini header instead of per-frame Width/Height/Margin
+        // writes: same visual result, zero relayouts per frame.
+        TrackImageBorder.Scale = 1.0 + (0.50 * progressToMedium);
+        HeaderTitleStack.TranslationX = 22 * progressToMedium;
+        HeaderContentGrid.TranslationY = 12 * progressToMedium;
 
         MiniControls.Opacity = Math.Clamp(1.0 - (progressToMedium / 0.3), 0, 1);
 
         // Fade IN the overall Expanded controls container during Mini->Medium
         double expandedOpacity = Math.Clamp((progressToMedium - 0.3) / 0.7, 0, 1);
         ExpandedHeaderControls.Opacity = expandedOpacity;
-
-        DragHandle.Opacity = expandedOpacity;
         ExpandedContentZone.Opacity = expandedOpacity;
 
         // Bottom progress bar is a MINI-state-only element: the expanded
-        // states have the real position slider instead.
+        // states have the real position slider instead. At mini the pane
+        // floats above the gesture strip via the margin, so the bar flush
+        // at the pane's bottom edge is the card's clean bottom edge.
         BottomProgressBar.IsVisible = progressToMedium <= 0;
 
-        // Keep horizontal margins constant so the text block bounds don't jitter
-        double marginTop = 14 + (12 * progressToMedium);
-        double marginBot = 14 - (6 * progressToMedium);
-        HeaderContentGrid.Margin = new Thickness(16, marginTop, 16, marginBot);
-
-        // Keep the swipe preview pages pixel-aligned with the header page so
-        // the carousel reset after a committed swipe is invisible.
-        var headerMargin = HeaderContentGrid.Margin;
-        PrevTrackPage.Margin = headerMargin;
-        NextTrackPage.Margin = headerMargin;
-
-        double headerHeight = 72 + (30 * progressToMedium);
-        ExpandedContentZone.TranslationY = headerHeight;
-
-        if (fullHeight > MediumHeight)
+        // Cross-fade the compact header out and the OpenTune "Now Playing"
+        // header in during the Medium->Full stretch (artwork mode only).
+        // In lyrics mode the compact header stays as the anchor.
+        if (!_isLyricsMode)
         {
-            LyricsZone.UpdateForFullScreenProgress(progressToFull);
+            double compactFadeOut = 1.0 - Math.Clamp(progressToFull / 0.45, 0, 1);
+            double fullFadeIn = Math.Clamp((progressToFull - 0.45) / 0.55, 0, 1);
+            HeaderContentGrid.Opacity = compactFadeOut;
+            HeaderContentGrid.InputTransparent = compactFadeOut < 0.5;
+            FullScreenHeader.Opacity = fullFadeIn;
+            DragHandle.Opacity = expandedOpacity * compactFadeOut;
         }
+        else
+        {
+            HeaderContentGrid.Opacity = 1;
+            HeaderContentGrid.InputTransparent = false;
+            FullScreenHeader.Opacity = 0;
+            DragHandle.Opacity = expandedOpacity;
+        }
+
+        // Flatten the outer sheet chrome once (at the last 2% of the stretch):
+        // FullScreen is edge-to-edge, so the 1px stroke + 16dp top corners only
+        // make sense while the sheet still looks like a sheet. Guarded by the
+        // current values so an unchanged frame writes nothing.
+        bool isFull = progressToFull >= 0.98;
+        double targetStroke = isFull ? 0 : 1;
+        if (Math.Abs(PlayerRoot.StrokeThickness - targetStroke) > 0.1)
+        {
+            PlayerRoot.StrokeThickness = targetStroke;
+            PlayerRootShape.CornerRadius = isFull ? new CornerRadius(0) : new CornerRadius(16, 16, 0, 0);
+        }
+
+        // Header zone shift: 72 -> 102 through Mini->Medium (the grown compact
+        // header), then back to 60 as the shorter Now Playing header replaces
+        // it in artwork mode. The full-screen header itself is pushed below the
+        // status-bar strip by PaneContent's top padding (UpdateSafeAreaPadding),
+        // so the compact header's shift value stays in the sheet's coordinate
+        // space.
+        double headerShift = _isLyricsMode
+            ? 72 + (30 * progressToMedium)
+            : 72 + (30 * progressToMedium) - (42 * progressToFull);
+        ExpandedContentZone.TranslationY = headerShift;
+
+        if (_isLyricsMode && fullHeight > MediumHeight)
+            LyricsZone.UpdateForFullScreenProgress(progressToFull);
 
         // Bottom actions belong to the full player; fade them in only near the
         // top so no sliver of a pill peeks out of the medium (clipped) zone.
@@ -427,27 +687,48 @@ public partial class MobilePlayerPaneView : ContentView
         BottomActions.Opacity = pillsOpacity;
         BottomActions.InputTransparent = pillsOpacity < 0.5;
 
-        UpdateMediaSlotForCurrentHeight();
+        // Slot sizing uses the pane's INNER height (inside the safe-area
+        // padding), so the controls stay fully inside the padded bottom.
+        double innerHeight = Math.Max(0, height - _safeAreaPadding.Top - _safeAreaPadding.Bottom);
+        UpdateMediaSlotForHeight(innerHeight, headerShift);
+    }
+
+    /// <summary>
+    /// Height the media slot has at a fully expanded pane - the reference for
+    /// sizing the artwork once and for scaling it during the transition.
+    /// Computed from the pane's INNER height (inside PaneContent's safe-area
+    /// padding) minus the header shift, so the artwork, title row and
+    /// controls together exactly fill the padded full-screen sheet.
+    /// </summary>
+    private double GetFullScreenSlotHeight()
+    {
+        double shift = _isLyricsMode ? ExpandedHeaderShift : ExpandedHeaderShiftFull;
+        double fullInnerHeight = Math.Max(0, FullScreenHeight - EffectiveSafeTop - EffectiveSafeBottom);
+        double visibleZoneHeight = Math.Max(0, fullInnerHeight - shift);
+        // TagsRow lives INSIDE ExpandedControls (round 6), so the controls'
+        // measured height already carries it - no separate tags term.
+        double controlsHeight = ExpandedControls.Height > 1 ? ExpandedControls.Height : FallbackControlsHeight;
+        return Math.Max(0, visibleZoneHeight - ExpandedZoneFixedChrome - controlsHeight);
     }
 
     /// <summary>
     /// Sizes the media slot (artwork / lyrics) from the part of the expanded
-    /// zone that is actually visible at the current pane height. At medium the
-    /// slot collapses to zero and the controls sit directly under the tags; as
-    /// the pane opens, the slot absorbs every freed pixel, pushing the controls
-    /// down until they rest on the pane's bottom edge at full screen.
+    /// zone that is actually visible at the CURRENT pane height - the INNER
+    /// height (inside the safe-area padding) passed by the caller, never the
+    /// stale PlayerRoot.Height (which reflects the PREVIOUS frame's measure
+    /// and made the slot trail one frame behind the sheet edge).
+    /// At medium the slot collapses to zero and the controls sit directly
+    /// under the tags; as the pane opens, the slot absorbs every freed pixel,
+    /// pushing the controls down until they rest on the padded content's
+    /// bottom edge at full screen.
     /// </summary>
-    private void UpdateMediaSlotForCurrentHeight()
+    private void UpdateMediaSlotForHeight(double innerHeight, double headerShift)
     {
-        double paneHeight = PlayerRoot.Height;
-        if (paneHeight <= 0)
-            paneHeight = PlayerRoot.HeightRequest;
-
-        double visibleZoneHeight = Math.Max(0, paneHeight - ExpandedHeaderShift);
-        double tagsHeight = TagsRow.Height > 1 ? TagsRow.Height : FallbackTagsRowHeight;
+        double visibleZoneHeight = Math.Max(0, innerHeight - headerShift);
+        // TagsRow is part of ExpandedControls' own height now (round 6).
         double controlsHeight = ExpandedControls.Height > 1 ? ExpandedControls.Height : FallbackControlsHeight;
 
-        double slotHeight = Math.Max(0, visibleZoneHeight - ExpandedZoneFixedChrome - tagsHeight - controlsHeight);
+        double slotHeight = Math.Max(0, visibleZoneHeight - ExpandedZoneFixedChrome - controlsHeight);
 
         // Same whole-pixel guard as the zone: invisible sub-pixel slots flicker.
         if (slotHeight < 1)
@@ -460,11 +741,28 @@ public partial class MobilePlayerPaneView : ContentView
         if (MediaSlot.IsVisible != showSlot)
             MediaSlot.IsVisible = showSlot;
 
-        if (showSlot)
-            UpdateArtworkSize(slotHeight);
+        if (showSlot && !_isLyricsMode)
+        {
+            // Artwork mode: the card is sized ONCE at the full-screen slot
+            // (see UpdateArtworkSize); the transition merely fades/scales
+            // it, so no image resampling or re-measure happens per frame.
+            double fullSlot = GetFullScreenSlotHeight();
+            double fill = fullSlot > 1 ? Math.Clamp(slotHeight / fullSlot, 0, 1) : 1;
+            ArtworkPanel.Opacity = Math.Clamp(fill, 0, 1);
+            ArtworkPanel.Scale = 0.92 + (0.08 * fill);
+        }
     }
 
-    /// <summary>Fits the square cover art into the media slot, centered.</summary>
+    /// <summary>
+    /// Sizes the square cover art ONCE for the full-screen slot - it is NOT
+    /// resized per frame anymore (that re-sampled the bitmap at 60fps and
+    /// re-clipped its rounded border every frame). During the transition the
+    /// card only fades/scales via GPU transforms; at rest it fills the slot.
+    /// Side = min(slot width - 24 breathing room, full slot height minus the
+    /// title/buttons row), so the whole artwork page fits at full screen.
+    /// The row below the artwork (title + bare 3-dot options) is Auto-height;
+    /// only its ~56dp fallback is subtracted here.
+    /// </summary>
     private void UpdateArtworkSize(double slotHeight)
     {
         double width = MediaSlot.Width;
@@ -475,7 +773,7 @@ public partial class MobilePlayerPaneView : ContentView
         if (width <= 1)
             return;
 
-        double side = Math.Min(width, slotHeight);
+        double side = Math.Min(width - 24, slotHeight - FallbackInfoHeight - 16);
         if (side <= 1)
             return;
 
@@ -483,6 +781,12 @@ public partial class MobilePlayerPaneView : ContentView
             ArtworkCard.WidthRequest = side;
         if (Math.Abs(ArtworkCard.HeightRequest - side) > 0.5)
             ArtworkCard.HeightRequest = side;
+
+        // The card is visible whenever the artwork page is (it lost a stale
+        // IsVisible="False" default in XAML once; this reasserts it cheaply
+        // at the same sizing points).
+        if (!ArtworkCard.IsVisible)
+            ArtworkCard.IsVisible = true;
     }
 
     // ===================== Full player: artwork / lyrics =====================
@@ -494,6 +798,20 @@ public partial class MobilePlayerPaneView : ContentView
     private async void OnLyricsToggleClicked(object? sender, TappedEventArgs e)
     {
         _isLyricsMode = !_isLyricsMode;
+
+        // Round 8 lag fix: defer the media-slot swap off the TAP frame. The
+        // old code ran ApplyMediaMode synchronously inside the tap handler:
+        // two IsVisible flips + UpdateLayoutForHeight + FinalizeVisibility
+        // ALL executed before the handler returned, blocking the input thread
+        // for a full layout cycle of the entire lyric stack (potentially
+        // hundreds of wrapped rows) - that is the perceivable hitch when
+        // opening/closing the lyrics view. Posting the swap one dispatcher
+        // cycle later lets the pill's pressed/selected visual feedback paint
+        // FIRST (instant responsiveness), and the heavy swap runs as its own
+        // batched layout update instead of piggy-backing the tap event.
+        LyricsPill.SetDynamicResource(Border.BackgroundColorProperty, _isLyricsMode ? "SurfaceSelected" : "SurfaceRaised");
+
+        await Task.Delay(1); // leave the tap frame; run on the dispatcher's next pass
         ApplyMediaMode();
 
         if (!_isLyricsMode)
@@ -511,13 +829,57 @@ public partial class MobilePlayerPaneView : ContentView
         // and is wired to the queue surface when that lands.
     }
 
+    /// <summary>
+    /// Round 8: the big play button's tap surface. The glyph is a plain Image
+    /// now (see the XAML comment for why: deterministic centering), so the
+    /// command that used to ride on the ImageButton is executed here instead.
+    /// Mirrors TogglePlayCommand: guarded the same way an ImageButton's
+    /// Command is (CanExecute).
+    /// </summary>
+    private void OnPlayPauseTapped(object? sender, TappedEventArgs e)
+    {
+        if (this.BindingContext is Musicthingy.ViewModels.MainViewModel vm &&
+            vm.TogglePlayCommand?.CanExecute(null) == true)
+        {
+            vm.TogglePlayCommand.Execute(null);
+        }
+    }
+
     private void ApplyMediaMode()
     {
+        // Round 8 lag fix (lyrics open/close): the two IsVisible flips each
+        // trigger a synchronous full Measure+Arrange of the media-slot subtree
+        // - showing the lyric stack (hundreds of wrapped rows) is the
+        // expensive one, and running it inside the TAP handler blocked the
+        // input thread for a whole layout cycle (the perceivable hitch).
+        // OnLyricsToggleClicked now defers the call by one dispatcher cycle,
+        // so this runs as its own batched layout update, after the pill's
+        // selected-state feedback has already painted.
         LyricsZone.IsVisible = _isLyricsMode;
-        ArtworkCard.IsVisible = !_isLyricsMode;
+        ArtworkPanel.IsVisible = !_isLyricsMode;
+        if (!_isLyricsMode)
+            ArtworkCard.IsVisible = true;
 
         LyricsPill.SetDynamicResource(Border.BackgroundColorProperty, _isLyricsMode ? "SurfaceSelected" : "SurfaceRaised");
+
+        // Re-evaluate the header + slot for the mode switch at the pane's
+        // current height (compact header stays in lyrics mode; Now Playing
+        // header only shows in artwork mode).
+        double h = PlayerRoot.Height > 0 ? PlayerRoot.Height : PlayerRoot.HeightRequest;
+        UpdateLayoutForHeight(h);
+        FinalizeVisibilityForState();
     }
+
+    /// <summary>Collapse chevron in the Now Playing header: pull the sheet
+    /// back to the medium height (a second tap/collapse goes to Mini).</summary>
+    private void OnCollapseChevronTapped(object? sender, TappedEventArgs e)
+        => AnimateToState(_targetState == PlayerState.FullScreen ? PlayerState.Medium : PlayerState.Mini);
+
+    /// <summary>Title/artist block under the artwork: same behavior as the
+    /// old compact-header title tap - scroll the track list to the current
+    /// track, collapsing to medium first when opened full-screen.</summary>
+    private void OnFullTitleTapped(object? sender, TappedEventArgs e)
+        => HandleTrackNameTap();
 
     private void OnOpenTagsClicked(PlaylistItem? track)
     {

@@ -5,28 +5,44 @@
                          xmlns:toolkit="http://schemas.microsoft.com/dotnet/2022/maui/toolkit"
                          xmlns:models="clr-namespace:Musicthingy.Models"
                          xmlns:views="clr-namespace:Musicthingy.Views"
-                         xmlns:helpers="clr-namespace:Musicthingy.Helpers">
+                         xmlns:helpers="clr-namespace:Musicthingy.Helpers"
+                         SafeAreaEdges="None">
 
-        <Border x:Name="PlayerRoot" 
-                        Background="{DynamicResource CardColor}" 
-                        Stroke="{DynamicResource BorderColor}" 
-                        StrokeThickness="1" 
-                        Margin="-1,0,0,-2"
+        <!-- SafeAreaEdges="None" on the pane AND (round 6) on EVERY Layout
+             inside it: in .NET 10 MAUI, Grid / StackLayout default to
+             SafeAreaEdges="Container", so the pane's inner Layouts were each
+             auto-padding the strips ON TOP of the PaneContent padding the
+             code-behind applies - a double ~48dp bottom + ~47dp top lift that
+             pushed "Now Playing" down and sheared the pills (the round-6
+             screenshots). The pane is the ONE deliberate edge-to-edge
+             element (MobileMainPage's root grid is None) and the code-behind
+             owns every strip clearance through the PlayerRoot margin +
+             PaneContent padding handoff - one single source of truth. -->
+
+        <Border x:Name="PlayerRoot"
+                        Background="{DynamicResource CardColor}"
+                        Stroke="{DynamicResource BorderColor}"
+                        StrokeThickness="1"
+                        Margin="0"
                         Padding="0"
                         VerticalOptions="End"
                         HeightRequest="72"
-                        IsVisible="{Binding IsMediaSelected}">
+                        IsVisible="{Binding IsMediaSelected}"
+                        SafeAreaEdges="None">
 
                 <Border.GestureRecognizers>
                         <TapGestureRecognizer />
                 </Border.GestureRecognizers>
 
+                <!-- Corner radius + stroke are flattened to 0 by code-behind once
+                     the pane is fully expanded (see UpdateLayoutForHeight), so
+                     FullScreen is a plain edge-to-edge sheet. -->
                 <Border.StrokeShape>
-                        <RoundRectangle CornerRadius="16,16,0,0" />
+                        <RoundRectangle x:Name="PlayerRootShape" CornerRadius="16,16,0,0" />
                 </Border.StrokeShape>
 
                 <!-- NO RowDefinitions. They overlap and are manually pushed down by TranslationY -->
-                <Grid BackgroundColor="Transparent">
+                <Grid x:Name="PaneContent" BackgroundColor="Transparent" SafeAreaEdges="None">
 
                         <!-- ========================================== -->
                         <!-- 2. EXPANDED ZONE (Moved above HeaderDragZone so it draws Underneath it.
@@ -35,19 +51,98 @@
                              previously it used the full pane height and overshot off screen,
                              pushing the lyrics + scrollbar below the screen edge) -->
                         <!-- ========================================== -->
-                        <Grid x:Name="ExpandedContentZone" VerticalOptions="Start" Padding="16,10,16,16" IsVisible="False" Opacity="0">
-                                <VerticalStackLayout Spacing="12">
+                        <Grid x:Name="ExpandedContentZone" VerticalOptions="Start" Padding="16,10,16,16" IsVisible="False" Opacity="0" SafeAreaEdges="None">
+                                <VerticalStackLayout Spacing="12" SafeAreaEdges="None">
 
-                                        <HorizontalStackLayout x:Name="TagsRow" Spacing="4" Margin="0,-10,0,-4">
+                                        <!-- Media slot: artwork + title/artist (or the lyrics view).
+                                             Collapses to zero at medium - see UpdateMediaSlotForHeight. -->
+                                        <Grid x:Name="MediaSlot" HeightRequest="0" IsVisible="False" IsClippedToBounds="True" SafeAreaEdges="None">
+
+                                                <!-- Artwork page: Row 0 (*) centers the cover in the
+                                                     room the slot has left; Row 1 (Auto) anchors the
+                                                     title/artist + BARE 3-dot options button directly
+                                                     above the slider. NO tag button - tags are edited
+                                                     through the tags row / the options menu (round-6
+                                                     decision: no tonal circles next to the title). -->
+                                                <Grid x:Name="ArtworkPanel" RowDefinitions="*, Auto" RowSpacing="14" SafeAreaEdges="None">
+
+                                                        <!-- Round 7: the artwork card itself is a drag surface
+                                                             (drag down = collapse/close, drag up = expand -
+                                                             the SAME OnPanUpdated the header uses; in lyrics
+                                                             mode this whole panel is hidden so the lyrics
+                                                             scroll untouched). No TapGestureRecognizer here:
+                                                             a tap on the artwork is simply not consumed, and a
+                                                             real swipe still routes to the pan recognizer
+                                                             (Android touch-slop), so the card can never eat a
+                                                             lyric tap or block the sheet gesture. -->
+                                                        <Border x:Name="ArtworkCard"
+                                                                Grid.Row="0"
+                                                                BackgroundColor="{DynamicResource SurfaceRaised}"
+                                                                StrokeThickness="0"
+                                                                HorizontalOptions="Center"
+                                                                VerticalOptions="Center"
+                                                                SafeAreaEdges="None">
+                                                                <Border.StrokeShape>
+                                                                        <RoundRectangle CornerRadius="20" />
+                                                                </Border.StrokeShape>
+                                                                <!-- Hi-res cover (round 7): the big card binds
+                                                                     FullPlayerArtworkSource, which shows the saved
+                                                                     icon immediately and swaps in maxresdefault.jpg
+                                                                     (1280x720) once fetched - ItemIconSource is the
+                                                                     44dp row pipeline and is the BLUR when stretched
+                                                                     to ~360dp. The mini/medium header thumbnail below
+                                                                     stays on ItemIconSource (correct at 44->66dp). -->
+                                                                <Image Source="{Binding CurrentTrack.FullPlayerArtworkSource}" Aspect="AspectFill" />
+                                                        </Border>
+
+                                                        <!-- Title / artist + BARE 3-dot button. Tapping the
+                                                             title block scrolls the track list to the current
+                                                             track - the SAME behavior as the compact header
+                                                             title (HandleTrackNameTap). -->
+                                                        <Grid Grid.Row="1" ColumnDefinitions="*, Auto" ColumnSpacing="12" Margin="4,0,4,2" SafeAreaEdges="None">
+                                                                <VerticalStackLayout Grid.Column="0" Spacing="2" VerticalOptions="Center" SafeAreaEdges="None">
+                                                                        <VerticalStackLayout.GestureRecognizers>
+                                                                                <TapGestureRecognizer Tapped="OnFullTitleTapped" />
+                                                                        </VerticalStackLayout.GestureRecognizers>
+                                                                        <views:AutoMarqueeLabel Text="{Binding CurrentTrack.Title}" TextColor="{DynamicResource TitleColor}" FontSize="21" FontAttributes="Bold" />
+                                                                        <views:AutoMarqueeLabel Text="{Binding CurrentTrack.Artist, FallbackValue='Unknown Artist'}" TextColor="{DynamicResource MutedColor}" FontSize="14" />
+                                                                </VerticalStackLayout>
+
+                                                                <ImageButton Grid.Column="1"
+                                                                             Source="ellipsis_vertical_icon.png"
+                                                                             Clicked="OnCurrentTrackOptionsClicked"
+                                                                             WidthRequest="40"
+                                                                             HeightRequest="40"
+                                                                             BackgroundColor="Transparent"
+                                                                             Padding="8"
+                                                                             CornerRadius="20"
+                                                                             VerticalOptions="Center">
+                                                                        <ImageButton.Behaviors>
+                                                                                <toolkit:IconTintColorBehavior TintColor="{DynamicResource TitleColor}" />
+                                                                        </ImageButton.Behaviors>
+                                                                </ImageButton>
+                                                        </Grid>
+                                                </Grid>
+
+                                                <views:LyricsView x:Name="LyricsZone" IsVisible="False" />
+                                        </Grid>
+
+                                        <!-- Controls: tags row + slider + transport + pills.
+                                             The tags row lives HERE now (round 6): in Medium it
+                                             sits right under the header, and in FullScreen it sits
+                                             directly BELOW the artwork title row - never floating
+                                             between "Now Playing" and the artwork. -->
+                                        <VerticalStackLayout x:Name="ExpandedControls" Spacing="8" SafeAreaEdges="None">
+
+                                                <HorizontalStackLayout x:Name="TagsRow" Spacing="4" Margin="0,-10,0,-2" SafeAreaEdges="None">
 
                                                 <ScrollView Orientation="Horizontal"
-                                                            HorizontalScrollBarVisibility="Never" VerticalOptions="Center">
+                                                            HorizontalScrollBarVisibility="Never" VerticalOptions="Center" SafeAreaEdges="None">
 
                                                         <HorizontalStackLayout
                                                                 BindableLayout.ItemsSource="{Binding CurrentTrack.Tags}"
-                                                                Spacing="4" VerticalOptions="Center" HeightRequest="28">
+                                                                Spacing="6" VerticalOptions="Center" HeightRequest="28" SafeAreaEdges="None">
 
-                                                                <!-- Add Tags Button (EmptyView) -->
                                                                 <BindableLayout.EmptyView>
                                                                         <Button Text="+ Add Tags"
                                                                                 Command="{Binding OpenTagsCommand, Source={RelativeSource AncestorType={x:Type views:MobilePlayerPaneView}}}"
@@ -64,56 +159,29 @@
                                                                                 HeightRequest="26" />
                                                                 </BindableLayout.EmptyView>
 
-                                                                <!-- Individual Tags -->
                                                                 <BindableLayout.ItemTemplate>
                                                                         <DataTemplate x:DataType="x:String">
                                                                                 <Button Text="{Binding .}"
-                                                                                        Command="{Binding OpenTagsCommand, Source={RelativeSource AncestorType={x:Type views:MobilePlayerPaneView}}}"
-                                                                                        CommandParameter="{Binding BindingContext.CurrentTrack, Source={x:Reference PlayerRoot}}"
-                                                                                        TextColor="{DynamicResource TagTextColor}"
-                                                                                        BackgroundColor="{DynamicResource TagBgColor}"
-                                                                                        BorderColor="{DynamicResource AccentColor}"
-                                                                                        BorderWidth="1"
-                                                                                        CornerRadius="6"
-                                                                                        Padding="10,0"
-                                                                                        FontSize="12"
-                                                                                        VerticalOptions="Center"
-                                                                                        MinimumHeightRequest="0"
-                                                                                        MinimumWidthRequest="0"
-                                                                                        HeightRequest="22" />
+                                                                                            Command="{Binding OpenTagsCommand, Source={RelativeSource AncestorType={x:Type views:MobilePlayerPaneView}}}"
+                                                                                            CommandParameter="{Binding BindingContext.CurrentTrack, Source={x:Reference PlayerRoot}}"
+                                                                                            TextColor="{DynamicResource TagTextColor}"
+                                                                                            BackgroundColor="{DynamicResource TagBgColor}"
+                                                                                            BorderColor="{DynamicResource AccentColor}"
+                                                                                            BorderWidth="1"
+                                                                                            CornerRadius="6"
+                                                                                            Padding="10,0"
+                                                                                            FontSize="12"
+                                                                                            VerticalOptions="Center"
+                                                                                            MinimumHeightRequest="0"
+                                                                                            MinimumWidthRequest="0"
+                                                                                            HeightRequest="22" />
                                                                         </DataTemplate>
                                                                 </BindableLayout.ItemTemplate>
-
                                                         </HorizontalStackLayout>
-
                                                 </ScrollView>
-
                                         </HorizontalStackLayout>
 
-                                        <!-- M3 media area: the cover art, or the lyrics view once the
-                                             Lyrics pill opens it. Both share one slot, so the controls
-                                             below never move between the two modes. The slot height is
-                                             computed in code-behind from the visible part of the pane:
-                                             collapsed (medium) it is zero, at full screen it absorbs all
-                                             the space left between the tags row and the controls. -->
-                                        <Grid x:Name="MediaSlot" HeightRequest="0" IsVisible="False">
-                                                <Border x:Name="ArtworkCard"
-                                                        BackgroundColor="{DynamicResource SurfaceRaised}"
-                                                        StrokeThickness="0" IsVisible="False"
-                                                        HorizontalOptions="Center" VerticalOptions="Center">
-                                                        <Border.StrokeShape>
-                                                                <RoundRectangle CornerRadius="20" />
-                                                        </Border.StrokeShape>
-                                                        <Image Source="{Binding CurrentTrack.ItemIconSource}" Aspect="AspectFill" />
-                                                </Border>
-
-                                                <views:LyricsView x:Name="LyricsZone" IsVisible="False" />
-                                        </Grid>
-
-                                        <!-- Slider / transport / bottom actions. -->
-                                        <VerticalStackLayout x:Name="ExpandedControls" Spacing="8">
-
-                                                <VerticalStackLayout Spacing="0" Margin="0,0,0,-10">
+                                                <VerticalStackLayout Spacing="0" Margin="0,0,0,-10" SafeAreaEdges="None">
 
                                                         <Slider
                                                                 Minimum="0"
@@ -123,7 +191,11 @@
                                                                 DragCompletedCommand="{Binding SeekCommand}"
                                                                 Margin="0,-4,0,0"/>
 
-                                                        <Grid ColumnDefinitions="*,*" Margin="4,-2,4,0">
+                                                        <!-- Inset the timestamps to line up with the Android
+                                                             slider's internal track inset (~14dp each side);
+                                                             the old Margin="4,-2,4,0" sat ~10px inside the
+                                                             track ends. -->
+                                                        <Grid ColumnDefinitions="*,*" Margin="14,-2,14,0" SafeAreaEdges="None">
 
                                                                 <Label Text="{Binding CurrentPosition, StringFormat='{0:mm\\:ss}'}" FontSize="10" Opacity="0.7"/>
 
@@ -133,55 +205,101 @@
 
                                                 </VerticalStackLayout>
 
-                                                <!-- M3 transport row: tonal 48dp side buttons around a 72dp
-                                                     near-white play container. -->
-                                                <HorizontalStackLayout HorizontalOptions="Center" Spacing="12" Margin="0,4,0,0">
+                                                <!-- M3 Expressive 3-tier transport: small 44dp bare
+                                                     circles (shuffle/repeat, NO container fill like
+                                                     OpenTune - round-6 decision: no tonal circles),
+                                                     medium 56dp tonal squircles (skip prev/next),
+                                                     large 76dp tonal play. Round 8: skip-play gap
+                                                     widened 10 -> 18 (visual breathing room between
+                                                     the tiers; the 44dp shuffle/repeat keep 10). -->
+                                                <HorizontalStackLayout HorizontalOptions="Center" Spacing="10" Margin="0,4,0,0" SafeAreaEdges="None">
 
                                                         <ImageButton x:Name="ShuffleBtn"
                                                                 Source="{Binding ShuffleIconSource}"
                                                                 Command="{Binding ToggleShuffleCommand}"
-                                                                BackgroundColor="{DynamicResource SurfaceRaised}"
-                                                                CornerRadius="16" WidthRequest="48" HeightRequest="48" Padding="12">
+                                                                BackgroundColor="Transparent"
+                                                                CornerRadius="22" WidthRequest="44" HeightRequest="44" Padding="11">
                                                                 <ImageButton.Behaviors>
                                                                         <toolkit:IconTintColorBehavior BindingContext="{Binding BindingContext, Source={x:Reference ShuffleBtn}}" TintColor="{Binding ShuffleIconColor}" />
                                                                 </ImageButton.Behaviors>
                                                         </ImageButton>
 
-                                                        <ImageButton Source="skip_back_icon.png" Command="{Binding PlayPreviousCommand}" WidthRequest="48" HeightRequest="48" BackgroundColor="{DynamicResource SurfaceRaised}" Padding="12" CornerRadius="16" />
+                                                        <!-- Round 8: skip-play gap 10 -> 18 via symmetric
+                                                             per-button margins (back: right margin, forward:
+                                                             left margin) - the row stays one centered stack,
+                                                             no per-item layout games. -->
+                                                        <ImageButton Source="skip_back_icon.png" Command="{Binding PlayPreviousCommand}" WidthRequest="56" HeightRequest="56" Margin="0,0,8,0" BackgroundColor="{DynamicResource SurfaceRaised}" Padding="16" CornerRadius="18">
+                                                                <ImageButton.Behaviors>
+                                                                        <toolkit:IconTintColorBehavior TintColor="{DynamicResource TitleColor}" />
+                                                                </ImageButton.Behaviors>
+                                                        </ImageButton>
 
-                                                        <Border Background="{DynamicResource PlayButtonColor}" StrokeThickness="0" WidthRequest="72" HeightRequest="72">
+                                                        <!-- Round 8 play-glyph centering: the glyph Image is
+                                                             a FIXED square (48x48, Aspect=Uniform, centered
+                                                             options) instead of an ImageButton stretched to
+                                                             the full 76dp container. Root cause of the
+                                                             off-center icon: play_icon.png/pause_icon.png are
+                                                             rasterized from 24x24-viewBox SVGs with NO
+                                                             BaseSize/Resize in the csproj, so the bitmap is
+                                                             24px@1x and Android nearest-neighbor-scales it
+                                                             to 32dp (76-2*22 padding); play and pause are
+                                                             DIFFERENT shapes (play's triangle sits right of
+                                                             center, pause is symmetric), so whenever the
+                                                             play/pause swap lands mid-layout - during the
+                                                             open animation or on a state notify before the
+                                                             container's measure - the odd-ratio scale pins
+                                                             the glyph high inside its still-stretched cell.
+                                                             A fixed square cell with Uniform aspect + a
+                                                             translucent tap Grid on top makes the centering
+                                                             purely geometry-driven: the glyph is laid out
+                                                             once at a known square size, centered by
+                                                             LayoutOptions, and never re-arranged when the
+                                                             IsPlaying notify re-swaps the Source. The tap
+                                                             surface (full 76dp) keeps the same hit target
+                                                             and ripple behavior as every other button. -->
+                                                        <Border Background="{DynamicResource PlayButtonColor}" StrokeThickness="0" WidthRequest="76" HeightRequest="76">
                                                                 <Border.StrokeShape>
-                                                                        <RoundRectangle CornerRadius="24" />
+                                                                        <RoundRectangle CornerRadius="26" />
                                                                 </Border.StrokeShape>
 
                                                                 <Grid>
-                                                                        <!-- M3 play container: near-white, low-chroma fill with a
-                                                                             near-black tinted glyph (PlayButtonColor / PlayButtonIconColor). -->
-                                                                        <ImageButton x:Name="PlayPauseBtn"
-                                                                                Source="{Binding PlayPauseIcon}"
-                                                                                Command="{Binding TogglePlayCommand}"
-                                                                                WidthRequest="72" HeightRequest="72"
-                                                                                BackgroundColor="Transparent" Padding="20">
-                                                                                <ImageButton.Behaviors>
-                                                                                        <toolkit:IconTintColorBehavior BindingContext="{Binding BindingContext, Source={x:Reference PlayPauseBtn}}" TintColor="{Binding PlayPauseIconColor}" />
-                                                                                </ImageButton.Behaviors>
-                                                                        </ImageButton>
+                                                                        <Grid WidthRequest="48" HeightRequest="48" HorizontalOptions="Center" VerticalOptions="Center">
+                                        <Image x:Name="PlayPauseGlyph"
+        Source="{Binding PlayPauseIcon}"
+        Aspect="AspectFit"
+        WidthRequest="32" HeightRequest="32"
+        HorizontalOptions="Center" VerticalOptions="Center">
+                                            <Image.Behaviors>
+                                                                                                <toolkit:IconTintColorBehavior BindingContext="{Binding BindingContext, Source={x:Reference PlayPauseGlyph}}" TintColor="{Binding PlayPauseIconColor}" />
+                                                                                        </Image.Behaviors>
+                                                                                </Image>
+                                                                        </Grid>
 
-                                                                        <!-- Loading overlay: repaint the container so the glyph does
-                                                                             not show behind the spinner, which uses the same on-color. -->
-                                                                        <Grid BackgroundColor="{DynamicResource PlayButtonColor}" IsVisible="{Binding IsLoadingMedia}">
-                                                                                <ActivityIndicator IsRunning="{Binding IsLoadingMedia}" Color="{Binding PlayPauseIconColor}" WidthRequest="24" HeightRequest="24" HorizontalOptions="Center" VerticalOptions="Center" />
+                                                                        <!-- Tap surface over the whole container (the
+                                                                             glyph itself is inert); also keeps the
+                                                                             loading overlay's repaint area. -->
+                                                                        <Grid x:Name="PlayPauseTapSurface" SafeAreaEdges="None">
+                                                                                <Grid.GestureRecognizers>
+                                                                                        <TapGestureRecognizer Tapped="OnPlayPauseTapped" />
+                                                                                </Grid.GestureRecognizers>
+                                                                                <Grid BackgroundColor="{DynamicResource PlayButtonColor}" IsVisible="{Binding IsLoadingMedia}" InputTransparent="False">
+                                                                                        <ActivityIndicator IsRunning="{Binding IsLoadingMedia}" Color="{DynamicResource PlayButtonIconColor}" WidthRequest="24" HeightRequest="24" HorizontalOptions="Center" VerticalOptions="Center" />
+                                                                                </Grid>
                                                                         </Grid>
                                                                 </Grid>
                                                         </Border>
 
-                                                        <ImageButton Source="skip_forward_icon.png" Command="{Binding PlayNextCommand}" WidthRequest="48" HeightRequest="48" BackgroundColor="{DynamicResource SurfaceRaised}" Padding="12" CornerRadius="16"/>
+                                                        <ImageButton Source="skip_forward_icon.png" Command="{Binding PlayNextCommand}" WidthRequest="56" HeightRequest="56" Margin="8,0,0,0" BackgroundColor="{DynamicResource SurfaceRaised}" Padding="16" CornerRadius="18">
+                                                                <ImageButton.Behaviors>
+                                                                        <toolkit:IconTintColorBehavior TintColor="{DynamicResource TitleColor}" />
+                                                                </ImageButton.Behaviors>
+                                                        </ImageButton>
 
                                                         <ImageButton x:Name="RepeatBtn"
                                                                 Source="{Binding RepeatIconSource}"
                                                                 Command="{Binding ToggleRepeatCommand}"
-                                                                BackgroundColor="{DynamicResource SurfaceRaised}"
-                                                                CornerRadius="16" WidthRequest="48" HeightRequest="48" Padding="12">
+                                                                BackgroundColor="Transparent"
+                                                                CornerRadius="22" WidthRequest="44" HeightRequest="44" Padding="11">
                                                                 <ImageButton.Behaviors>
                                                                         <toolkit:IconTintColorBehavior BindingContext="{Binding BindingContext, Source={x:Reference RepeatBtn}}" TintColor="{Binding RepeatIconColor}" />
                                                                 </ImageButton.Behaviors>
@@ -193,59 +311,109 @@
                                                      media slot between artwork and lyrics. Queue is a
                                                      placeholder for the queue UI that comes next. -->
                                                 <Grid x:Name="BottomActions" ColumnDefinitions="*,*" ColumnSpacing="12"
-                                                      Opacity="0" InputTransparent="True" Margin="0,4,0,0">
+                                                      Opacity="0" InputTransparent="True" Margin="0,4,0,0" SafeAreaEdges="None">
 
-                                                        <Border x:Name="QueuePill" Grid.Column="0" BackgroundColor="{DynamicResource SurfaceRaised}" StrokeThickness="0" HeightRequest="48">
+                                                        <!-- Round 7 ripple fix: the ripple + tap target is the
+                                                             full-size inner Grid, NOT the Border. MAUI sizes a
+                                                             Border's platform view to its CONTENT (the centered
+                                                             icon+label row), so the ripple previously only fired
+                                                             on the middle band and the bottom edge missed taps
+                                                             entirely. A Grid with default LayoutOptions stretches
+                                                             to the pill's full 48dp height (same pattern as the
+                                                             track rows), so the ripple + tap cover every pixel;
+                                                             the Border just draws the pill shape behind it. -->
+                                                        <Border x:Name="QueuePill" Grid.Column="0" BackgroundColor="{DynamicResource SurfaceRaised}" StrokeThickness="0" HeightRequest="48" SafeAreaEdges="None">
                                                                 <Border.StrokeShape>
                                                                         <RoundRectangle CornerRadius="24" />
                                                                 </Border.StrokeShape>
-                                                                <Border.GestureRecognizers>
-                                                                        <TapGestureRecognizer Tapped="OnQueueClicked" />
-                                                                </Border.GestureRecognizers>
-                                                                <HorizontalStackLayout HorizontalOptions="Center" VerticalOptions="Center" Spacing="8">
-                                                                        <Image Source="list_music_icon.png" WidthRequest="20" HeightRequest="20">
-                                                                                <Image.Behaviors>
-                                                                                        <toolkit:IconTintColorBehavior TintColor="{Binding Source={x:Reference QueueLabel}, Path=TextColor}" />
-                                                                                </Image.Behaviors>
-                                                                        </Image>
-                                                                        <Label x:Name="QueueLabel" Text="Queue" FontSize="14" VerticalOptions="Center" TextColor="{DynamicResource TitleColor}" />
-                                                                </HorizontalStackLayout>
+                                                                <Grid helpers:AndroidRipple.AddRipple="True" SafeAreaEdges="None">
+                                                                        <Grid.GestureRecognizers>
+                                                                                <TapGestureRecognizer Tapped="OnQueueClicked" />
+                                                                        </Grid.GestureRecognizers>
+                                                                        <HorizontalStackLayout HorizontalOptions="Center" VerticalOptions="Center" Spacing="8">
+                                                                                <Image Source="list_music_icon.png" WidthRequest="20" HeightRequest="20">
+                                                                                        <Image.Behaviors>
+                                                                                                <toolkit:IconTintColorBehavior TintColor="{Binding Source={x:Reference QueueLabel}, Path=TextColor}" />
+                                                                                        </Image.Behaviors>
+                                                                                </Image>
+                                                                                <Label x:Name="QueueLabel" Text="Queue" FontSize="14" VerticalOptions="Center" TextColor="{DynamicResource TitleColor}" />
+                                                                        </HorizontalStackLayout>
+                                                                </Grid>
                                                         </Border>
 
-                                                        <Border x:Name="LyricsPill" Grid.Column="1" BackgroundColor="{DynamicResource SurfaceRaised}" StrokeThickness="0" HeightRequest="48">
+                                                        <Border x:Name="LyricsPill" Grid.Column="1" BackgroundColor="{DynamicResource SurfaceRaised}" StrokeThickness="0" HeightRequest="48" SafeAreaEdges="None">
                                                                 <Border.StrokeShape>
                                                                         <RoundRectangle CornerRadius="24" />
                                                                 </Border.StrokeShape>
-                                                                <Border.GestureRecognizers>
-                                                                        <TapGestureRecognizer Tapped="OnLyricsToggleClicked" />
-                                                                </Border.GestureRecognizers>
-                                                                <HorizontalStackLayout HorizontalOptions="Center" VerticalOptions="Center" Spacing="8">
-                                                                        <Image Source="text_align_start_icon.png" WidthRequest="20" HeightRequest="20">
-                                                                                <Image.Behaviors>
-                                                                                        <toolkit:IconTintColorBehavior TintColor="{Binding Source={x:Reference LyricsLabel}, Path=TextColor}" />
-                                                                                </Image.Behaviors>
-                                                                        </Image>
-                                                                        <Label x:Name="LyricsLabel" Text="Lyrics" FontSize="14" VerticalOptions="Center" TextColor="{DynamicResource TitleColor}" />
-                                                                </HorizontalStackLayout>
+                                                                <Grid helpers:AndroidRipple.AddRipple="True" SafeAreaEdges="None">
+                                                                        <Grid.GestureRecognizers>
+                                                                                <TapGestureRecognizer Tapped="OnLyricsToggleClicked" />
+                                                                        </Grid.GestureRecognizers>
+                                                                        <HorizontalStackLayout HorizontalOptions="Center" VerticalOptions="Center" Spacing="8">
+                                                                                <Image Source="text_align_start_icon.png" WidthRequest="20" HeightRequest="20">
+                                                                                        <Image.Behaviors>
+                                                                                                <toolkit:IconTintColorBehavior TintColor="{Binding Source={x:Reference LyricsLabel}, Path=TextColor}" />
+                                                                                        </Image.Behaviors>
+                                                                                </Image>
+                                                                                <Label x:Name="LyricsLabel" Text="Lyrics" FontSize="14" VerticalOptions="Center" TextColor="{DynamicResource TitleColor}" />
+                                                                        </HorizontalStackLayout>
+                                                                </Grid>
                                                         </Border>
                                                 </Grid>
-                                        </VerticalStackLayout>
+                                </VerticalStackLayout>
                                 </VerticalStackLayout>
                         </Grid>
 
                         <!-- ========================================== -->
                         <!-- 1. DRAG ZONE (VerticalOptions=Start locks the height and acts freely over the List bounds) -->
                         <!-- ========================================== -->
-                        <Grid x:Name="HeaderDragZone" BackgroundColor="Transparent" Padding="0" VerticalOptions="Start">
+                        <Grid x:Name="HeaderDragZone" BackgroundColor="Transparent" Padding="0" VerticalOptions="Start" SafeAreaEdges="None">
 
-                                <RoundRectangle x:Name="DragHandle" 
-                                                                Fill="{DynamicResource DragHandleColor}" WidthRequest="36" HeightRequest="5" 
+                                <RoundRectangle x:Name="DragHandle"
+                                                                Fill="{DynamicResource DragHandleColor}" WidthRequest="36" HeightRequest="5"
                                                                 CornerRadius="2.5" HorizontalOptions="Center" VerticalOptions="Start"
                                                                 Margin="0,12,0,0" IsVisible="False" Opacity="0" />
 
-                                <Grid x:Name="HeaderContentGrid" ColumnDefinitions="Auto, *, Auto" ColumnSpacing="12" Margin="16,14,16,14">
+                                <!-- FullScreen top header: collapse chevron, centered "Now Playing"
+                                     caption + playlist name. Cross-fades in only during the last
+                                     ~55% of the Medium->Full transition (artwork mode only) while
+                                     the compact header cross-fades out. -->
+                                <Grid x:Name="FullScreenHeader"
+                                          ColumnDefinitions="40, *, 40"
+                                          Margin="16,14,16,6"
+                                          IsVisible="False" Opacity="0"
+                                          SafeAreaEdges="None">
+                                        <ContentView Grid.Column="0" WidthRequest="40" HeightRequest="40" VerticalOptions="Center" SafeAreaEdges="None">
+                                                <ContentView.GestureRecognizers>
+                                                        <TapGestureRecognizer Tapped="OnCollapseChevronTapped" />
+                                                </ContentView.GestureRecognizers>
+                                                <!-- Collapse chevron (round 7: 18x18, down from 22x22 -
+                                                     the round-6 icon read slightly too heavy next to the
+                                                     12/13 caption text). -->
+                                                <Path Data="M7.41,8.58L12,13.17L16.59,8.58L18,10L12,16L6,10L7.41,8.58Z"
+                                                          Fill="{DynamicResource TitleColor}"
+                                                          WidthRequest="18" HeightRequest="18" Aspect="Uniform"
+                                                          HorizontalOptions="Center" VerticalOptions="Center" />
+                                        </ContentView>
 
-                                        <Border x:Name="TrackImageBorder" Grid.Column="0" WidthRequest="44" HeightRequest="44" StrokeThickness="0" VerticalOptions="Center">
+                                        <VerticalStackLayout Grid.Column="1" VerticalOptions="Center" Spacing="1" SafeAreaEdges="None">
+                                                <Label Text="Now Playing" FontSize="12" FontAttributes="Bold"
+                                                           TextColor="{DynamicResource TitleColor}" HorizontalTextAlignment="Center" />
+                                                <Label Text="{Binding CurrentTrack.Playlist.Name, FallbackValue='Queue', TargetNullValue='Queue'}"
+                                                           FontSize="13" TextColor="{DynamicResource MutedColor}"
+                                                           HorizontalTextAlignment="Center" LineBreakMode="TailTruncation" />
+                                        </VerticalStackLayout>
+                                </Grid>
+
+                                <!-- Compact header (Mini / Medium / Lyrics modes): thumbnail,
+                                     title/artist, play button. -->
+                                <Grid x:Name="HeaderContentGrid" ColumnDefinitions="Auto, *, Auto" ColumnSpacing="12" Margin="16,14,16,14" SafeAreaEdges="None">
+
+                                        <!-- AnchorX/Y pin the medium-state Scale to the left edge /
+                                             vertical center, so the thumbnail grows 44->66dp cleanly
+                                     to the RIGHT without overlapping the title column's start
+                                             (the code-behind then slides the title column right). -->
+                                        <Border x:Name="TrackImageBorder" Grid.Column="0" WidthRequest="44" HeightRequest="44" AnchorX="0" AnchorY="0.5" StrokeThickness="0" VerticalOptions="Center" SafeAreaEdges="None">
                                                 <Border.StrokeShape>
                                                         <RoundRectangle CornerRadius="7" />
                                                 </Border.StrokeShape>
@@ -264,7 +432,7 @@
                                              the TITLE line only, and only its rendered text extent.
                                              The artist line below it and the empty strip right of
                                              the text deliberately do nothing. -->
-                                        <VerticalStackLayout Grid.Column="1" VerticalOptions="Center" Spacing="2">
+                                        <VerticalStackLayout x:Name="HeaderTitleStack" Grid.Column="1" VerticalOptions="Center" Spacing="2" SafeAreaEdges="None">
                                                 <views:AutoMarqueeLabel x:Name="TrackTitleLabel" Text="{Binding CurrentTrack.Title}" TextColor="{DynamicResource TitleColor}" FontSize="16" FontAttributes="Bold" />
                                                 <views:AutoMarqueeLabel Text="{Binding CurrentTrack.Artist, FallbackValue='Unknown Artist'}" TextColor="{DynamicResource MutedColor}" FontSize="13" />
                                         </VerticalStackLayout>
@@ -272,12 +440,16 @@
                                         <!-- Controls Container. The skip button was removed - swipe
                                              left/right on the mini header now switches tracks, so only
                                              the play/pause button (40px) lives here. -->
-                                        <Grid x:Name="HeaderRightControls" Grid.Column="2" WidthRequest="40" VerticalOptions="Center" HorizontalOptions="End" IsClippedToBounds="True">
+                                        <Grid x:Name="HeaderRightControls" Grid.Column="2" WidthRequest="40" VerticalOptions="Center" HorizontalOptions="End" IsClippedToBounds="True" SafeAreaEdges="None">
 
                                                 <!-- Mini Controls -->
-                                                <HorizontalStackLayout x:Name="MiniControls" Spacing="4" HorizontalOptions="End">
+                                                <HorizontalStackLayout x:Name="MiniControls" Spacing="4" HorizontalOptions="End" SafeAreaEdges="None">
                                                         <Grid WidthRequest="40" HeightRequest="40">
-                                                                <ImageButton Source="{Binding PlayPauseIcon}" Command="{Binding TogglePlayCommand}" BackgroundColor="Transparent" Padding="8" CornerRadius="20"/>
+                                                                <ImageButton Source="{Binding PlayPauseIcon}" Command="{Binding TogglePlayCommand}" BackgroundColor="Transparent" Padding="8" CornerRadius="20">
+                                                                        <ImageButton.Behaviors>
+                                                                                <toolkit:IconTintColorBehavior TintColor="{DynamicResource TitleColor}" />
+                                                                        </ImageButton.Behaviors>
+                                                                </ImageButton>
 
                                                                 <Border Background="{DynamicResource SurfaceScrimPanel}" StrokeThickness="0" IsVisible="{Binding IsLoadingMedia}">
                                                                         <Border.StrokeShape>
@@ -289,13 +461,17 @@
                                                 </HorizontalStackLayout>
 
                                                 <!-- Expanded Header Controls (Overlapping Grid to save horizontal space) -->
-                                                <Grid x:Name="ExpandedHeaderControls" HorizontalOptions="End" IsVisible="False" Opacity="0">
+                                                <Grid x:Name="ExpandedHeaderControls" HorizontalOptions="End" IsVisible="False" Opacity="0" SafeAreaEdges="None">
 
                                                         <!-- Track Options Button (visible in BOTH medium and full states) -->
                                                         <ImageButton x:Name="TrackOptionsBtn"
-                                                                                 Source="ellipsis_vertical_icon.png" 
-                                                                                 Clicked="OnCurrentTrackOptionsClicked" 
-                                                                                 WidthRequest="40" HeightRequest="40" BackgroundColor="Transparent" Padding="8" CornerRadius="20" />
+                                                                                 Source="ellipsis_vertical_icon.png"
+                                                                                 Clicked="OnCurrentTrackOptionsClicked"
+                                                                                 WidthRequest="40" HeightRequest="40" BackgroundColor="Transparent" Padding="8" CornerRadius="20">
+                                                                <ImageButton.Behaviors>
+                                                                        <toolkit:IconTintColorBehavior TintColor="{DynamicResource TitleColor}" />
+                                                                </ImageButton.Behaviors>
+                                                        </ImageButton>
                                                 </Grid>
 
                                         </Grid>
@@ -310,7 +486,7 @@
                                      Never interactive (InputTransparent) and hidden when idle. -->
                                 <Grid x:Name="PrevTrackPage"
                                       ColumnDefinitions="Auto, *, Auto" ColumnSpacing="12"
-                                      Margin="16,14,16,14" IsVisible="False" InputTransparent="True">
+                                      Margin="16,14,16,14" IsVisible="False" InputTransparent="True" SafeAreaEdges="None">
                                         <Border Grid.Column="0" WidthRequest="44" HeightRequest="44" StrokeThickness="0" VerticalOptions="Center">
                                                 <Border.StrokeShape>
                                                         <RoundRectangle CornerRadius="7" />
@@ -321,12 +497,12 @@
                                                 <views:AutoMarqueeLabel x:Name="PrevTrackTitle" TextColor="{DynamicResource TitleColor}" FontSize="16" FontAttributes="Bold" />
                                                 <views:AutoMarqueeLabel x:Name="PrevTrackArtist" TextColor="{DynamicResource MutedColor}" FontSize="13" />
                                         </VerticalStackLayout>
-                                        <ImageButton Grid.Column="2" Source="{Binding PlayPauseIcon}" WidthRequest="40" HeightRequest="40" BackgroundColor="Transparent" Padding="8" CornerRadius="20" VerticalOptions="Center" />
+                                        <ImageButton Grid.Column="2" Source="{Binding PlayPauseIcon}" WidthRequest="40" HeightRequest="40" BackgroundColor="Transparent" Padding="8" CornerRadius="20" VerticalOptions="Center"/>
                                 </Grid>
 
                                 <Grid x:Name="NextTrackPage"
                                       ColumnDefinitions="Auto, *, Auto" ColumnSpacing="12"
-                                      Margin="16,14,16,14" IsVisible="False" InputTransparent="True">
+                                      Margin="16,14,16,14" IsVisible="False" InputTransparent="True" SafeAreaEdges="None">
                                         <Border Grid.Column="0" WidthRequest="44" HeightRequest="44" StrokeThickness="0" VerticalOptions="Center">
                                                 <Border.StrokeShape>
                                                         <RoundRectangle CornerRadius="7" />
@@ -337,28 +513,37 @@
                                                 <views:AutoMarqueeLabel x:Name="NextTrackTitle" TextColor="{DynamicResource TitleColor}" FontSize="16" FontAttributes="Bold" />
                                                 <views:AutoMarqueeLabel x:Name="NextTrackArtist" TextColor="{DynamicResource MutedColor}" FontSize="13" />
                                         </VerticalStackLayout>
-                                        <ImageButton Grid.Column="2" Source="{Binding PlayPauseIcon}" WidthRequest="40" HeightRequest="40" BackgroundColor="Transparent" Padding="8" CornerRadius="20" VerticalOptions="Center" />
+                                        <ImageButton Grid.Column="2" Source="{Binding PlayPauseIcon}" WidthRequest="40" HeightRequest="40" BackgroundColor="Transparent" Padding="8" CornerRadius="20" VerticalOptions="Center"/>
                                 </Grid>
                         </Grid>
 
-                        <!-- ========================================== -->
-                        <!-- 3. BOTTOM PROGRESS BAR (purely visual playback
-                             position indicator on the pane's very bottom edge.
-                             Non-interactive: InputTransparent passes taps through
-                             to the pane, no gestures attached, no time text.
-                             Track = BorderColor, fill = AccentColor; the fill's
-                             width is set from the ViewModel in code-behind) -->
-                        <!-- ========================================== -->
-                        <Grid x:Name="BottomProgressBar"
-                              VerticalOptions="End"
-                              HeightRequest="3"
-                              BackgroundColor="{DynamicResource BorderColor}"
-                              InputTransparent="True">
-                                <BoxView x:Name="BottomProgressFill"
+        <!-- ========================================== -->
+        <!-- 3. BOTTOM PROGRESS BAR (purely visual playback
+             position indicator at the pane's very bottom edge.
+             Non-interactive: InputTransparent passes taps through
+             to the pane, no gestures attached, no time text.
+             Track = BorderColor, fill = AccentColor; the fill's
+             width is set from the ViewModel in code-behind.
+             NO margin of its own: in Mini/Medium the pane sits
+             ABOVE the gesture strip (PlayerRoot margin owns that
+             clearance - see UpdateSafeAreaPadding), so the bar
+             flush at the pane's bottom edge IS the clean bottom
+             of the card; in FullScreen the pane content is lifted
+             by PaneContent's bottom padding instead, and the bar
+             fades out before then anyway (mini-only element). -->
+        <!-- ========================================== -->
+        <Grid x:Name="BottomProgressBar"
+              VerticalOptions="End"
+              HeightRequest="3"
+              BackgroundColor="{DynamicResource BorderColor}"
+              InputTransparent="True"
+              Margin="0"
+              SafeAreaEdges="None">
+                <BoxView x:Name="BottomProgressFill"
                                          Color="{DynamicResource AccentColor}"
                                          HorizontalOptions="Start"
                                          WidthRequest="0" />
-                        </Grid>
+        </Grid>
                 </Grid>
         </Border>
 </ContentView>
