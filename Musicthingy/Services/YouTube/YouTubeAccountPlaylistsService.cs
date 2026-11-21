@@ -773,7 +773,8 @@ public sealed class YouTubeAccountPlaylistsService
 
         return best.TryGetProperty("url", out JsonElement url) &&
                url.ValueKind == JsonValueKind.String &&
-               !url.GetString().StartsWith("//i.ytimg.com/manifest", StringComparison.Ordinal)
+               !url.GetString()
+                   .StartsWith("//i.ytimg.com/manifest", StringComparison.Ordinal)
             ? url.GetString()
             : null;
     }

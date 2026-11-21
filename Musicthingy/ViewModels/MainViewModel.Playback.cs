@@ -43,6 +43,9 @@ public partial class MainViewModel
 
     public string PlayPauseIcon => IsPlaying ? "pause_icon.png" : "play_icon.png";
 
+    /// <summary>On-color glyph tint for the M3 play/pause button (near black, tinted).</summary>
+    public Color PlayPauseIconColor => ThemeResources.Color("PlayButtonIconColor");
+
     public Color ShuffleIconColor => IsShuffleEnabled ? ThemeResources.Color("IconSelectedColor") : ThemeResources.Color("MutedColor");
 
     public string RepeatIconSource => RepeatState switch

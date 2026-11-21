@@ -31,7 +31,8 @@ public class ThemeManager
 
         // Button Colors
         "PrimaryButtonColor", "PrimaryButtonText", "PrimaryButtonBorder",
-        "SecondaryButtonColor", "SecondaryButtonText", "SecondaryButtonBorder"
+        "SecondaryButtonColor", "SecondaryButtonText", "SecondaryButtonBorder",
+        "PlayButtonColor", "PlayButtonIconColor"
     };
 
     private void CacheBaseColors()

@@ -28,6 +28,22 @@ public partial class MobilePlayerPaneView : ContentView
     private const double MiniHeight = 72;
     private const double MediumHeight = 280;
 
+    // Height the expanded zone is pushed down by the header when fully open.
+    // The zone is always laid out at (screen - shift) and clipped by the pane,
+    // so its content stays put while the pane grows.
+    private const double ExpandedHeaderShift = 102;
+
+    // Vertical space the expanded zone spends outside the media slot:
+    // Padding="16,10,16,16" (26), two 12px stack gaps (24), and the tags row's
+    // negative vertical margins (-14). Kept as constants so the slot math does
+    // not depend on a measured value that may not exist yet.
+    private const double ExpandedZoneFixedChrome = 26 + 24 - 14;
+    private const double FallbackTagsRowHeight = 28;
+    private const double FallbackControlsHeight = 194;
+
+    // Artwork / lyrics toggle inside the full player's media slot.
+    private bool _isLyricsMode;
+
     public System.Windows.Input.ICommand OpenTagsCommand { get; }
 
     private readonly PanVelocityTracker _velocityTracker = new();
@@ -38,11 +54,17 @@ public partial class MobilePlayerPaneView : ContentView
         SetupGestures();
 
         UpdateLayoutForHeight(MiniHeight);
+        ApplyMediaMode();
 
         OpenTagsCommand = new Command<PlaylistItem>(OnOpenTagsClicked);
 
         // Tapping a timed lyric line seeks the player to that timestamp
         LyricsZone.LyricTapped += OnLyricTapped;
+
+        // The media slot is sized manually (see UpdateLayoutForHeight); once it
+        // is measured, fit the square artwork to the smaller of its width/height.
+        MediaSlot.SizeChanged += (_, __) => UpdateArtworkSize(MediaSlot.HeightRequest);
+        ExpandedControls.SizeChanged += (_, __) => UpdateMediaSlotForCurrentHeight();
 
         // Bottom progress bar: keep the fill width in sync with playback.
         // Re-measure when the bar gets its real width, and re-hook whenever a
@@ -63,7 +85,7 @@ public partial class MobilePlayerPaneView : ContentView
 
             MainThread.BeginInvokeOnMainThread(() =>
             {
-                if (_targetState != PlayerState.Mini && m.Lyric != null)
+                if (_targetState == PlayerState.FullScreen && _isLyricsMode && m.Lyric != null)
                 {
                     // allowResume: this call IS a lyric switch, so paused
                     // lyric-following may resume (LyricsView still checks its
@@ -324,8 +346,9 @@ public partial class MobilePlayerPaneView : ContentView
 
         LyricsZone.FinalizeVisibility();
 
-        // Re-sync lyrics to current position now that the animation has safely completed
-        if (_targetState != PlayerState.Mini)
+        // Re-sync lyrics to current position now that the animation has safely
+        // completed (only when the lyric view is actually the visible mode).
+        if (_targetState == PlayerState.FullScreen && _isLyricsMode)
         {
             LyricsZone.ScrollToActiveLyric(animate: true);
         }
@@ -352,7 +375,6 @@ public partial class MobilePlayerPaneView : ContentView
         // Uses the FULL-EXPANSION header height (72 + 30), not the animated
         // one, so the zone's height stays constant during the Mini->Medium
         // transition instead of forcing a full relayout every animation frame.
-        const double ExpandedHeaderShift = 102;
         double zoneHeight = Math.Max(0, fullHeight - ExpandedHeaderShift);
         if (ExpandedContentZone.HeightRequest < 0 || Math.Abs(ExpandedContentZone.HeightRequest - zoneHeight) > 1)
         {
@@ -398,6 +420,103 @@ public partial class MobilePlayerPaneView : ContentView
         {
             LyricsZone.UpdateForFullScreenProgress(progressToFull);
         }
+
+        // Bottom actions belong to the full player; fade them in only near the
+        // top so no sliver of a pill peeks out of the medium (clipped) zone.
+        double pillsOpacity = Math.Clamp((progressToFull - 0.65) / 0.35, 0, 1);
+        BottomActions.Opacity = pillsOpacity;
+        BottomActions.InputTransparent = pillsOpacity < 0.5;
+
+        UpdateMediaSlotForCurrentHeight();
+    }
+
+    /// <summary>
+    /// Sizes the media slot (artwork / lyrics) from the part of the expanded
+    /// zone that is actually visible at the current pane height. At medium the
+    /// slot collapses to zero and the controls sit directly under the tags; as
+    /// the pane opens, the slot absorbs every freed pixel, pushing the controls
+    /// down until they rest on the pane's bottom edge at full screen.
+    /// </summary>
+    private void UpdateMediaSlotForCurrentHeight()
+    {
+        double paneHeight = PlayerRoot.Height;
+        if (paneHeight <= 0)
+            paneHeight = PlayerRoot.HeightRequest;
+
+        double visibleZoneHeight = Math.Max(0, paneHeight - ExpandedHeaderShift);
+        double tagsHeight = TagsRow.Height > 1 ? TagsRow.Height : FallbackTagsRowHeight;
+        double controlsHeight = ExpandedControls.Height > 1 ? ExpandedControls.Height : FallbackControlsHeight;
+
+        double slotHeight = Math.Max(0, visibleZoneHeight - ExpandedZoneFixedChrome - tagsHeight - controlsHeight);
+
+        // Same whole-pixel guard as the zone: invisible sub-pixel slots flicker.
+        if (slotHeight < 1)
+            slotHeight = 0;
+
+        if (Math.Abs(MediaSlot.HeightRequest - slotHeight) > 0.5)
+            MediaSlot.HeightRequest = slotHeight;
+
+        bool showSlot = slotHeight > 0;
+        if (MediaSlot.IsVisible != showSlot)
+            MediaSlot.IsVisible = showSlot;
+
+        if (showSlot)
+            UpdateArtworkSize(slotHeight);
+    }
+
+    /// <summary>Fits the square cover art into the media slot, centered.</summary>
+    private void UpdateArtworkSize(double slotHeight)
+    {
+        double width = MediaSlot.Width;
+        if (width <= 1)
+            width = ExpandedContentZone.Width - 32;
+        if (width <= 1)
+            width = PlayerRoot.Width - 32;
+        if (width <= 1)
+            return;
+
+        double side = Math.Min(width, slotHeight);
+        if (side <= 1)
+            return;
+
+        if (Math.Abs(ArtworkCard.WidthRequest - side) > 0.5)
+            ArtworkCard.WidthRequest = side;
+        if (Math.Abs(ArtworkCard.HeightRequest - side) > 0.5)
+            ArtworkCard.HeightRequest = side;
+    }
+
+    // ===================== Full player: artwork / lyrics =====================
+
+    /// <summary>
+    /// Lyrics pill: swaps the media slot between the cover art and the lyrics
+    /// view. The pill keeps a selected (tonal) look while lyrics are showing.
+    /// </summary>
+    private async void OnLyricsToggleClicked(object? sender, TappedEventArgs e)
+    {
+        _isLyricsMode = !_isLyricsMode;
+        ApplyMediaMode();
+
+        if (!_isLyricsMode)
+            return;
+
+        // Let the newly visible lyrics view lay out before centering it.
+        await Task.Delay(32);
+        LyricsZone.ScrollToActiveLyric(animate: false);
+    }
+
+    /// <summary>Queue pill placeholder - the queue UI is the next piece.</summary>
+    private void OnQueueClicked(object? sender, TappedEventArgs e)
+    {
+        // Intentionally empty: the pill exists so the final layout is in place
+        // and is wired to the queue surface when that lands.
+    }
+
+    private void ApplyMediaMode()
+    {
+        LyricsZone.IsVisible = _isLyricsMode;
+        ArtworkCard.IsVisible = !_isLyricsMode;
+
+        LyricsPill.SetDynamicResource(Border.BackgroundColorProperty, _isLyricsMode ? "SurfaceSelected" : "SurfaceRaised");
     }
 
     private void OnOpenTagsClicked(PlaylistItem? track)

@@ -122,6 +122,12 @@
     <!-- Border matches the background -->
     <Color x:Key="PrimaryButtonBorder">#A6C8FF</Color>
 
+    <!-- M3 transport play button: near-white primary container with a near-black
+         on-color. Low chroma on purpose - the ThemeManager only shifts the hue,
+         so the button stays almost neutral while still following the accent. -->
+    <Color x:Key="PlayButtonColor">#EFF2F6</Color>
+    <Color x:Key="PlayButtonIconColor">#15181C</Color>
+
     <!-- Secondary Button (Matches Card/Neutral roles) -->
     <!-- Soft, dark surface color -->
     <Color x:Key="SecondaryButtonColor">#18191C</Color>
