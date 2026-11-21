@@ -720,6 +720,74 @@ public partial class YouTubeResolverService
         return null;
     }
 
+    /// <summary>
+    /// Fetches a video's TITLE via the same client chain as
+    /// GetVideoDurationAsync (InnerTube player videoDetails.title, then
+    /// YoutubeExplode). Used by the playlist-import safety net when the
+    /// browse page's shape changes leave rows as "Untitled".
+    /// </summary>
+    public async Task<string?> GetVideoTitleAsync(string trackUrl, CancellationToken cancellationToken)
+    {
+        VideoId? videoId = VideoId.TryParse(trackUrl);
+        if (videoId == null) return null;
+
+        InnerTubeClientInfo[] titleClients = HasAuthentication
+            ? new[] { InnerTubeClients.VisionOS, InnerTubeClients.TvSamsung, InnerTubeClients.Web }
+            : new[] { InnerTubeClients.VisionOS, InnerTubeClients.TvSamsung };
+
+        foreach (var client in titleClients)
+        {
+            try
+            {
+                int? sts = (client.Name.StartsWith("WEB") || client.Name == "TVHTML5")
+                    ? await GetSignatureTimestampAsync(cancellationToken).ConfigureAwait(false)
+                    : null;
+
+                HttpRequestMessage request = await BuildPlayerRequestAsync(videoId.Value.Value, client);
+                request.Content = BuildPlayerPayload(videoId.Value.Value, client, true, sts);
+
+                HttpResponseMessage response = await _innerTubeClient.SendAsync(
+                    request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+                using (response)
+                {
+                    string json = await response.Content.ReadAsStringAsync(cancellationToken);
+                    using JsonDocument doc = JsonDocument.Parse(json);
+                    JsonElement root = doc.RootElement;
+
+                    if (root.TryGetProperty("videoDetails", out JsonElement videoDetails) &&
+                        videoDetails.TryGetProperty("title", out JsonElement title) &&
+                        title.ValueKind == JsonValueKind.String &&
+                        !string.IsNullOrWhiteSpace(title.GetString()))
+                    {
+                        return title.GetString();
+                    }
+                }
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"[Title] {client.Name} error: {ex.Message}");
+            }
+        }
+
+        // YoutubeExplode fallback
+        try
+        {
+            using CancellationTokenSource cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            cts.CancelAfter(TimeSpan.FromSeconds(VideoInfoFetchTimeoutSeconds));
+
+            Video videoInfo = await _youtubeClient.Videos.GetAsync(videoId.Value, cts.Token);
+            return videoInfo.Title;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"[Title] YoutubeExplode error: {ex.Message}");
+        }
+
+        return null;
+    }
+
     // ─────────────────────────────────────────────────────────────────────────
     //  Private: client fallback chain
     // ─────────────────────────────────────────────────────────────────────────

@@ -5,6 +5,7 @@ using CommunityToolkit.Mvvm.Input;
 using CommunityToolkit.Mvvm.Messaging;
 using Musicthingy.Models;
 using Musicthingy.Services;
+using Musicthingy.Services.YouTube;
 using Musicthingy.Views;
 using System.Diagnostics;
 using System.Text.Json;
@@ -364,7 +365,34 @@ public partial class MainViewModel
     [RelayCommand]
     private async Task ImportPlaylistAsync()
     {
-        // (Keep your existing ImportPlaylistAsync logic here...)
+        // The import button opens a chooser: file / pasted YouTube link /
+        // the signed-in account's own playlists. The JSON-file path below is
+        // the original flow, unchanged.
+        Page? page = Application.Current?.Windows?.FirstOrDefault()?.Page;
+        if (page == null) return;
+
+        // AccountManager.Default: the self-healing shared store (works with
+        // or without a DI registration — zip-only installs have none).
+        var menu = new Views.ImportPlaylistMenuPopup(Services.Accounts.AccountManager.Default);
+        await page.ShowPopupAsync(menu);
+
+        switch (menu.Result)
+        {
+            case Views.ImportPlaylistMenuPopup.ResultFromFile:
+                await ImportPlaylistFromFilesAsync();
+                break;
+            case Views.ImportPlaylistMenuPopup.ResultFromLink:
+                await ImportPlaylistFromLinkAsync();
+                break;
+            case Views.ImportPlaylistMenuPopup.ResultFromAccount:
+                await ImportPlaylistFromAccountAsync();
+                break;
+        }
+    }
+
+    /// <summary>Original flow: pick one or more playlist JSON files from storage.</summary>
+    private async Task ImportPlaylistFromFilesAsync()
+    {
         try
         {
             var customFileType = new FilePickerFileType(
@@ -396,6 +424,8 @@ public partial class MainViewModel
 
                 if (importedPlaylists.Count > 0)
                 {
+                    // JSON playlists already carry name + (usually) icon data —
+                    // no post-import sheet needed.
                     MainThread.BeginInvokeOnMainThread(() =>
                     {
                         foreach (Playlist playlist in importedPlaylists) Playlists.Add(playlist);
@@ -410,6 +440,162 @@ public partial class MainViewModel
             await MainThread.InvokeOnMainThreadAsync(async () =>
             {
                 await ShowConfirmAsync("Error", $"Failed to import: {ex.Message}", "OK", ModalBackgroundTapBehavior.Confirm, isDanger: true);
+            });
+        }
+    }
+
+    /// <summary>"Paste a YouTube link": imports any public playlist by URL.</summary>
+    private async Task ImportPlaylistFromLinkAsync()
+    {
+        string? url = await ShowPromptAsync(
+            "Import from Link",
+            "",
+            "Import",
+            ModalBackgroundTapBehavior.Confirm);
+        if (string.IsNullOrWhiteSpace(url)) return;
+
+        string? playlistId = Helpers.MediaUrlHelper.GetYouTubePlaylistId(url.Trim());
+        if (playlistId == null)
+        {
+            await ShowConfirmAsync(
+                "Not a Playlist Link",
+                "That doesn't look like a YouTube playlist URL.\nPaste a link like https://youtube.com/playlist?list=…",
+                "OK", ModalBackgroundTapBehavior.Ignore);
+            return;
+        }
+
+        await ImportYouTubePlaylistCoreAsync(playlistId);
+    }
+
+    /// <summary>
+    /// "My YouTube playlists": lists the signed-in account's playlists and
+    /// imports the tapped one. Requires linked YouTube auth; with none the
+    /// menu row is locked, but this path still guards itself.
+    /// </summary>
+    private async Task ImportPlaylistFromAccountAsync()
+    {
+        if (!Services.YouTube.YouTubeAccountPlaylistsService.IsAvailable)
+        {
+            await ShowConfirmAsync(
+                "Sign-in Required",
+                "Link your YouTube account in Settings → Account first, then try again.",
+                "OK", ModalBackgroundTapBehavior.Ignore);
+            return;
+        }
+
+        Page? page = Application.Current?.Windows?.FirstOrDefault()?.Page;
+        if (page == null) return;
+
+        var picker = new Views.YouTubePlaylistPickerPopup(_accountPlaylists);
+        await page.ShowPopupAsync(picker);
+
+        if (string.IsNullOrEmpty(picker.ResultPlaylistId))
+            return;
+
+        await ImportYouTubePlaylistCoreAsync(
+            picker.ResultPlaylistId!,
+            picker.ResultPlaylist);
+    }
+
+    /// <summary>
+    /// Shared YouTube import pipeline (link + account paths): fetches the
+    /// playlist's contents off the UI thread, shows the name+icon sheet
+    /// pre-filled with YouTube's own metadata, then adds the finished
+    /// playlist. <paramref name="listedMetadata"/> is the row the account
+    /// picker showed — used as a fallback when the playlist page's own
+    /// header parses to nothing (title / thumbnail / count text).
+    /// </summary>
+    private async Task ImportYouTubePlaylistCoreAsync(
+        string playlistId,
+        YouTubeAccountPlaylist? listedMetadata = null)
+    {
+        IsLoadingMedia = true;
+        try
+        {
+            Services.YouTube.YouTubePlaylistImport? import = await Task.Run(() =>
+                _accountPlaylists.GetPlaylistForImportAsync(playlistId));
+
+            if (import == null || import.Videos.Count == 0)
+            {
+                IsLoadingMedia = false;
+                await ShowConfirmAsync(
+                    "Import Failed",
+                    $"Could not read that playlist.\nIt may be private, deleted, or empty.",
+                    "OK", ModalBackgroundTapBehavior.Ignore);
+                return;
+            }
+
+            // Build the playlist with YouTube's own metadata first — the
+            // page header when it parsed, else the picker row's metadata
+            // (the listing already knew the title / thumbnail / count).
+            string importedTitle = import.Playlist.Title;
+            if (string.IsNullOrWhiteSpace(importedTitle) || importedTitle == "YouTube Playlist")
+                importedTitle = listedMetadata?.Title ?? importedTitle;
+
+            string playlistThumb =
+                import.PlaylistThumbnailUrl
+                ?? import.Playlist.ThumbnailUrl
+                ?? listedMetadata?.ThumbnailUrl
+                ?? string.Empty;
+
+            Playlist playlist = new()
+            {
+                Name = importedTitle,
+                IconUrl = playlistThumb,
+                CreatedAt = DateTime.Now,
+                UpdatedAt = DateTime.Now,
+                Source = $"https://www.youtube.com/playlist?list={playlistId}"
+            };
+
+            foreach (YouTubePlaylistVideo video in import.Videos)
+            {
+                playlist.Items.Add(new PlaylistItem
+                {
+                    Title = video.Title,
+                    Url = video.Url,
+                    IconUrl = video.ThumbnailUrl ?? string.Empty,
+                    Duration = video.Duration ?? TimeSpan.Zero
+                });
+            }
+
+            IsLoadingMedia = false;
+
+            // …then let the user adjust name + icon before committing. The
+            // sheet comes pre-filled (auto-fetched name + thumbnail), and
+            // saving applies it straight to the built playlist.
+            MainThread.BeginInvokeOnMainThread(async () =>
+            {
+                List<string> allTags = GetAllKnownTags();
+                var sheet = new Views.EditPlaylistSheet(playlist, allTags);
+                bool result = await Services.SheetManager.ShowAsync<bool>(sheet);
+
+                if (result)
+                {
+                    Playlists.Add(playlist);
+                    SelectedPlaylist = playlist;
+
+                    UpdateFilterTags();
+                    RefreshDisplayedItems();
+                    RequestSaveLibrary();
+
+                    // Durations for anything that arrived without one, and
+                    // real titles for any row the page's shape changes left
+                    // as "Untitled" — the player endpoint's videoDetails
+                    // always knows both.
+                    _ = ResolvePlaylistDurationsAsync(playlist);
+                    _ = ResolveUntitledTrackTitlesAsync(playlist);
+
+                    Debug.WriteLine($"[ImportYouTube] imported playlist '{playlist.Name}' with {playlist.Items.Count} tracks");
+                }
+            });
+        }
+        catch (Exception ex)
+        {
+            IsLoadingMedia = false;
+            Debug.WriteLine($"[ImportYouTube] import failed: {ex.Message}");
+            await MainThread.InvokeOnMainThreadAsync(async () =>
+            {
+                await ShowConfirmAsync("Import Failed", ex.Message, "OK", ModalBackgroundTapBehavior.Confirm, isDanger: true);
             });
         }
     }

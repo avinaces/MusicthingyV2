@@ -590,6 +590,61 @@ public partial class MainViewModel
         }
     }
 
+    /// <summary>
+    /// Safety net for imported YouTube playlists: any row the browse page's
+    /// shape left titled "Untitled" gets its real title from the player
+    /// endpoint's videoDetails.title (same chain the duration resolver
+    /// already uses). Bounded, fire-and-forget; a failed lookup leaves the
+    /// row as-is.
+    /// </summary>
+    private async Task ResolveUntitledTrackTitlesAsync(Playlist playlist, CancellationToken cancellationToken = default)
+    {
+        if (playlist == null)
+            return;
+
+        // Only rows that NEED it — a healthy import sends none.
+        List<PlaylistItem> untitled = playlist.Items
+            .Where(i => string.Equals(i.Title, "Untitled", StringComparison.Ordinal) &&
+                        !string.IsNullOrEmpty(i.Url))
+            .ToList();
+
+        if (untitled.Count == 0)
+            return;
+
+        int resolved = 0;
+        foreach (PlaylistItem track in untitled)
+        {
+            if (cancellationToken.IsCancellationRequested)
+                break;
+
+            try
+            {
+                string? title = await _youtubeResolver.GetVideoTitleAsync(track.Url, cancellationToken);
+                if (!string.IsNullOrWhiteSpace(title))
+                {
+                    string safeTitle = title;
+                    MainThread.BeginInvokeOnMainThread(() => track.Title = safeTitle);
+                    resolved++;
+                }
+            }
+            catch (OperationCanceledException) { break; }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"[ResolveTitle] failed for {track.Url}: {ex.Message}");
+            }
+        }
+
+        if (resolved > 0)
+        {
+            MainThread.BeginInvokeOnMainThread(() =>
+            {
+                RefreshDisplayedItems();
+                RequestSaveLibrary();
+            });
+            Debug.WriteLine($"[ResolveTitle] resolved {resolved}/{untitled.Count} untitled rows in '{playlist.Name}'");
+        }
+    }
+
     private async Task<bool> ResolveSingleTrackDurationInnerAsync(PlaylistItem track, CancellationToken cancellationToken)
     {
         try

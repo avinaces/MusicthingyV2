@@ -33,6 +33,10 @@ public partial class MainViewModel : ObservableObject, IDisposable
     private readonly SearchService _searchService;
     private readonly UpdateService _updateService;
 
+    // YouTube account playlists (import): the service is stateless besides
+    // the shared HTTP handler, so one static-lifetime instance is fine.
+    private readonly Services.YouTube.YouTubeAccountPlaylistsService _accountPlaylists = new();
+
     [ObservableProperty] public partial bool IsLoadingMedia { get; set; }
     [ObservableProperty] public partial double MediaDownloadProgress { get; set; }
     [ObservableProperty] public partial ObservableCollection<Playlist> Playlists { get; set; } = new();
