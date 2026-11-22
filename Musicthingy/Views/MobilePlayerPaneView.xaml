@@ -554,10 +554,18 @@
               InputTransparent="True"
               Margin="0"
               SafeAreaEdges="None">
+                <!-- ROUND 13: the fill is FULL-WIDTH at rest and driven by
+                     ScaleX (AnchorX=0) from code - a GPU transform. The old
+                     per-tick WidthRequest write forced a native Measure+Arrange
+                     of the bar 16x/second for the whole session (a layout
+                     write per tick was one of the redesign's constant costs a
+                     debug build cannot absorb: the reported debug-mode lag). -->
                 <BoxView x:Name="BottomProgressFill"
                                          Color="{DynamicResource AccentColor}"
-                                         HorizontalOptions="Start"
-                                         WidthRequest="0" />
+                                         HorizontalOptions="Fill"
+                                         WidthRequest="-1"
+                                         AnchorX="0"
+                                         ScaleX="0" />
         </Grid>
                 </Grid>
         </Border>

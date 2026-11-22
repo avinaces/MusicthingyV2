@@ -6,6 +6,7 @@ using Android.OS;
 using Android.Views;
 using AndroidX.Core.View;
 using CommunityToolkit.Mvvm.Messaging;
+using Microsoft.Extensions.DependencyInjection;
 using Musicthingy.Helpers;
 using Musicthingy.Models;
 
@@ -70,6 +71,7 @@ public class MainActivity : MauiAppCompatActivity
     protected override void OnPause()
     {
         IsInBackground = true;
+        SuppressPositionUiUpdates(suppress: true);
         base.OnPause();
     }
 
@@ -77,10 +79,53 @@ public class MainActivity : MauiAppCompatActivity
     {
         base.OnResume();
         IsInBackground = false;
+        SuppressPositionUiUpdates(suppress: false);
+
+        // ROUND 12: swipe-out with the background service alive is the
+        // reported trigger for the "debug-mode lag in release" degradation.
+        // Android may DESTROY the activity while the service plays on;
+        // returning then recreates the activity (and the MAUI window/page
+        // tree) while every transient gesture state of the OLD moment is
+        // gone - a pan that was mid-drag never got its Canceled/Completed
+        // event. Tell the live tree to reset anything gesture-owned, and
+        // tell the ViewModel its slider drag is over (a backgrounded
+        // mid-scrub left _isDragging true forever, freezing the position
+        // slider: per-tick position updates are gated on !_isDragging).
+        // WeakReferenceMessenger: only the LIVE tree receives this; dead
+        // views drop out on their own.
+        CommunityToolkit.Mvvm.Messaging.WeakReferenceMessenger.Default.Send(new Musicthingy.Models.AppResumedMessage());
+        try
+        {
+            IPlatformApplication.Current?.Services
+                .GetService<Musicthingy.ViewModels.MainViewModel>()?
+                .OnAppResumed();
+        }
+        catch { /* best-effort */ }
 
         // Coming back from the background (or from an OEM lock screen) can leave
         // the bar icons in the system's light-mode state - reassert them.
         ForceDarkSystemBars();
+    }
+
+    /// <summary>
+    /// ROUND 11: while the activity is paused, the MainViewModel's playback
+    /// position ticker was still marshaling to the UI thread ~4x/second to
+    /// update a slider and lyric highlight nobody can see - on a phone where
+    /// the OEM throttles background main-thread work this both burns battery
+    /// and keeps the process busy for nothing. The flag is read on the
+    /// ExoPlayer timer thread, so make it volatile-visible and set it BEFORE
+    /// base.OnPause()/after base.OnResume() to avoid a straggler tick posting
+    /// after the pause.
+    /// </summary>
+    private static void SuppressPositionUiUpdates(bool suppress)
+    {
+        try
+        {
+            var services = IPlatformApplication.Current?.Services;
+            var vm = services?.GetService<Musicthingy.ViewModels.MainViewModel>();
+            vm?.SetUiPositionUpdatesSuppressed(suppress);
+        }
+        catch { /* resolving DI during teardown must never throw */ }
     }
 
     /// <summary>

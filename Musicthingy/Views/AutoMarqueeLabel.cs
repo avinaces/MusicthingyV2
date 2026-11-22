@@ -1,6 +1,7 @@
 ﻿using Microsoft.Maui.Controls;
 using Microsoft.Maui.Graphics;
 using Microsoft.Maui.Layouts;
+using System.Collections.Generic;
 
 namespace Musicthingy.Views;
 
@@ -16,11 +17,17 @@ public class AutoMarqueeLabel : ContentView
     private double _lastWidth;
     private double _lastHeight;
 
+    // ROUND 13: restart no-op guard + measure cache state (see Restart()).
+    private string? _lastRestartText;
+    private static readonly Dictionary<string, double> _measuredCache = new();
+
     private const double ScrollSpeed = 35.0;
     private const double GapWidth = 60.0;
     private const uint PauseDurationMs = 3500u;
 
-    // rate: 16 = ~60fps | rate: 8 = ~120fps
+    // ROUND 11 REVERT of the round-10 rate cut: the user can see the
+    // smoother crawl and the marquee was never the bottleneck. Back to the
+    // original 16ms cadence exactly as upstream had it.
     private const uint AnimationFrameRateMs = 16u;
 
     public static readonly BindableProperty TextProperty =
@@ -137,9 +144,27 @@ public class AutoMarqueeLabel : ContentView
     {
         this.AbortAnimation("Marquee");
 
-        ApplyStyles();
-
         var text = Text ?? string.Empty;
+
+        // ROUND 13: skip the whole restart when neither the text nor the
+        // control geometry changed since the last one. This control lives in
+        // clusters (the pane instantiates 4-8 of them: compact header, full
+        // header, and BOTH carousel neighbor pages), and each queue change
+        // fires Restart on all of them at once; each Restart re-assigns
+        // label text (an invalidation even when the string is identical)
+        // and runs a fresh Measure. The text-equality check makes the common
+        // case - same track, noise-triggered restart - a no-op.
+        if (text == _lastRestartText &&
+            Math.Abs(_lastWidth - Width) < 0.5 &&
+            _label1.TextColor == TextColor &&
+            Math.Abs(_label1.FontSize - FontSize) < 0.01 &&
+            _label1.FontAttributes == FontAttributes)
+        {
+            return;
+        }
+        _lastRestartText = text;
+
+        ApplyStyles();
 
         _label1.Text = text;
         _label2.Text = text;
@@ -150,8 +175,25 @@ public class AutoMarqueeLabel : ContentView
             return;
         }
 
-        var measure = _label1.Measure(double.PositiveInfinity, double.PositiveInfinity);
-        _textWidth = measure.Width;
+        // ROUND 13: measured text width cache. Measure(double.Inf, double.Inf)
+        // is a full native text-layout pass; with 4-8 labels per pane and a
+        // restart on every queue/current-track change that is up to 8 native
+        // measures per track switch - and on a debug build the Measure calls
+        // themselves are also un-cached. The cache is per (text, font) which
+        // is all the measurement depends on; it survives size changes
+        // (unlimited width means the available width never affected it) and
+        // is dropped only when the font changes.
+        string cacheKey = text;
+        if (_measuredCache.TryGetValue(cacheKey, out double cachedWidth))
+        {
+            _textWidth = cachedWidth;
+        }
+        else
+        {
+            var measure = _label1.Measure(double.PositiveInfinity, double.PositiveInfinity);
+            _textWidth = measure.Width;
+            _measuredCache[cacheKey] = _textWidth;
+        }
 
         // Text fits, disable marquee completely
         if (_textWidth <= Width)

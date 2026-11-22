@@ -26,6 +26,14 @@ public partial class MobilePlayerPaneView : ContentView
     // uses it to detect that ITS animation is still the current one.
     private int _animationToken;
 
+    // ROUND 13: rest-state guard for UpdateLayoutForHeight (see the comment
+    // inside). Invalidated by ApplyMediaMode's mode flip and by
+    // RebuildForRotation (geometry changed under the pane).
+    private bool _layoutForHeightValid;
+    private double _layoutForHeightLastH;
+    private bool _layoutForHeightLastLyrics;
+    private double _layoutForHeightLastFull;
+
     private const double MiniHeight = 72;
     private const double MediumHeight = 296;
 
@@ -225,6 +233,90 @@ public partial class MobilePlayerPaneView : ContentView
                 }
             });
         });
+
+        // ROUND 12: a pan that was mid-drag when the app was swiped away
+        // never gets Completed/Canceled (the native view died with the
+        // activity) - _currentGesture, a mid-drag TranslationY and an
+        // in-flight PlayerResize animation would all survive into the
+        // resumed tree looking exactly like the debug-mode "two writers"
+        // fights (title drifting, pane stuck mid-drag). Reset everything
+        // gesture-owned when the app comes back. WeakReferenceMessenger
+        // delivers this only to the live pane instance.
+        WeakReferenceMessenger.Default.Register<AppResumedMessage>(this, (r, m) =>
+        {
+            MainThread.BeginInvokeOnMainThread(() =>
+            {
+                _currentGesture = GestureIntent.None;
+                ResetSwipeGeometry();
+                PlayerRoot.TranslationY = 0;
+
+                // The 700ms _isAnimating watchdog (PrepareVisibilityForAnimation)
+                // already recovers a stuck animation flag on its own; a resume
+                // may also legitimately want the pane at its target state, so
+                // re-assert the resting geometry for the current target state
+                // instead of trusting whatever the interrupted frame left.
+                double h = _targetState switch
+                {
+                    PlayerState.FullScreen => FullScreenHeight,
+                    PlayerState.Medium => MediumHeight,
+                    _ => MiniHeight
+                };
+                PlayerRoot.HeightRequest = h;
+                UpdateLayoutForHeight(h);
+                FinalizeVisibilityForState();
+            });
+        });
+
+        // ROUND 12: this pane subscribes to SINGLETON-scope sources (the
+        // MainViewModel and its persistent PlaybackQueue - see
+        // HookBottomProgressVm/HookSwipeVm) and is embedded in a TRANSIENT
+        // page (MobileMainPage is AddTransient; the activity - and with it
+        // the MAUI window/page tree - can be recreated by Android while
+        // the playback service stays alive). The OLD pane's subscriptions
+        // kept the old (invisible) tree alive AND executing per-tick
+        // position work forever - every swipe-out-and-return added another
+        // dead tree doing layout writes on a hidden view hierarchy, which
+        // is the reported swipe-out lag/degradation. Unhook on Unloaded
+        // (page popped/window destroyed) and re-hook on Loaded (the same
+        // pane can be re-attached within a live window, e.g. navigation).
+        Loaded += OnPaneLoaded;
+        Unloaded += OnPaneUnloaded;
+    }
+
+    private void OnPaneLoaded(object? sender, EventArgs e)
+    {
+        // Re-attach to the singleton sources after a re-attach. The hooks
+        // are idempotent per source (ReferenceEquals guards) but a
+        // previous Unloaded unhooked them, so re-running them re-subscribes.
+        HookBottomProgressVm();
+        HookSwipeVm();
+    }
+
+    private void OnPaneUnloaded(object? sender, EventArgs e)
+    {
+        // Drop every subscription this pane holds on singleton sources so
+        // the transient page tree can actually be collected when the
+        // activity is recreated. Per-tick handlers on a dead tree are the
+        // "gets worse with every swipe-out" degradation.
+        if (_positionSourceVm != null)
+            _positionSourceVm.PropertyChanged -= OnPositionSourcePropertyChanged;
+        _positionSourceVm = null;
+
+        if (_swipeSourceVm != null)
+            _swipeSourceVm.PropertyChanged -= OnSwipeVmPropertyChanged;
+        _swipeSourceVm = null;
+
+        if (_swipeHookedQueue != null)
+            _swipeHookedQueue.CollectionChanged -= OnSwipeQueueChanged;
+        _swipeHookedQueue = null;
+
+        // Gesture state is meaningless on a detached tree; a re-attached
+        // pane re-derives everything from its target state anyway.
+        _currentGesture = GestureIntent.None;
+
+        // Stop any in-flight sheet animation from touching a detached tree.
+        this.AbortAnimation("PlayerResize");
+        PlayerRoot.AbortAnimation("TranslateTo");
     }
 
     private double FullScreenHeight
@@ -597,6 +689,29 @@ public partial class MobilePlayerPaneView : ContentView
 
     private void UpdateLayoutForHeight(double height)
     {
+        // ROUND 13: rest-state guard. This method is invoked from MANY
+        // stationary contexts - the 700ms resize watchdog firing after an
+        // animation finished, ApplyMediaMode on a lyrics toggle, the resume
+        // handler, FinalizeVisibility - and each call used to redo the FULL
+        // layout pass (safe-area padding write, zone/slot height recompute,
+        // transform re-assertions) at the SAME height. A full-height no-op
+        // needs only the early exit below. (The animation path writes
+        // HeightRequest per frame by design - the sheet edge itself moves -
+        // and is NOT affected: the guard only matches a repeat call whose
+        // height, mode and full-screen reference are all unchanged, which
+        // during an animation never happens: the height changes every frame.)
+        if (_layoutForHeightValid &&
+            Math.Abs(_layoutForHeightLastH - height) < 0.5 &&
+            _layoutForHeightLastLyrics == _isLyricsMode &&
+            Math.Abs(_layoutForHeightLastFull - FullScreenHeight) < 0.5)
+        {
+            return;
+        }
+        _layoutForHeightValid = true;
+        _layoutForHeightLastH = height;
+        _layoutForHeightLastLyrics = _isLyricsMode;
+        _layoutForHeightLastFull = FullScreenHeight;
+
         double progressToMedium = Math.Clamp((height - MiniHeight) / (MediumHeight - MiniHeight), 0, 1);
 
         double fullHeight = FullScreenHeight;
@@ -831,6 +946,12 @@ public partial class MobilePlayerPaneView : ContentView
     private async void OnLyricsToggleClicked(object? sender, TappedEventArgs e)
     {
         _isLyricsMode = !_isLyricsMode;
+
+        // ROUND 13: the mode flip changes what UpdateLayoutForHeight would
+        // compute (header shift, zone height) even at an UNCHANGED pane
+        // height - invalidate its rest-state guard so ApplyMediaMode's
+        // call does the real pass.
+        _layoutForHeightValid = false;
 
         // Round 8 lag fix: defer the media-slot swap off the TAP frame. The
         // old code ran ApplyMediaMode synchronously inside the tap handler:
@@ -1070,9 +1191,18 @@ public partial class MobilePlayerPaneView : ContentView
         if (this.BindingContext is Musicthingy.ViewModels.MainViewModel vm && vm.DurationSeconds > 0)
             progress = Math.Clamp(vm.CurrentPositionSeconds / vm.DurationSeconds, 0, 1);
 
-        double targetWidth = width * progress;
-        if (Math.Abs(BottomProgressFill.WidthRequest - targetWidth) > 0.5)
-            BottomProgressFill.WidthRequest = targetWidth;
+        // ROUND 13: ScaleX with AnchorX=0 (set in the XAML) is a pure GPU
+        // transform - visually identical to the old per-tick WidthRequest
+        // write, but with ZERO layout invalidation. The old write forced a
+        // native Measure+Arrange of the bar 16 times per second for the whole
+        // session - on a debug build (no AOT, interpreted bindings, no layout
+        // caching) that constant relayout stream was a large slice of the
+        // reported debug-mode lag: 16 layout passes/second just to move a
+        // 3dp fill. ScaleX needs the bar laid out (width>0 above) so the
+        // transform always has real pixels to scale.
+        double targetScale = progress;
+        if (Math.Abs(BottomProgressFill.ScaleX - targetScale) > 0.002)
+            BottomProgressFill.ScaleX = targetScale;
     }
 
     // ==================== Mini-player track swipe (carousel) ====================
@@ -1236,6 +1366,11 @@ public partial class MobilePlayerPaneView : ContentView
         // 4. Snap the pane ABSOLUTELY to its current target state: fresh
         //    height, fresh safe-area padding, full layout pass, visibility
         //    finalized. No animation - the pane simply IS at its state.
+        //    ROUND 13: also invalidate the UpdateLayoutForHeight rest guard -
+        //    rotation changed the geometry it last computed against, and the
+        //    target height may be numerically identical (e.g. same pane height
+        //    in a rotated foldable posture) while the layout is not.
+        _layoutForHeightValid = false;
         double targetHeight = _targetState switch
         {
             PlayerState.FullScreen => FullScreenHeight,

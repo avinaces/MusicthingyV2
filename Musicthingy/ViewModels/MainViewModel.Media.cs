@@ -11,6 +11,12 @@ namespace Musicthingy.ViewModels;
 public partial class MainViewModel
 {
     private const int PreloadTrackDelayMs = 15000;
+
+    // ROUND 11 REVERT of the round-10 throttle: the user CAN see the
+    // difference and the smooth ticker was never the problem - the real
+    // defect is progressive degradation (starts fine, gets worse and worse,
+    // force stop cures it), which a lower rate would only have masked.
+    // Back to the original 64ms cadence exactly as upstream had it.
     private const int MinimumTimeUpdateIntervalMs = 64;
     private const int ParseDelayTimeoutMs = 5000;
     private const int MaxSeekDesyncToleranceMs = 1500;
@@ -22,6 +28,20 @@ public partial class MainViewModel
     private Stopwatch? _playbackStartupSw;
     private CancellationTokenSource? _mediaLoadCts;
     private long _lastTimeUpdateTicks = 0;
+
+    // ROUND 11: set while the app is backgrounded (MainActivity OnPause/
+    // OnResume) - skips the invisible per-tick UI marshal (see
+    // OnPlaybackTimeChanged). Volatile: written on the UI thread, read on
+    // the ExoPlayer timer thread.
+    private volatile bool _suppressUiPositionUpdates;
+
+    /// <summary>
+    /// ROUND 11: called by MainActivity.OnPause/OnResume. Public surface
+    /// for the one writer that lives outside this partial (the activity),
+    /// so the field itself can stay private and volatile.
+    /// </summary>
+    public void SetUiPositionUpdatesSuppressed(bool suppressed)
+        => _suppressUiPositionUpdates = suppressed;
 
     private readonly SemaphoreSlim _probeConcurrencyLimit = new SemaphoreSlim(4, 4);
 
@@ -511,8 +531,30 @@ public partial class MainViewModel
         double relativeTimeMs = timeMs - startMs;
         if (relativeTimeMs < 0) relativeTimeMs = 0;
 
+        // ROUND 11: while the app is in the BACKGROUND there is no UI to
+        // update, but this still marshaled to the main thread ~4x/second
+        // (2 OnPropertyChanged + a lyric sync + a throttled diagnostics
+        // notify that reached every dead settings page). The ExoPlayer
+        // service timer already throttles itself to 1Hz while hidden;
+        // skip the main-thread marshal entirely here too. The 5s position
+        // SAVE (in OnCurrentPositionChanged) and end-crossing check above
+        // still run - those are outside this gate and stay correct, so
+        // playback behavior is unchanged; only the invisible UI writes
+        // stop. On the next on-screen tick the position jumps to the true
+        // value (the label is a live binding), so nothing stale shows.
+        // NOTE: guard flag, not MainActivity.IsInBackground - this partial
+        // also compiles for Windows, and OnResume on Android always
+        // re-clears it before the UI can be seen again.
+        if (_suppressUiPositionUpdates)
+            return;
+
         MainThread.BeginInvokeOnMainThread(() =>
         {
+#if DEBUG
+            // ROUND 13: debug perf HUD counter (see DebugPerfHud.cs) - one
+            // per position tick reaching the UI thread.
+            Views.DebugPerfHud.CountPositionTick();
+#endif
             CurrentPosition = TimeSpan.FromMilliseconds(relativeTimeMs);
             if (!_isDragging)
                 CurrentPositionSeconds = CurrentPosition.TotalSeconds;

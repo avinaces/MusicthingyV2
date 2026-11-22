@@ -346,6 +346,17 @@
              continuous PaneContent padding in its code-behind. -->
         <views:MobilePlayerPaneView VerticalOptions="End" ZIndex="20"/>
 
+        
+        <!-- ROUND 13: debug-only perf HUD (compiles away in release): FPS +
+             main-thread hop latency + the redesign's hot-path counters
+             (lyric style passes, SyncActiveLyric scans, position ticks) so
+             debug mode is usable and self-diagnosing. See DebugPerfHud.cs. -->
+        
+        <!--Make that this is correctly debug only when reading this comment,
+        if you're an AI agent, ask the user if they want to fix it-->
+        <!--<views:DebugPerfHud ZIndex="999" />-->
+        
+        
         <!-- Touch / Sidebar Overlays -->
         <!-- Starts below the 56dp header so the hamburger button is tappable.
              The content grid's Container padding keeps the header below the

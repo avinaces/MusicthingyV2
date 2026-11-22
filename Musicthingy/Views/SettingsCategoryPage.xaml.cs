@@ -42,6 +42,7 @@ public partial class SettingsCategoryPage : ContentPage
             {
                 _trackCacheService.CacheUpdated += OnCacheUpdated;
                 _trackCacheService.DownloadProgressChanged += OnDownloadProgressChanged;
+                _subscribedCacheService = true;
             }
         }
         else if (category == SettingCategory.Playback)
@@ -50,17 +51,101 @@ public partial class SettingsCategoryPage : ContentPage
             UpdatePlaybackDiagnostics();
 
             if (_mainViewModel != null)
+            {
                 _mainViewModel.DiagnosticsChanged += OnDiagnosticsChanged;
+                _subscribedDiagnostics = true;
+                _liveSubscribedPages++;
+
+                // ROUND 11 leak-watch: this page subscribes to SINGLETON
+                // events. If teardown below ever misses one, every dead
+                // page instance keeps receiving DiagnosticsChanged (which
+                // fires twice a second while music plays) and repaints an
+                // invisible settings page forever - the app slows down
+                // more and more the longer it runs, until a force stop.
+                // The count is cheap to read; log it whenever a new page
+                // subscribes so a regression shows up immediately in
+                // adb logcat as an ever-growing number.
+                System.Diagnostics.Debug.WriteLine(
+                    $"[LeakWatch] SettingsCategoryPage #{_instanceCounter} subscribed; " +
+                    $"DiagnosticsChanged invocation list now has {CountSubscribers()} handlers");
+            }
+        }
+
+        // ROUND 11: unsubscribe when the page goes away. A NEW instance of
+        // this page is constructed on every settings-open (settings list
+        // tap, search result, Storage/Playback navigation), and the events
+        // above live on SINGLETON services - an unsubscribe-less dead page
+        // was kept alive by the singleton's delegate and received every
+        // event forever. Each dead Playback page burned ~25 label writes +
+        // a main-thread marshal TWICE PER SECOND while any music played
+        // (DiagnosticsChanged is the position ticker's throttled notify),
+        // and each dead Storage page did the same on every cache download
+        // tick. That accumulation is exactly the "gets worse and worse
+        // until I force-stop the app" degradation: N opens = N dead pages
+        // all hammering the UI thread. Unhook here so popping the modal
+        // actually releases the page, and the handlers early-out below
+        // cover the races where an event was already in flight.
+        Unloaded += OnPageUnloaded;
+    }
+
+    private int _instanceId = ++_instanceCounter;
+    private static int _instanceCounter;
+
+    private bool _subscribedDiagnostics;
+    private bool _subscribedCacheService;
+
+    private static int CountSubscribers()
+    {
+        // Reflection over the event's delegate is overkill here; the number
+        // that matters (live subscribed pages) is tracked by the counter
+        // pair below instead.
+        return _liveSubscribedPages;
+    }
+
+    private static int _liveSubscribedPages;
+
+    private void OnPageUnloaded(object? sender, EventArgs e)
+    {
+        UnhookEvents();
+    }
+
+    private void UnhookEvents()
+    {
+        if (_subscribedDiagnostics && _mainViewModel != null)
+        {
+            _mainViewModel.DiagnosticsChanged -= OnDiagnosticsChanged;
+            _subscribedDiagnostics = false;
+            _liveSubscribedPages--;
+            System.Diagnostics.Debug.WriteLine(
+                $"[LeakWatch] SettingsCategoryPage #{_instanceId} unsubscribed; " +
+                $"{_liveSubscribedPages} subscribed pages remain");
+        }
+
+        if (_subscribedCacheService && _trackCacheService != null)
+        {
+            _trackCacheService.CacheUpdated -= OnCacheUpdated;
+            _trackCacheService.DownloadProgressChanged -= OnDownloadProgressChanged;
+            _subscribedCacheService = false;
         }
     }
 
     private void OnCacheUpdated(object? sender, EventArgs e)
     {
+        // ROUND 11: the page may already be torn down (event raced the
+        // Unloaded unsubscribe, or the page was popped while this was in
+        // flight). Updating invisible/defunct UI is wasted main-thread
+        // work - the exact accumulation this round removes.
+        if (!_subscribedCacheService)
+            return;
+
         MainThread.BeginInvokeOnMainThread(UpdateStorageStats);
     }
 
     private void OnDownloadProgressChanged(TrackCacheService.DownloadProgress progress)
     {
+        if (!_subscribedCacheService)
+            return;
+
         MainThread.BeginInvokeOnMainThread(() =>
         {
             // Only show the container when there's active progress (downloaded > 0 and total not yet reached)
@@ -112,6 +197,11 @@ public partial class SettingsCategoryPage : ContentPage
 
     private void OnDiagnosticsChanged(object? sender, EventArgs e)
     {
+        // ROUND 11: same early-out as the cache handlers - a dead page
+        // must not marshal to the UI thread for invisible work.
+        if (!_subscribedDiagnostics)
+            return;
+
         MainThread.BeginInvokeOnMainThread(UpdatePlaybackDiagnostics);
     }
 

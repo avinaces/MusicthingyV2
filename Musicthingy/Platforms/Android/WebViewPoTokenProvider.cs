@@ -4,6 +4,7 @@ using Android.Webkit;
 using Microsoft.Maui.ApplicationModel;
 using System.Diagnostics;
 using System.Text.Json;
+using System.Threading;
 using WebView = global::Android.Webkit.WebView;
 
 namespace Musicthingy.Platforms.Android;
@@ -142,12 +143,26 @@ internal static class WebViewPoTokenProvider
     /// the built-in generator's mint hook and warms it up in the background
     /// (~3s after boot) so the first SABR-only track does not pay the
     /// one-time BotGuard init cost.
+    /// ROUND 12: OnCreate runs again every time Android RECREATES the
+    /// activity (swipe-out with the service alive, memory pressure) while
+    /// the process - and with it the already-registered hooks and an
+    /// already-warmed token - survives. Re-running the hook assignments is
+    /// harmless (same static delegates), but each recreation used to spawn
+    /// ANOTHER 3s-delayed warm-up task; a mint creates a hidden WebView,
+    /// runs BotGuard and destroys it (~45s of background work each time),
+    /// so every swipe-out-and-return stacked one more concurrent warm-up
+    /// on the process. The warm-up now runs once per PROCESS lifetime.
     /// </summary>
+    private static int _warmupStarted;
+
     public static void Initialize()
     {
         Services.PoToken.BuiltInPoTokenProvider.MintImplementation = MintAsync;
         Services.PoToken.BuiltInPoTokenProvider.SolveNChallengeImplementation = SolveNChallengeAsync;
         Services.PoToken.BuiltInPoTokenProvider.SolveChallengesImplementation = SolveChallengesAsync;
+
+        if (Interlocked.Exchange(ref _warmupStarted, 1) == 1)
+            return; // process already warmed (the activity was recreated)
 
         _ = Task.Run(async () =>
         {

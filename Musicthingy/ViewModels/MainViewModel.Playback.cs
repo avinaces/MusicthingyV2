@@ -416,6 +416,22 @@ public partial class MainViewModel
         _isDragging = true;
     }
 
+    /// <summary>
+    /// ROUND 12: called from MainActivity.OnResume after a swipe-out.
+    /// A slider scrub that was in flight when the app was swiped away
+    /// never receives its DragCompletedCommand (the native control died
+    /// with the activity), so _isDragging stayed true forever - and the
+    /// per-tick position updater is gated on !_isDragging, which froze the
+    /// position slider and the mm:ss label at the pre-background value
+    /// for the rest of the session. Clear the flag; the very next tick
+    /// (the round-11 background suppression is lifted on the same
+    /// OnResume) pushes the true position straight back into the UI.
+    /// </summary>
+    public void OnAppResumed()
+    {
+        _isDragging = false;
+    }
+
     [RelayCommand]
     private void Seek()
     {

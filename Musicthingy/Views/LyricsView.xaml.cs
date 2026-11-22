@@ -103,6 +103,15 @@ public partial class LyricsView : ContentView
     // so the cache is cleared there).
     private readonly Dictionary<Label, (Color Color, double Opacity)> _lastAppliedStyles = new();
 
+    // ROUND 13: no-change early-exit state for ApplyDistanceStyles (see the
+    // guard there). Invalidated wherever styling becomes stale: the
+    // collection rebuild (labels recreated), Unloaded (detached view), and
+    // the follow-mode flip (fade depth differs between browsing/following).
+    private bool _lastStylePassValid;
+    private int _lastStylePassIndex = -1;
+    private bool _lastStylePassFollowing;
+    private int _lastStylePassCount = -1;
+
     // Per-wrapped-row splitting: attached state on each line block recording
     // the label width (dp) at which its row structure was last computed.
     // -1 = not measured yet. The state lives ON the block, so there is
@@ -126,7 +135,10 @@ public partial class LyricsView : ContentView
     private void ScheduleDistanceStyles(bool clearCache)
     {
         if (clearCache)
+        {
             _lastAppliedStyles.Clear(); // labels are recreated - drop stale entries
+            _lastStylePassValid = false; // ROUND 13: a rebuild invalidates the no-change guard
+        }
 
         if (_restyleScheduled)
             return; // a pass is already queued - it will see the final state
@@ -156,6 +168,40 @@ public partial class LyricsView : ContentView
         SizeChanged += OnSizeChanged;
         TimedLyricsScrollView.Scrolled += OnTimedLyricsScrolled;
         LyricsItemsHost.PropertyChanged += OnHostPropertyChanged;
+
+        // ROUND 12: this view hooks the ViewModel's PERSISTENT
+        // ActiveTimedLyrics collection (EnsureItemsHooked) and lives inside
+        // a TRANSIENT page tree (MobileMainPage is AddTransient; Android can
+        // destroy/recreate the activity while the playback service runs).
+        // The old tree's collection hook kept the dead LyricsView alive and
+        // executing rebuild/restyle work on every lyric event - a new dead
+        // tree per swipe-out-and-return, which is the reported degradation
+        // after backgrounding. Unhook on Unloaded so the dead tree can be
+        // collected; re-hook on Loaded (EnsureItemsHooked is idempotent and
+        // re-derives from the live ItemsSource, and OnSizeChanged also
+        // re-runs EnsureItemsHooked after a re-attach).
+        Loaded += OnLyricsLoaded;
+        Unloaded += OnLyricsUnloaded;
+    }
+
+    private void OnLyricsLoaded(object? sender, EventArgs e)
+    {
+        // Re-attach to the (possibly rebuilt) lyric collection after a
+        // re-attach of this view inside a live window.
+        EnsureItemsHooked();
+        ScheduleDistanceStyles(clearCache: false);
+    }
+
+    private void OnLyricsUnloaded(object? sender, EventArgs e)
+    {
+        if (_hookedCollection != null)
+            _hookedCollection.CollectionChanged -= OnLyricsCollectionChanged;
+        _hookedCollection = null;
+
+        // A re-attached view re-learns everything from the live collection;
+        // drop the geometry-learned residual so it cannot leak across trees.
+        _lastAppliedStyles.Clear();
+        _lastStylePassValid = false; // ROUND 13: detached - the guard state is stale
     }
 
     // ============================== Public API ==============================
@@ -219,6 +265,7 @@ public partial class LyricsView : ContentView
                 return;
 
             _isFollowing = true;
+            _lastStylePassValid = false; // ROUND 13: mode flip - fade depth differs
             System.Diagnostics.Debug.WriteLine(
                 $"[LyricsView] auto-follow ON (resume, idle {idleSeconds:F1}s{(inMiddle ? "" : ", forced")})");
 
@@ -460,6 +507,7 @@ public partial class LyricsView : ContentView
         {
             // User took over: stop following and drop the depth styling
             _isFollowing = false;
+            _lastStylePassValid = false; // ROUND 13: mode flip - fade depth differs
             System.Diagnostics.Debug.WriteLine("[LyricsView] auto-follow OFF (user scrolled)");
             ApplyDistanceStyles();
         }
@@ -637,6 +685,37 @@ public partial class LyricsView : ContentView
     {
         if (activeIndex == -2)
             activeIndex = FindActiveIndex();
+
+        // ROUND 13: no-change early exit. This runs on every lyric tick
+        // (via ScrollToLyric from ActiveLyricChangedMessage). The per-row
+        // writes below are cache-guarded, but the PASS itself still walked
+        // every block and re-derived every row's target style - O(n) of
+        // managed work on the UI thread per tick even with the highlight
+        // parked on the same line. With the VM's SyncActiveLyric now
+        // guarding no-change ticks, the message only fires on a real line
+        // switch - but OnTimedLyricsScrolled and the two-tier resume also
+        // call this directly. The exit keys on exactly what determines the
+        // output: the active line, the follow mode (fade depth differs),
+        // and the child count (a rebuild re-styled everything). Anything
+        // else that matters (geometry) changes the CONTENT of a pass only
+        // when the active line moved - which changes activeIndex.
+        if (_lastStylePassValid &&
+            _lastStylePassIndex == activeIndex &&
+            _lastStylePassFollowing == _isFollowing &&
+            _lastStylePassCount == LyricsItemsHost.Children.Count)
+        {
+            return;
+        }
+        _lastStylePassValid = true;
+        _lastStylePassIndex = activeIndex;
+        _lastStylePassFollowing = _isFollowing;
+        _lastStylePassCount = LyricsItemsHost.Children.Count;
+
+#if DEBUG
+        // ROUND 13: debug perf HUD counter (see DebugPerfHud.cs) - one per
+        // real styling pass. With the no-change guard, ~1 per lyric switch.
+        DebugPerfHud.CountStylePass();
+#endif
 
         Color activeColor = GetThemeColor("OnSurfaceInverse", Color.FromArgb("#F8F9FA"));
         Color mutedColor = GetThemeColor("MutedColor", Color.FromArgb("#989C9F"));
@@ -1107,6 +1186,7 @@ public partial class LyricsView : ContentView
 
         // Tapping a line expresses intent to jump there - always follow from now on
         _isFollowing = true;
+        _lastStylePassValid = false; // ROUND 13: mode flip - fade depth differs
         System.Diagnostics.Debug.WriteLine("[LyricsView] auto-follow ON (lyric line tapped)");
         ApplyDistanceStyles();
 

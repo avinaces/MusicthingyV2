@@ -2,6 +2,7 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Musicthingy.Models;
 using Musicthingy.Services;
+using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.Globalization;
@@ -86,6 +87,12 @@ public partial class MainViewModel
     private void ParseLyrics(string? rawLyrics)
     {
         ActiveTimedLyrics.Clear();
+        // ROUND 13: the collection is being rebuilt - the cached active index
+        // belongs to the OLD list. Reset it so the first SyncActiveLyric after
+        // the rebuild cannot mis-compare against a stale index (which would
+        // skip the activation when the new list happens to light the same
+        // index, or ship a wrong highlight).
+        _activeLyricIndex = -1;
         HasNoLyrics = string.IsNullOrWhiteSpace(rawLyrics);
         HasTimedLyrics = false;
         HasStaticLyrics = false;
@@ -317,18 +324,55 @@ public partial class MainViewModel
         lyricMap[time] = value;
     }
 
+    // ROUND 13: index of the currently active line (-1 = none). SyncActiveLyric
+    // runs on EVERY 16Hz playback tick; the old code walked the WHOLE lyric
+    // list twice per tick (finder loop + deactivation loop) - O(n) x 16Hz of
+    // managed work on the UI thread even when nothing changed, and one of the
+    // things a debug build cannot absorb (no AOT, interpreted bindings, no
+    // layout caching). With the index cached the common case - same active
+    // line as the last tick - is a single comparison.
+    private int _activeLyricIndex = -1;
+
     private void SyncActiveLyric(TimeSpan position)
     {
         if (!HasTimedLyrics || ActiveTimedLyrics.Count == 0) return;
 
-        TimedLyric? active = null;
-        foreach (var lyric in ActiveTimedLyrics)
+#if DEBUG
+        // ROUND 13: debug perf HUD counter (see DebugPerfHud.cs) - one per
+        // tick call (16Hz while playing).
+        Views.DebugPerfHud.CountLyricScan();
+#endif
+
+        // Finder loop, kept EXACTLY as upstream: a line is active from 300ms
+        // BEFORE its timestamp (the finder's pre-roll) until the next line's
+        // pre-roll. Binary-search on the raw timestamps then adjust for the
+        // 300ms pre-roll window, so the same line lights at the same instant
+        // as before - identical behavior, O(log n) instead of O(n).
+        var list = (IList<TimedLyric>)ActiveTimedLyrics;
+        long posMs = (long)position.TotalMilliseconds;
+        long target = posMs + 300; // first line with Time >= posMs-300ms
+        int lo = 0, hi = list.Count - 1, idx = -1;
+        while (lo <= hi)
         {
-            if (position.TotalMilliseconds >= (lyric.Time.TotalMilliseconds - 300))
-                active = lyric;
-            else
-                break;
+            int mid = (lo + hi) >> 1;
+            if (list[mid].Time.TotalMilliseconds >= target) hi = mid - 1;
+            else { idx = mid; lo = mid + 1; }
         }
+        // idx = last line whose Time < posMs+300 == the last line the old
+        // loop would have marked active.
+        TimedLyric? active = idx >= 0 ? list[idx] : null;
+
+        // Common case on a 16Hz tick: nothing changed since the last tick -
+        // one field comparison, zero lyric writes, zero message sends.
+        if (idx == _activeLyricIndex)
+            return;
+        _activeLyricIndex = idx;
+
+#if DEBUG
+        // ROUND 13: debug perf HUD counter - only ticks that actually moved
+        // the active line (the rest are the guard's no-ops).
+        Views.DebugPerfHud.CountLyricScanHit();
+#endif
 
         // Deactivate the old line BEFORE activating the new one. Activating
         // first meant listeners (the lyrics view scrolls on activation) briefly
