@@ -109,7 +109,11 @@ public partial class MainViewModel
         TimeSpan offset = TimeSpan.FromMilliseconds(ReadOffsetMilliseconds(rawLyrics));
 
         bool hasTimed = false;
-        var lyricMap = new Dictionary<TimeSpan, string>();
+        // A slot is one timestamp (within InterleavedTranslationWindowMs) and
+        // keeps EVERY line found there: a bilingual file puts the original and
+        // its translation in the same slot, and which of the two is the
+        // original is decided after the whole file has been read.
+        var slots = new Dictionary<TimeSpan, List<string>>();
 
         foreach (var line in lines)
         {
@@ -142,7 +146,7 @@ public partial class MainViewModel
                 if (time.TotalSeconds < MetadataFilterSeconds && IsMetadataLine(text))
                     continue;
 
-                AddTimedLyric(lyricMap, time, text);
+                AddToSlot(slots, time, text);
 
                 if (!string.IsNullOrWhiteSpace(text))
                     hasTimed = true;
@@ -151,7 +155,7 @@ public partial class MainViewModel
 
         // "hasTimed" only says SOME line carried text; a one-line file is not
         // a usable sync track. Count the real lines before switching modes.
-        int timedLineCount = lyricMap.Count(kvp => !string.IsNullOrWhiteSpace(kvp.Value));
+        int timedLineCount = slots.Values.Count(slot => slot.Any(text => !string.IsNullOrWhiteSpace(text)));
         if (timedLineCount < MinTimedLyricLines)
             hasTimed = false;
 
@@ -159,10 +163,19 @@ public partial class MainViewModel
         {
             HasTimedLyrics = true;
 
+            LyricScript trackScript = ScriptOfTrack(CurrentTrack);
+            int originalIndex = LearnOriginalSlotIndex(slots.Values, trackScript);
+            if (originalIndex > 0)
+                Debug.WriteLine($"[Lyrics] bilingual file: kept slot line {originalIndex} as the original");
+
             // Add them to the UI in chronological order
-            foreach (var kvp in lyricMap.OrderBy(k => k.Key))
+            foreach (var slot in slots.OrderBy(k => k.Key))
             {
-                ActiveTimedLyrics.Add(new TimedLyric { Time = kvp.Key, Text = kvp.Value });
+                ActiveTimedLyrics.Add(new TimedLyric
+                {
+                    Time = slot.Key,
+                    Text = ChooseSlotLine(slot.Value, trackScript, originalIndex),
+                });
             }
 
             // Always anchor the start so auto-follow has a target immediately
@@ -178,7 +191,7 @@ public partial class MainViewModel
             HasStaticLyrics = true;
             // Only files that actually carried timestamps need their tags
             // stripped; plain lyrics keep their blank lines between stanzas.
-            StaticLyricsText = lyricMap.Count > 0 ? BuildStaticText(rawLyrics) : rawLyrics;
+            StaticLyricsText = slots.Count > 0 ? BuildStaticText(rawLyrics) : rawLyrics;
         }
     }
 
@@ -289,40 +302,244 @@ public partial class MainViewModel
     }
 
     /// <summary>
-    /// Inserts one lyric line, collapsing interleaved translations.
+    /// Adds one line to the slot for <paramref name="time"/>, merging it into an
+    /// existing slot when the timestamps are close enough to be the same line
+    /// of a bilingual file.
     /// </summary>
-    /// <remarks>
-    /// Bilingual LRC files put the original line and its translation at (nearly)
-    /// the same timestamp. Keeping the FIRST non-empty line is what preserves
-    /// the original: the previous code always overwrote, so a translation
-    /// landing 20ms later replaced the real lyric, and an empty
-    /// end-of-phrase marker within 100ms could replace a real lyric with a
-    /// blank line. A later non-empty line may still fill a blank placeholder.
-    /// </remarks>
-    private static void AddTimedLyric(Dictionary<TimeSpan, string> lyricMap, TimeSpan time, string text)
+    private static void AddToSlot(Dictionary<TimeSpan, List<string>> slots, TimeSpan time, string text)
     {
-        bool newIsBlank = string.IsNullOrWhiteSpace(text);
-        string value = newIsBlank ? " " : text;
-
-        foreach (var existingKey in lyricMap.Keys.ToList())
+        foreach (var existingKey in slots.Keys.ToList())
         {
             if (Math.Abs((existingKey - time).TotalMilliseconds) >= InterleavedTranslationWindowMs)
                 continue;
 
-            bool existingIsBlank = string.IsNullOrWhiteSpace(lyricMap[existingKey]);
-            if (existingIsBlank && !newIsBlank)
-            {
-                // Blank placeholder first, real lyric second - keep the lyric.
-                lyricMap.Remove(existingKey);
-                lyricMap[time] = value;
-            }
-
-            // Otherwise the first real lyric wins; drop the duplicate.
+            slots[existingKey].Add(text);
             return;
         }
 
-        lyricMap[time] = value;
+        slots[time] = new List<string> { text };
     }
+
+    /// <summary>
+    /// The line a timestamp slot ends up showing: the one written in the
+    /// track's own language, or - when that slot cannot tell the languages
+    /// apart - the position this file keeps the original in.
+    /// </summary>
+    /// <remarks>
+    /// Bilingual LRC files put the original line and its translation at (nearly)
+    /// the same timestamp. The uploader decides the order: the usual convention
+    /// is original-then-translation, but fan translations are often written
+    /// ABOVE the original (a Vietnamese translation of a French song, say), and
+    /// blindly keeping the first line then showed the wrong language. A bare
+    /// tag within the window of a real line (an empty end-of-phrase marker) is
+    /// never allowed to win.
+    /// </remarks>
+    private static string ChooseSlotLine(List<string> slot, LyricScript trackScript, int originalIndex)
+    {
+        string? firstReal = null;
+        string? trackLanguageLine = null;
+        LyricScript firstRealScript = LyricScript.None;
+        bool mixedScripts = false;
+
+        foreach (string text in slot)
+        {
+            if (string.IsNullOrWhiteSpace(text))
+                continue;
+
+            LyricScript script = ClassifyScript(text);
+            if (firstReal == null)
+            {
+                firstReal = text;
+                firstRealScript = script;
+            }
+            else if (script != firstRealScript)
+            {
+                mixedScripts = true;
+            }
+
+            if (trackLanguageLine == null && trackScript != LyricScript.None && script == trackScript)
+                trackLanguageLine = text;
+        }
+
+        // Every line in the slot was a bare "[mm:ss]" tag: a break, not a line.
+        if (firstReal == null)
+            return " ";
+
+        // Only a slot that genuinely mixes writing systems can answer "which
+        // line is the track's language" - with both lines in one script there
+        // is nothing to match, and the file-wide position decides.
+        if (mixedScripts && trackLanguageLine != null)
+            return trackLanguageLine;
+
+        if (originalIndex >= 0 && originalIndex < slot.Count && !string.IsNullOrWhiteSpace(slot[originalIndex]))
+            return slot[originalIndex];
+
+        return firstReal;
+    }
+
+    /// <summary>
+    /// Which position in a timestamp slot holds the file's ORIGINAL line,
+    /// learned from the slots where the two layers are distinguishable; -1 when
+    /// the file gives no evidence (a monolingual file, or two languages written
+    /// in the same script with nothing in the track metadata to tell them
+    /// apart).
+    /// </summary>
+    /// <remarks>
+    /// A bilingual file is written consistently - the translation sits above or
+    /// below the original throughout. So the slots whose lines are in different
+    /// writing systems (or where only one is Vietnamese) reveal the position,
+    /// and that position then decides the slots whose two lines look alike in a
+    /// script sense ("Anh yêu em" next to "Je t'aime"). A tie means the file
+    /// mixes the two orders, and no position can be trusted.
+    /// </remarks>
+    private static int LearnOriginalSlotIndex(IEnumerable<List<string>> slots, LyricScript trackScript)
+    {
+        if (trackScript == LyricScript.None)
+            return -1;
+
+        var votes = new Dictionary<int, int>();
+
+        foreach (var slot in slots)
+        {
+            if (slot.Count(text => !string.IsNullOrWhiteSpace(text)) < 2)
+                continue;
+
+            int matchIndex = -1;
+            bool ambiguous = false;
+            for (int i = 0; i < slot.Count; i++)
+            {
+                if (string.IsNullOrWhiteSpace(slot[i]) || ClassifyScript(slot[i]) != trackScript)
+                    continue;
+
+                // Two lines in the track's own language say nothing about
+                // where the translation sits.
+                if (matchIndex >= 0)
+                {
+                    ambiguous = true;
+                    break;
+                }
+
+                matchIndex = i;
+            }
+
+            if (ambiguous || matchIndex < 0)
+                continue;
+
+            votes[matchIndex] = votes.GetValueOrDefault(matchIndex) + 1;
+        }
+
+        if (votes.Count == 0)
+            return -1;
+
+        int bestVotes = votes.Values.Max();
+        var leaders = votes.Where(vote => vote.Value == bestVotes).ToList();
+        return leaders.Count == 1 ? leaders[0].Key : -1;
+    }
+
+    /// <summary>
+    /// The writing system the track itself is titled in, from its title and the
+    /// artist recorded outside the library. None when neither carries letters,
+    /// which disables the language preference.
+    /// </summary>
+    private static LyricScript ScriptOfTrack(PlaylistItem? track)
+    {
+        if (track == null)
+            return LyricScript.None;
+
+        LyricScript titleScript = ClassifyScript(track.Title);
+        LyricScript artistScript = ClassifyScript(track.ExternalArtist);
+
+        // Vietnamese needs its own check first: it is Latin text, and a plain
+        // Latin title next to a Vietnamese artist (or the other way round) is
+        // still a Vietnamese track.
+        if (titleScript == LyricScript.Vietnamese || artistScript == LyricScript.Vietnamese)
+            return LyricScript.Vietnamese;
+
+        // Any other non-Latin script is unambiguous evidence.
+        if (titleScript is not (LyricScript.None or LyricScript.Latin))
+            return titleScript;
+        if (artistScript is not (LyricScript.None or LyricScript.Latin))
+            return artistScript;
+
+        if (titleScript == LyricScript.Latin || artistScript == LyricScript.Latin)
+            return LyricScript.Latin;
+
+        return LyricScript.None;
+    }
+
+    /// <summary>
+    /// Coarse writing-system tag for one lyric line: only precise enough to
+    /// tell the two layers of a bilingual file apart.
+    /// </summary>
+    private enum LyricScript
+    {
+        None,       // no letters at all: blank tag, digits, punctuation
+        Latin,
+        Vietnamese, // Latin text carrying at least one Vietnamese-only letter
+        Han,        // Chinese characters, Japanese kana
+        Hangul,
+        Cyrillic,
+        Arabic,
+        Hebrew,
+        Thai,
+        Greek,
+    }
+
+    private static LyricScript ClassifyScript(string? text)
+    {
+        if (string.IsNullOrEmpty(text))
+            return LyricScript.None;
+
+        LyricScript letterScript = LyricScript.None;
+        foreach (char c in text)
+        {
+            // Vietnamese is Latin, so its own letters must be checked first.
+            if (IsVietnameseLetter(c))
+                return LyricScript.Vietnamese;
+
+            if (!char.IsLetter(c))
+                continue;
+
+            LyricScript script = ScriptOfLetter(c);
+            if (script != LyricScript.Latin)
+                return script;
+
+            letterScript = LyricScript.Latin;
+        }
+
+        return letterScript;
+    }
+
+    /// <summary>
+    /// True for the letters only Vietnamese uses among the Latin-script
+    /// languages a music library realistically holds. Tone-marked vowels that
+    /// French also has (é, è, ê, ô, à) are deliberately NOT counted, so a French
+    /// line is never mistaken for Vietnamese.
+    /// </summary>
+    private static bool IsVietnameseLetter(char c) =>
+        c is >= '\u1EA0' and <= '\u1EF9'   // Latin Extended Additional: the Vietnamese block
+          or '\u0102' or '\u0103'          // Ă ă
+          or '\u0110' or '\u0111'          // Đ đ
+          or '\u01A0' or '\u01A1'          // Ơ ơ
+          or '\u01AF' or '\u01B0';         // Ư ư
+
+    private static LyricScript ScriptOfLetter(char c) => c switch
+    {
+        >= '\u3040' and <= '\u30FF' => LyricScript.Han,      // hiragana, katakana
+        >= '\u3400' and <= '\u4DBF' => LyricScript.Han,      // CJK extension A
+        >= '\u4E00' and <= '\u9FFF' => LyricScript.Han,      // CJK unified ideographs
+        >= '\uF900' and <= '\uFAFF' => LyricScript.Han,      // CJK compatibility
+        >= '\u1100' and <= '\u11FF' => LyricScript.Hangul,   // Hangul jamo
+        >= '\uAC00' and <= '\uD7AF' => LyricScript.Hangul,   // Hangul syllables
+        >= '\u0400' and <= '\u052F' => LyricScript.Cyrillic,
+        >= '\u0590' and <= '\u05FF' => LyricScript.Hebrew,
+        >= '\u0600' and <= '\u06FF' => LyricScript.Arabic,
+        >= '\u0750' and <= '\u077F' => LyricScript.Arabic,
+        >= '\u0E00' and <= '\u0E7F' => LyricScript.Thai,
+        >= '\u0370' and <= '\u03FF' => LyricScript.Greek,
+        >= '\u1F00' and <= '\u1FFF' => LyricScript.Greek,
+        _ => LyricScript.Latin,
+    };
 
     // ROUND 13: index of the currently active line (-1 = none). SyncActiveLyric
     // runs on EVERY 16Hz playback tick; the old code walked the WHOLE lyric
