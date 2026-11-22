@@ -18,6 +18,8 @@ public class SettingsManager
     public CurrentTrackDataSetting CurrentTrackData { get; }
     public UseSystemThemeSetting UseSystemTheme { get; }
     public PauseAtZeroVolumeSetting PauseAtZeroVolume { get; }
+    public PauseOnAudioDeviceDisconnectSetting PauseOnAudioDeviceDisconnect { get; }
+    public PauseWhenOtherMediaPlaysSetting PauseWhenOtherMediaPlays { get; }
     public ExportDataSetting ExportData { get; }
 
     private readonly IEnumerable<ISetting> _allSettings;
@@ -35,6 +37,8 @@ public class SettingsManager
         CurrentTrackData = GetSetting<CurrentTrackDataSetting>();
         UseSystemTheme = GetSetting<UseSystemThemeSetting>();
         PauseAtZeroVolume = GetSetting<PauseAtZeroVolumeSetting>();
+        PauseOnAudioDeviceDisconnect = GetSetting<PauseOnAudioDeviceDisconnectSetting>();
+        PauseWhenOtherMediaPlays = GetSetting<PauseWhenOtherMediaPlaysSetting>();
         ExportData = GetSetting<ExportDataSetting>();
     }
 

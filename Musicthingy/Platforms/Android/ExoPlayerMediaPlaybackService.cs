@@ -3,6 +3,9 @@ using Android.Content;
 using AndroidX.Media3.Common;
 using AndroidX.Media3.DataSource;
 using Musicthingy.Services;
+using Musicthingy.Settings;
+using System.ComponentModel;
+using System.Diagnostics;
 using System.Timers;
 using System.Threading;
 
@@ -18,6 +21,8 @@ public class ExoPlayerMediaPlaybackService : Java.Lang.Object, IMediaPlaybackSer
     private AndroidX.Media3.ExoPlayer.IExoPlayer? _player;
     private System.Timers.Timer? _progressTimer;
     private long _lastBackgroundTickMs = 0;
+
+    private readonly SettingsManager _settingsManager;
 
     // Main-thread-only player state, mirrored for thread-safe getters.
     // Media3 players must only be accessed on the Main/Application Looper
@@ -96,9 +101,59 @@ public class ExoPlayerMediaPlaybackService : Java.Lang.Object, IMediaPlaybackSer
     public event EventHandler<double>? TimeChanged;
     public event EventHandler<double>? LengthChanged;
 
-    public ExoPlayerMediaPlaybackService()
+    public ExoPlayerMediaPlaybackService(SettingsManager settingsManager)
     {
+        _settingsManager = settingsManager;
+
+        // Both settings are read live: the setter on BaseSetting<T> raises
+        // PropertyChanged, so a toggle in Settings applies to the running player
+        // before the next track even starts.
+        _settingsManager.PauseOnAudioDeviceDisconnect.PropertyChanged += OnAudioBehaviorSettingChanged;
+        _settingsManager.PauseWhenOtherMediaPlays.PropertyChanged += OnAudioBehaviorSettingChanged;
+
         MainThread.BeginInvokeOnMainThread(InitializePlayer);
+    }
+
+    private void OnAudioBehaviorSettingChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        // BaseSetting<T> also raises DisplayValue/IsToggled/Description after a
+        // toggle; only the Value change should re-request audio focus.
+        if (e.PropertyName != nameof(BaseSetting<bool>.Value))
+            return;
+
+        MainThread.BeginInvokeOnMainThread(ApplyAudioBehavior);
+    }
+
+    /// <summary>
+    /// Applies the two user-controlled audio behaviors to the live player:
+    /// audio focus (pause when another app takes over) and
+    /// ACTION_AUDIO_BECOMING_NOISY (headphone unplug / Bluetooth disconnect).
+    /// Safe to call repeatedly; Media3 re-requests focus when the attributes
+    /// call runs with a changed handleAudioFocus flag.
+    /// </summary>
+    private void ApplyAudioBehavior()
+    {
+        var player = _player;
+        if (player == null)
+            return;
+
+        try
+        {
+            bool pauseForOtherMedia = _settingsManager.PauseWhenOtherMediaPlays.Value;
+            bool pauseOnDisconnect = _settingsManager.PauseOnAudioDeviceDisconnect.Value;
+
+            AndroidX.Media3.Common.AudioAttributes attributes = new AndroidX.Media3.Common.AudioAttributes.Builder()
+                .SetUsage(AndroidX.Media3.Common.C.UsageMedia)
+                .SetContentType(AndroidX.Media3.Common.C.AudioContentTypeMusic)
+                .Build();
+
+            player.SetAudioAttributes(attributes, pauseForOtherMedia);
+            player.SetHandleAudioBecomingNoisy(pauseOnDisconnect);
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"[Playback] ApplyAudioBehavior failed: {ex.Message}");
+        }
     }
 
     private void InitializePlayer()
@@ -108,6 +163,8 @@ public class ExoPlayerMediaPlaybackService : Java.Lang.Object, IMediaPlaybackSer
 
         _player = new AndroidX.Media3.ExoPlayer.ExoPlayerBuilder(context).Build();
         _player!.AddListener(this);
+
+        ApplyAudioBehavior();
 
         // Let ExoPlayer manage the CPU wake lock natively: it holds a
         // partial wake lock ONLY while PlayWhenReady and buffering/loading,
@@ -205,6 +262,7 @@ public class ExoPlayerMediaPlaybackService : Java.Lang.Object, IMediaPlaybackSer
         {
             if (_player != null)
             {
+                ApplyAudioBehavior();
                 _player.SetMediaSource(mediaSource);
                 _player.Prepare();
 
@@ -224,6 +282,7 @@ public class ExoPlayerMediaPlaybackService : Java.Lang.Object, IMediaPlaybackSer
         {
             if (_player != null)
             {
+                ApplyAudioBehavior();
                 _player.PlayWhenReady = true;
                 _cachedPlayWhenReady = true;
             }
@@ -346,6 +405,9 @@ public class ExoPlayerMediaPlaybackService : Java.Lang.Object, IMediaPlaybackSer
     {
         if (disposing)
         {
+            _settingsManager.PauseOnAudioDeviceDisconnect.PropertyChanged -= OnAudioBehaviorSettingChanged;
+            _settingsManager.PauseWhenOtherMediaPlays.PropertyChanged -= OnAudioBehaviorSettingChanged;
+
             _progressTimer?.Stop();
             _progressTimer?.Dispose();
 
